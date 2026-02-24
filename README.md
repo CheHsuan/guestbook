@@ -12,7 +12,7 @@ Visitors can browse the latest 24 hours of messages in a responsive, glassmorphi
 - **Secure Authentication:** Utilizes Google Sign-In via Firebase Auth. Only authenticated users can post messages.
 - **Self-Moderation:** Users can delete their own messages, but are restricted via Firebase Security Rules from altering or deleting messages belonging to others.
 - **Rate Limiting:** Built-in safeguards prevent spam by rate-limiting users to one post every 5 seconds.
-- **Dark Mode UI:** A modern, accessible dark theme utilizing CSS variables and glassmorphism effects.
+- **Warm & Bright UI:** A modern, inviting aesthetic utilizing warm color palettes and subtle glassmorphism effects.
 
 ## Tech Stack
 
