@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="A free online guestbook — share your thoughts, leave a message, and connect with people around the world. Simple, beautiful, and open to everyone.">
+  <title>Guestbook — Share your thoughts with the world</title>
+  <link rel="canonical" href="https://guestbook.slashstack.app/">
+  <link rel="icon" type="image/png" href="/icon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Guestbook — Share your thoughts and connect with the world">
+  <meta property="og:description"
+    content="A free online guestbook — share your thoughts, leave a message, and connect with people around the world. Simple, beautiful, and open to everyone.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://guestbook.slashstack.app/">
+  <meta property="og:image" content="https://guestbook.slashstack.app/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="Guestbook">
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Guestbook",
+    "url": "https://guestbook.slashstack.app",
+    "description": "A simple, free online guestbook where you can sign in with Google to view and leave public messages.",
+    "applicationCategory": "SocialNetworkingApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #fff8f0;
+      --text: #3d2e1f;
+      --text-muted: #8a7560;
+      --accent: #d4784a;
+      --accent-hover: #b85a30;
+      --card-bg: rgba(255, 255, 255, 0.7);
+      --card-border: rgba(180, 130, 80, 0.18);
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Background blobs */
+    .blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.25;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .blob-1 {
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, #ffc87a, transparent 70%);
+      top: -120px;
+      left: -120px;
+    }
+
+    .blob-2 {
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, #ffb0a0, transparent 70%);
+      bottom: -80px;
+      right: -80px;
+    }
+
+    .blob-3 {
+      width: 350px;
+      height: 350px;
+      background: radial-gradient(circle, #ffe0a0, transparent 70%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Layout */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 60px 24px 40px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Logo */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 48px;
+    }
+
+    .logo img {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+    }
+
+    .logo h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Hero card */
+    .hero-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 48px 40px;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 40px;
+    }
+
+    .hero-icon {
+      font-size: 3rem;
+      display: block;
+      margin-bottom: 20px;
+    }
+
+    .hero-card h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--text), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      margin-bottom: 16px;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      font-family: inherit;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 8px;
+    }
+
+    .cta-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(212, 120, 74, 0.3);
+    }
+
+    /* Features */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 40px;
+    }
+
+    .feature {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .feature-icon {
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .feature h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .feature p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Data usage section */
+    .data-section {
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .data-section h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text-muted);
+    }
+
+    .data-section p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+
+    /* Footer */
+    footer {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      padding: 24px 20px 32px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    footer a:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 40px 16px 24px;
+      }
+
+      .hero-card {
+        padding: 32px 24px;
+      }
+
+      .features {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div class="container">
+    <div class="logo">
+      <img src="/icon.png" alt="Guestbook">
+      <h1>Guestbook</h1>
+    </div>
+
+    <div class="hero-card">
+      <span class="hero-icon">📖</span>
+      <h2>Welcome to the Guestbook</h2>
+      <p>A simple, free online guestbook where you can sign in with your Google account to view and leave public
+        messages for others to see.</p>
+      <p>We use your <strong>Google display name</strong> and <strong>profile photo</strong> to identify your messages.
+        No other personal data is collected, stored, or shared with third parties.</p>
+      <a href="/app" class="cta-btn">Open Guestbook →</a>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <span class="feature-icon">🔐</span>
+        <h3>Google Sign-In</h3>
+        <p>Secure authentication via your Google account</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">💬</span>
+        <h3>Leave Messages</h3>
+        <p>Post short messages visible for 24 hours</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">🛡️</span>
+        <h3>Privacy First</h3>
+        <p>Minimal data collection, no tracking</p>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⚡</span>
+        <h3>Real-time</h3>
+        <p>Messages appear instantly for all users</p>
+      </div>
+    </div>
+
+    <div class="data-section">
+      <h3>How We Use Your Data</h3>
+      <p>When you sign in with Google, we access only your display name and profile photo to show alongside your
+        guestbook messages. We do not access your email, contacts, or any other Google account data. All messages are
+        stored securely on Google Firebase.</p>
+    </div>
+  </div>
+
+  <footer>
+    <a href="/privacy">Privacy Policy</a>
+    <span>·</span>
+    <a href="/terms">Terms of Service</a>
+  </footer>
+</body>
+
+</html>

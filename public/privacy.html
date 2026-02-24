@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Privacy Policy for SlashStack Guestbook">
+  <title>Privacy Policy — Guestbook</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .doc-container { max-width: 680px; margin: 0 auto; padding: 40px 20px 80px; position: relative; z-index: 1; }
+    .doc-container h1 { font-size: 1.8rem; margin-bottom: 8px; }
+    .doc-container .last-updated { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 32px; }
+    .doc-container h2 { font-size: 1.1rem; color: var(--accent-light); margin-top: 32px; margin-bottom: 12px; }
+    .doc-container p, .doc-container li { font-size: 0.95rem; line-height: 1.7; color: var(--text-secondary); margin-bottom: 12px; }
+    .doc-container ul { padding-left: 20px; }
+    .doc-container a { color: var(--accent-light); text-decoration: none; }
+    .doc-container a:hover { text-decoration: underline; }
+    .back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 24px; color: var(--text-muted); font-size: 0.85rem; text-decoration: none; }
+    .back-link:hover { color: var(--accent-light); }
+  </style>
+</head>
+<body>
+  <div class="bg-blob blob-1"></div>
+  <div class="bg-blob blob-2"></div>
+  <div class="bg-blob blob-3"></div>
+
+  <div class="doc-container">
+    <a href="/" class="back-link">← Back to Guestbook</a>
+    <h1>Privacy Policy</h1>
+    <p class="last-updated">Last updated: February 23, 2025</p>
+
+    <h2>1. Introduction</h2>
+    <p>Welcome to the SlashStack Guestbook ("we", "our", "us"). This Privacy Policy explains how we collect, use, and protect your information when you use our guestbook service hosted at <strong>guestbook.slashstack.app</strong>.</p>
+
+    <h2>2. Information We Collect</h2>
+    <p>When you sign in with Google, we receive and store the following information:</p>
+    <ul>
+      <li><strong>Display Name</strong> — shown alongside your messages</li>
+      <li><strong>Profile Photo URL</strong> — displayed as your avatar</li>
+      <li><strong>Email Address</strong> — used for authentication only</li>
+      <li><strong>Google User ID</strong> — used to identify your account securely</li>
+    </ul>
+    <p>When you post a message, we store:</p>
+    <ul>
+      <li>Your message text (max 250 characters)</li>
+      <li>Your display name and user ID</li>
+      <li>The timestamp of your post</li>
+    </ul>
+
+    <h2>3. How We Use Your Information</h2>
+    <p>Your information is used solely to:</p>
+    <ul>
+      <li>Authenticate your identity via Google Sign-In</li>
+      <li>Display your name alongside your guestbook messages</li>
+      <li>Enforce rate-limiting (one message per 5 seconds)</li>
+    </ul>
+    <p>We do <strong>not</strong> sell, share, or transfer your personal data to any third parties.</p>
+
+    <h2>4. Data Storage</h2>
+    <p>All data is stored securely in <strong>Google Firebase Realtime Database</strong>, hosted on Google Cloud infrastructure. Firebase complies with major security certifications including SOC 1, SOC 2, and ISO 27001.</p>
+
+    <h2>5. Data Retention</h2>
+    <p>Guestbook messages are stored indefinitely. You may request deletion of your data by contacting us.</p>
+
+    <h2>6. Cookies</h2>
+    <p>We use Firebase Authentication which may store session tokens in your browser's local storage. We do not use advertising cookies or third-party tracking.</p>
+
+    <h2>7. Your Rights</h2>
+    <p>You have the right to:</p>
+    <ul>
+      <li>Request access to your personal data</li>
+      <li>Request deletion of your data</li>
+      <li>Withdraw consent by signing out and revoking app access via your Google Account settings</li>
+    </ul>
+
+    <h2>8. Contact</h2>
+    <p>If you have any questions about this Privacy Policy, please contact us at the project's GitHub repository or via email.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,632 @@
+/* ========================================
+   Design System
+   ======================================== */
+:root {
+  /* Color Palette — warm, bright, inviting */
+  --bg-primary: #fff8f0;
+  --bg-secondary: #faeee2;
+  --surface: rgba(180, 130, 80, 0.06);
+  --surface-hover: rgba(180, 130, 80, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-border: rgba(180, 130, 80, 0.18);
+  --text-primary: #3d2e1f;
+  --text-secondary: #6b5340;
+  --text-muted: #a08a72;
+  --accent: #d4784a;
+  --accent-light: #c4613a;
+  --accent-glow: rgba(212, 120, 74, 0.2);
+  --success: #4a9960;
+  --warning: #c4962a;
+  --danger: #c45050;
+  --border-radius: 16px;
+  --border-radius-sm: 10px;
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ========================================
+   Reset & Base
+   ======================================== */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ========================================
+   Animated Background Blobs
+   ======================================== */
+.bg-blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.25;
+  z-index: 0;
+  pointer-events: none;
+  animation: blobFloat 20s ease-in-out infinite;
+}
+
+.blob-1 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, #ffc87a 0%, transparent 70%);
+  top: -120px;
+  left: -120px;
+  animation-delay: 0s;
+}
+
+.blob-2 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, #ffb0a0 0%, transparent 70%);
+  bottom: -80px;
+  right: -80px;
+  animation-delay: -7s;
+}
+
+.blob-3 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, #ffe0a0 0%, transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -14s;
+}
+
+@keyframes blobFloat {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  25% {
+    transform: translate(30px, -40px) scale(1.05);
+  }
+
+  50% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+
+  75% {
+    transform: translate(15px, 30px) scale(1.02);
+  }
+}
+
+/* ========================================
+   App Container
+   ======================================== */
+.app-container {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+/* ========================================
+   Header
+   ======================================== */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  font-size: 1.5rem;
+  color: var(--accent-light);
+  animation: sparkle 3s ease-in-out infinite;
+}
+
+.logo-icon-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+@keyframes sparkle {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1) rotate(15deg);
+  }
+}
+
+.logo h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text-primary), var(--accent-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========================================
+   Auth UI
+   ======================================== */
+#user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  object-fit: cover;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ========================================
+   Buttons
+   ======================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0);
+  transition: background 0.2s;
+}
+
+.btn:hover::after {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-login {
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-border);
+}
+
+.btn-login:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+
+.btn-logout {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  font-size: 0.8rem;
+}
+
+.btn-logout:hover {
+  color: var(--danger);
+}
+
+.btn-submit {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, var(--accent), #b85a30);
+  color: #fff;
+  font-size: 0.95rem;
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.btn-submit:hover {
+  box-shadow: 0 6px 30px var(--accent-glow);
+  transform: translateY(-1px);
+}
+
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.google-icon {
+  flex-shrink: 0;
+}
+
+/* ========================================
+   Glass Card
+   ======================================== */
+.glass-card {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding: 28px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* ========================================
+   Post Section
+   ======================================== */
+.post-section {
+  margin-bottom: 40px;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.textarea-wrapper {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+#message-input {
+  width: 100%;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+  min-height: 80px;
+  transition: var(--transition);
+  line-height: 1.5;
+}
+
+#message-input::placeholder {
+  color: var(--text-muted);
+}
+
+#message-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.char-counter {
+  position: absolute;
+  bottom: 10px;
+  right: 14px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.char-counter.warning {
+  color: var(--warning);
+}
+
+.char-counter.danger {
+  color: var(--danger);
+}
+
+.rate-limit-msg {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--warning);
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+#message-input.input-error {
+  border-color: #e53e3e;
+  box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.15);
+}
+
+.empty-error-msg {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 0.82rem;
+  color: #e53e3e;
+  font-weight: 500;
+}
+
+/* ========================================
+   Messages Section
+   ======================================== */
+.message-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.messages-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ========================================
+   Message Card
+   ======================================== */
+.message-card {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius);
+  padding: 20px 24px;
+  transition: var(--transition);
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-delete {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  opacity: 0.35;
+  transition: opacity 0.2s, transform 0.2s;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.btn-delete:hover {
+  opacity: 1;
+  transform: scale(1.15);
+  background: rgba(229, 62, 62, 0.1);
+}
+
+.message-card:hover {
+  background: var(--surface-hover);
+  border-color: rgba(180, 130, 80, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.message-author {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-light);
+}
+
+.message-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.message-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================
+   Empty & Loading States
+   ======================================== */
+.empty-state,
+.loading-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.loading-state {
+  padding: 40px 20px 80px;
+  /* Extra bottom padding so it's clearly visible above the footer */
+}
+
+.empty-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--glass-border);
+  border-top: 3px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========================================
+   Login Prompt
+   ======================================== */
+.login-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.login-card {
+  text-align: center;
+  max-width: 380px;
+  width: 100%;
+  padding: 48px 36px;
+}
+
+.login-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.login-card h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--text-primary), var(--accent-light));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.login-card p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 28px;
+}
+
+.login-card .btn-login {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 24px;
+}
+
+/* ========================================
+   Utility Animations
+   ======================================== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+@media (max-width: 640px) {
+  .app-container {
+    padding: 16px 14px 40px;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .glass-card {
+    padding: 20px 18px;
+  }
+
+  .user-name {
+    display: none;
+  }
+
+  .login-card {
+    padding: 36px 24px;
+  }
+}
+
+/* ========================================
+   Footer
+   ======================================== */
+.app-footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 24px 20px 32px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.app-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color var(--transition);
+}
+
+.app-footer a:hover {
+  color: var(--accent);
+}

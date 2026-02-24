@@ -1,0 +1,41 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+        "lastPostTimestamp": {
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val() + 5000)"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "messages": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "timestamp"
+      ],
+      "$message_id": {
+        ".write": "auth != null && (!data.exists() || (data.child('authorId').val() === auth.uid && !newData.exists()))",
+        ".validate": "newData.hasChildren(['text', 'author', 'authorId', 'timestamp'])",
+        "text": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
+        },
+        "author": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        },
+        "authorId": {
+          ".validate": "newData.val() === auth.uid"
+        },
+        "timestamp": {
+          ".validate": "newData.val() <= now && newData.val() >= now - 30000"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "guestbook",
+  "version": "1.0.0",
+  "description": "A simple online guestbook",
+  "scripts": {
+    "start": "docker compose -f emulator/docker-compose.yml up",
+    "test": "jest --verbose",
+    "deploy": "npm test && npx -y firebase-tools deploy --only hosting"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.1"
+  }
+}
