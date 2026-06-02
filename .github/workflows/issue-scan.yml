@@ -1,0 +1,122 @@
+name: GitHub Issue Scan & Dev Cycle
+
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'   # Weekdays at 9am UTC (5pm Taipei)
+  workflow_dispatch:         # Allow manual trigger
+
+jobs:
+  scan-and-develop:
+    name: Scan Issues & Start Dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git identity
+        run: |
+          git config user.name "Claude Code"
+          git config user.email "claude-code@auto-agent.com"
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Fetch highest priority issue
+        id: get-issue
+        run: |
+          ISSUE=$(gh issue list \
+            --label "ready-for-dev" \
+            --state open \
+            --limit 10 \
+            --json number,title,body,labels \
+            --jq 'sort_by(
+              if (.labels[].name == "priority-high") then 0
+              elif (.labels[].name == "priority-medium") then 1
+              elif (.labels[].name == "priority-low") then 2
+              else 3 end
+            ) | .[0]')
+
+          if [ "$ISSUE" = "null" ] || [ -z "$ISSUE" ]; then
+            echo "No issues ready for development"
+            echo "has_issue=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "has_issue=true" >> $GITHUB_OUTPUT
+          ISSUE_NUMBER=$(echo "$ISSUE" | jq -r '.number')
+          ISSUE_TITLE=$(echo "$ISSUE" | jq -r '.title')
+          ISSUE_BODY=$(echo "$ISSUE" | jq -r '.body')
+          echo "issue_number=$ISSUE_NUMBER" >> $GITHUB_OUTPUT
+          echo "issue_title=$ISSUE_TITLE" >> $GITHUB_OUTPUT
+          echo "$ISSUE_BODY" > /tmp/issue_body.txt
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Mark issue as in-progress
+        if: steps.get-issue.outputs.has_issue == 'true'
+        run: |
+          gh issue edit ${{ steps.get-issue.outputs.issue_number }} \
+            --add-label "in-progress" \
+            --remove-label "ready-for-dev"
+          gh issue comment ${{ steps.get-issue.outputs.issue_number }} \
+            --body "[Agent] Phase 1 開始 — 正在分析 Issue 並準備開發"
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+
+      - name: Claude Code Phase 1 + Phase 2
+        if: steps.get-issue.outputs.has_issue == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          ISSUE_NUMBER: ${{ steps.get-issue.outputs.issue_number }}
+          ISSUE_TITLE: ${{ steps.get-issue.outputs.issue_title }}
+        run: |
+          ISSUE_BODY=$(cat /tmp/issue_body.txt)
+          claude -p "You are a senior full-stack engineer agent. Execute Phase 1 and Phase 2 of the SDLC workflow.
+
+          GITHUB ISSUE #${ISSUE_NUMBER}: ${ISSUE_TITLE}
+          ISSUE BODY:
+          ${ISSUE_BODY}
+
+          === PHASE 1 — Analysis ===
+          1. Read and understand the issue requirements and acceptance criteria
+          2. Analyze the codebase to understand impact scope and potential conflicts
+          3. If the issue description is incomplete or conflicts with existing code:
+             - Comment on the issue: '[Agent] Phase 1 暫停 — 需要人工補充說明: {reason}'
+             - Run: gh issue edit ${ISSUE_NUMBER} --add-label 'needs-clarification' --remove-label 'in-progress'
+             - Stop immediately, do not proceed to Phase 2
+          4. If analysis is complete, comment on the issue:
+             '[Agent] Phase 1 完成。分析摘要：{summary} 預計影響範圍：{files/modules}'
+
+          === PHASE 2 — Development (only if Phase 1 succeeded) ===
+          1. Pull latest from main branch: git pull origin main
+          2. Create branch:
+             - New feature: feat/issue-${ISSUE_NUMBER}-{short-description}
+             - Bug fix: fix/issue-${ISSUE_NUMBER}-{short-description}
+          3. Write the code following project conventions (see CLAUDE.md)
+          4. Run 'npm test' — fix any test failures before committing
+          5. Commit with format: 'feat: {description} #${ISSUE_NUMBER}' or 'fix: ...'
+          6. Push branch and open PR:
+             - Title: '[Issue #${ISSUE_NUMBER}] {description}'
+             - Body: 'Closes #${ISSUE_NUMBER}\n\n## Changes\n{summary}\n\n## How to Test\n{steps}'
+          7. Comment on issue: '[Agent] Phase 2 完成。PR: {PR_URL} 分支：{branch_name}'
+
+          Rules:
+          - Never hardcode secrets, API keys, Firebase config, or tokens — use environment variables
+          - Follow existing code style (Vanilla JS, no frameworks)
+          - Only modify files relevant to the issue
+          - Run tests before committing"
