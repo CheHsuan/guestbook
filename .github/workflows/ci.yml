@@ -15,7 +15,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
         run: npm install
@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install dependencies
         run: npm install
@@ -120,6 +120,8 @@ jobs:
     needs: [test]
     if: success() && github.event_name == 'pull_request'
     steps:
+      - uses: actions/checkout@v4
+
       - name: Auto merge PR
         run: |
           gh pr merge ${{ github.event.pull_request.number }} \
