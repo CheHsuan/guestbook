@@ -85,7 +85,7 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          claude -p "The CI checks failed. Please do the following steps in order:
+          claude --dangerously-skip-permissions -p "The CI checks failed. Please do the following steps in order:
           1. Run 'npm test' to see current test failures
           2. Fix all failing tests — do NOT delete tests to make them pass
           3. Run 'npm test' again to verify all tests pass
