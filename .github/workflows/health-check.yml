@@ -1,0 +1,66 @@
+name: Repo Health Check
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'   # Every Monday at 2am UTC (10am Taipei)
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  health-check:
+    name: Health Check (Claude Code)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run health check
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          claude -p "You are a senior engineer performing a weekly health check on this repository. Audit the codebase and create GitHub Issues for any real problems you find.
+
+          == CHECKS TO PERFORM ==
+
+          1. **package-lock.json / lock file**
+             - If this is an application (not a library published to npm), package-lock.json should be committed and NOT in .gitignore
+             - Check .gitignore for package-lock.json, yarn.lock, etc.
+
+          2. **Hardcoded secrets**
+             - Scan for API keys, tokens, passwords, Firebase config hardcoded in source files
+             - Ignore files in .gitignore and test fixtures
+
+          3. **Outdated or vulnerable dependencies**
+             - Run 'npm install' then 'npm audit --json' and check for high/critical severity vulnerabilities
+
+          4. **CI configuration issues**
+             - Check .github/workflows/ for misconfigurations that would cause CI to fail
+
+          5. **Missing important files**
+             - .env.example (if .env is gitignored but env vars are used in code)
+             - Test files for core logic that has none
+
+          == HOW TO REPORT ==
+
+          For each real problem found:
+          - Run: gh issue list --label 'auto-generated' --state open --search '{problem title}' to check if an issue already exists
+          - If no duplicate exists, create an issue:
+            gh issue create \
+              --title '[Health Check] {short description of problem}' \
+              --body '## Problem\n{description}\n\n## Why It Matters\n{impact}\n\n## Suggested Fix\n{concrete steps to fix}' \
+              --label 'auto-generated,ready-for-dev,priority-{high|medium|low}'
+
+          Rules:
+          - Only create issues for real, concrete problems — not style preferences or hypothetical risks
+          - Do not create duplicate issues (check first)
+          - Do not create issues for things already tracked in open issues
+          - If no problems are found, do nothing"
