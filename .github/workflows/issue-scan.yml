@@ -85,7 +85,7 @@ jobs:
           ISSUE_TITLE: ${{ steps.get-issue.outputs.issue_title }}
         run: |
           ISSUE_BODY=$(cat /tmp/issue_body.txt)
-          claude -p "You are a senior full-stack engineer agent. Execute Phase 1 and Phase 2 of the SDLC workflow.
+          claude --dangerously-skip-permissions -p "You are a senior full-stack engineer agent. Execute Phase 1 and Phase 2 of the SDLC workflow.
 
           GITHUB ISSUE #${ISSUE_NUMBER}: ${ISSUE_TITLE}
           ISSUE BODY:
