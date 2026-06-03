@@ -2,7 +2,7 @@ name: GitHub Issue Scan & Dev Cycle
 
 on:
   schedule:
-    - cron: '0 9 * * 1-5'   # Weekdays at 9am UTC (5pm Taipei)
+    - cron: '47 1,6 * * 1-5'   # Weekdays at 1:47am & 6:47am UTC (9:47am & 2:47pm Taipei), 30min after health-check
   workflow_dispatch:         # Allow manual trigger
 
 jobs:
