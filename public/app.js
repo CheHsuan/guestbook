@@ -1,19 +1,4 @@
-// ========================================
-// Firebase Configuration
-// ========================================
-const firebaseConfig = {
-  apiKey: "AIzaSyAMIkdyvrdPWm-UnEhvxvzWwTNW8nj6OBM",
-  authDomain: "guestbook-3c7eb.firebaseapp.com",
-  databaseURL: "https://guestbook-3c7eb-default-rtdb.firebaseio.com",
-  projectId: "guestbook-3c7eb",
-  storageBucket: "guestbook-3c7eb.firebasestorage.app",
-  messagingSenderId: "150892133235",
-  appId: "1:150892133235:web:ff3c16da7f30c9c0caa306",
-  measurementId: "G-GRCFX9GS1C"
-};
-
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+// Initialize Firebase (config injected by /__/firebase/init.js at runtime)
 const auth = firebase.auth();
 const db = firebase.database();
 const provider = new firebase.auth.GoogleAuthProvider();
