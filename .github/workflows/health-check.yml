@@ -2,7 +2,7 @@ name: Repo Health Check
 
 on:
   schedule:
-    - cron: '0 2 * * 1'   # Every Monday at 2am UTC (10am Taipei)
+    - cron: '17 1,6 * * 1-5'   # Weekdays at 1:17am & 6:17am UTC (9:17am & 2:17pm Taipei)
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
