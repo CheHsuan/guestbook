@@ -152,9 +152,11 @@ jobs:
           == HOW TO RESPOND ==
           If ALL criteria pass:
           - Run: gh pr review ${PR_NUMBER} --approve --body '[Claude Review] LGTM ✅ All checks passed. Approving for merge.'
+          - Run: gh pr edit ${PR_NUMBER} --add-label 'LGTM'
 
           If ANY criterion fails:
           - Run: gh pr review ${PR_NUMBER} --request-changes --body '[Claude Review] ❌ Changes requested:\n\n{list each issue found with file and line if possible}'
+          - Run: gh pr edit ${PR_NUMBER} --remove-label 'LGTM' 2>/dev/null || true
 
           Be strict but fair. Only approve if the code is genuinely correct and safe."
 
