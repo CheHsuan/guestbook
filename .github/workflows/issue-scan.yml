@@ -108,7 +108,13 @@ jobs:
              - Bug fix: fix/issue-${ISSUE_NUMBER}-{short-description}
           3. Write the code following project conventions (see CLAUDE.md)
           4. Run 'npm test' — fix any test failures before committing
-          5. Commit with format: 'feat: {description} #${ISSUE_NUMBER}' or 'fix: ...'
+          5. Commit with format (always include Co-authored-by trailer):
+             git commit -m "$(cat <<'EOF'
+          feat: {description} #${ISSUE_NUMBER}
+
+          Co-authored-by: CheHsuan <exas60807@gmail.com>
+          EOF
+          )"
           6. Push branch and open PR:
              - Title: '[Issue #${ISSUE_NUMBER}] {description}'
              - Body: 'Closes #${ISSUE_NUMBER}\n\n## Changes\n{summary}\n\n## How to Test\n{steps}'
