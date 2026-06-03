@@ -112,7 +112,7 @@ jobs:
              git commit -m "$(cat <<'EOF'
           feat: {description} #${ISSUE_NUMBER}
 
-          Co-authored-by: CheHsuan <exas60807@gmail.com>
+          Co-authored-by: Claude <noreply@anthropic.com>
           EOF
           )"
           6. Push branch and open PR:
