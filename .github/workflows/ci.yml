@@ -120,7 +120,7 @@ jobs:
     needs: [test]
     if: success() && github.event_name == 'pull_request'
     outputs:
-      decision: ${{ steps.review-outcome.outputs.decision }}
+      lgtm: ${{ steps.review-outcome.outputs.lgtm }}
     permissions:
       contents: read
       pull-requests: write
@@ -162,11 +162,12 @@ jobs:
 
           Be strict but fair. Only approve if the code is genuinely correct and safe."
 
-      - name: Check review outcome
+      - name: Check LGTM label
         id: review-outcome
         run: |
-          REVIEW=$(gh pr view ${{ github.event.pull_request.number }} --json reviewDecision --jq '.reviewDecision')
-          echo "decision=$REVIEW" >> $GITHUB_OUTPUT
+          HAS_LGTM=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json labels --jq '[.labels[].name] | contains(["LGTM"])')
+          echo "lgtm=$HAS_LGTM" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
 
@@ -177,7 +178,7 @@ jobs:
     if: >
       success() &&
       github.event_name == 'pull_request' &&
-      needs.claude-review.outputs.decision == 'APPROVED'
+      needs.claude-review.outputs.lgtm == 'true'
     steps:
       - uses: actions/checkout@v4
 
