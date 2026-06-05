@@ -109,7 +109,6 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
-  totalMessagesCount = 0;
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
