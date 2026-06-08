@@ -43,9 +43,9 @@ jobs:
             --limit 10 \
             --json number,title,body,labels \
             --jq 'sort_by(
-              if (.labels[].name == "priority-high") then 0
-              elif (.labels[].name == "priority-medium") then 1
-              elif (.labels[].name == "priority-low") then 2
+              if (.labels | map(.name) | contains(["priority-high"])) then 0
+              elif (.labels | map(.name) | contains(["priority-medium"])) then 1
+              elif (.labels | map(.name) | contains(["priority-low"])) then 2
               else 3 end
             ) | .[0]')
 
