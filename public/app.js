@@ -1,13 +1,12 @@
 // Initialize Firebase
 // Production: config is injected by /__/firebase/init.js (Firebase Hosting)
-// Local: /__/firebase/init.js serves undefined config, so we init manually for the emulator
+// Local: /__/firebase/init.js serves undefined config, so we init with emulator
+//        placeholder values via getEmulatorConfig() (defined in utils.js)
 if (!firebase.apps.length) {
-  firebase.initializeApp({
-    apiKey: 'local-emulator',
-    authDomain: 'localhost',
-    databaseURL: 'http://localhost:9000?ns=local',
-    projectId: 'local',
-  });
+  const emulatorConfig = getEmulatorConfig(location.hostname);
+  if (emulatorConfig) {
+    firebase.initializeApp(emulatorConfig);
+  }
 }
 
 const auth = firebase.auth();
@@ -104,6 +103,7 @@ let oldestMessageTimestamp = null;
 let newestMessageTimestamp = null;
 let isLoadingMore = false;
 let hasMoreMessages = true;
+let totalMessagesCount = 0;
 let totalMessagesListener = null;
 const INITIAL_LOAD_LIMIT = 20;
 
@@ -120,7 +120,7 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
-  totalMessagesCount = 0;
+  totalMessagesCount = 0; // reset declared variable (see State section)
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
