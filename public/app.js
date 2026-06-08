@@ -103,7 +103,6 @@ let oldestMessageTimestamp = null;
 let newestMessageTimestamp = null;
 let isLoadingMore = false;
 let hasMoreMessages = true;
-let totalMessagesCount = 0;
 let totalMessagesListener = null;
 const INITIAL_LOAD_LIMIT = 20;
 
@@ -120,7 +119,6 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
-  totalMessagesCount = 0; // reset declared variable (see State section)
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');

@@ -81,17 +81,7 @@ function getCharCounterState(length) {
     return { text, level };
 }
 
-/**
- * Return Firebase config for the local emulator, or null in production.
- *
- * These are emulator-only PLACEHOLDER values — NOT real credentials.
- * The Firebase emulator accepts any non-empty apiKey; databaseURL points to
- * localhost only. Real project config is injected by Firebase Hosting via
- * /__/firebase/init.js and is never stored in source (see CLAUDE.md).
- *
- * @param {string} hostname - e.g. location.hostname
- * @returns {{ apiKey, authDomain, databaseURL, projectId } | null}
- */
+// Emulator-only placeholder values — NOT real credentials (see CLAUDE.md).
 function getEmulatorConfig(hostname) {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
         return {
