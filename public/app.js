@@ -1,4 +1,15 @@
-// Initialize Firebase (config injected by /__/firebase/init.js at runtime)
+// Initialize Firebase
+// Production: config is injected by /__/firebase/init.js (Firebase Hosting)
+// Local: /__/firebase/init.js serves undefined config, so we init manually for the emulator
+if (!firebase.apps.length) {
+  firebase.initializeApp({
+    apiKey: 'local-emulator',
+    authDomain: 'localhost',
+    databaseURL: 'http://localhost:9000?ns=local',
+    projectId: 'local',
+  });
+}
+
 const auth = firebase.auth();
 const db = firebase.database();
 const provider = new firebase.auth.GoogleAuthProvider();
@@ -109,6 +120,7 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
+  totalMessagesCount = 0;
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
