@@ -101,6 +101,7 @@ describe('createMessageCard', () => {
     global.getEmulatorConfig = utils.getEmulatorConfig;
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -185,6 +186,7 @@ describe('post form submit handler', () => {
     global.getEmulatorConfig = utils.getEmulatorConfig;
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -287,6 +289,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.getEmulatorConfig = utils.getEmulatorConfig;
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -381,6 +384,7 @@ describe('stopListeningMessages cleanup', () => {
     global.getEmulatorConfig = utils.getEmulatorConfig;
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
