@@ -81,9 +81,7 @@ function getCharCounterState(length) {
     return { text, level };
 }
 
-/**
- * Check if the scroll position is within threshold pixels of the bottom.
- */
+// Returns true when scroll position is within threshold px of the bottom.
 function isNearBottom(scrollPosition, bodyHeight, threshold = 200) {
     return scrollPosition >= bodyHeight - threshold;
 }

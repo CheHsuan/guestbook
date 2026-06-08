@@ -4,9 +4,7 @@
 
 'use strict';
 
-// ========================================
-// HTML fixture — mirrors the DOM elements app.js grabs at load time
-// ========================================
+// --- HTML fixture — mirrors the DOM elements app.js grabs at load time ---
 const APP_HTML = `
   <button id="login-btn-main"></button>
   <button id="logout-btn"></button>
@@ -32,9 +30,7 @@ const APP_HTML = `
   <span id="message-count">0</span>
 `;
 
-// ========================================
-// Firebase mock factory — re-created each test to reset call counts
-// ========================================
+// --- Firebase mock factory — re-created each test to reset call counts ---
 function makeFirebaseMock() {
   const dbRef = {
     push: jest.fn().mockReturnValue({ key: 'mock-key-abc' }),
@@ -89,9 +85,7 @@ function makeFirebaseMock() {
   };
 }
 
-// ========================================
-// createMessageCard — pure DOM builder tests
-// ========================================
+// --- createMessageCard ---
 describe('createMessageCard', () => {
   let createMessageCard;
 
@@ -164,9 +158,7 @@ describe('createMessageCard', () => {
   });
 });
 
-// ========================================
-// Form submit handler
-// ========================================
+// --- Form submit handler ---
 describe('post form submit handler', () => {
   let mocks;
   let authStateCallback;
@@ -264,9 +256,7 @@ describe('post form submit handler', () => {
   });
 });
 
-// ========================================
-// PERMISSION_DENIED error handling
-// ========================================
+// --- PERMISSION_DENIED error handling ---
 describe('PERMISSION_DENIED rate-limit handling', () => {
   let mocks;
   let authStateCallback;
@@ -358,9 +348,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
   });
 });
 
-// ========================================
-// stopListeningMessages cleanup
-// ========================================
+// --- stopListeningMessages cleanup ---
 describe('stopListeningMessages cleanup', () => {
   let mocks;
   let authStateCallback;
