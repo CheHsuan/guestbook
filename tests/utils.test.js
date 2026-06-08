@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -193,5 +193,44 @@ describe('getCharCounterState', () => {
     test('shows warning at 229 characters', () => {
         const state = getCharCounterState(229);
         expect(state.level).toBe('warning');
+    });
+});
+
+// ========================================
+// getEmulatorConfig
+// ========================================
+describe('getEmulatorConfig', () => {
+    test('returns config for localhost', () => {
+        const config = getEmulatorConfig('localhost');
+        expect(config).not.toBeNull();
+        expect(config.apiKey).toBe('local-emulator');
+        expect(config.databaseURL).toContain('localhost:9000');
+        expect(config.projectId).toBe('local');
+    });
+
+    test('returns config for 127.0.0.1', () => {
+        const config = getEmulatorConfig('127.0.0.1');
+        expect(config).not.toBeNull();
+        expect(config.databaseURL).toContain('localhost:9000');
+    });
+
+    test('returns null for production hostname', () => {
+        expect(getEmulatorConfig('guestbook.slashstack.app')).toBeNull();
+    });
+
+    test('returns null for empty string', () => {
+        expect(getEmulatorConfig('')).toBeNull();
+    });
+
+    test('returns null for undefined', () => {
+        expect(getEmulatorConfig(undefined)).toBeNull();
+    });
+
+    test('config includes all required Firebase fields', () => {
+        const config = getEmulatorConfig('localhost');
+        expect(config).toHaveProperty('apiKey');
+        expect(config).toHaveProperty('authDomain');
+        expect(config).toHaveProperty('databaseURL');
+        expect(config).toHaveProperty('projectId');
     });
 });

@@ -81,7 +81,20 @@ function getCharCounterState(length) {
     return { text, level };
 }
 
+// Emulator-only placeholder values — NOT real credentials (see CLAUDE.md).
+function getEmulatorConfig(hostname) {
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return {
+            apiKey: 'local-emulator',
+            authDomain: 'localhost',
+            databaseURL: 'http://localhost:9000?ns=local',
+            projectId: 'local',
+        };
+    }
+    return null;
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig };
 }

@@ -1,4 +1,14 @@
-// Initialize Firebase (config injected by /__/firebase/init.js at runtime)
+// Initialize Firebase
+// Production: config is injected by /__/firebase/init.js (Firebase Hosting)
+// Local: /__/firebase/init.js serves undefined config, so we init with emulator
+//        placeholder values via getEmulatorConfig() (defined in utils.js)
+if (!firebase.apps.length) {
+  const emulatorConfig = getEmulatorConfig(location.hostname);
+  if (emulatorConfig) {
+    firebase.initializeApp(emulatorConfig);
+  }
+}
+
 const auth = firebase.auth();
 const db = firebase.database();
 const provider = new firebase.auth.GoogleAuthProvider();
