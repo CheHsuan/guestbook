@@ -158,7 +158,7 @@ async function startListeningMessages() {
       }
 
       messages.forEach(msg => {
-        const card = createMessageCard(msg);
+        const card = createMessageCard(msg, currentUser);
         messagesContainer.appendChild(card);
       });
     }
@@ -201,7 +201,7 @@ async function startListeningMessages() {
         newestMessageTimestamp = msg.timestamp;
         emptyState.style.display = 'none';
 
-        const card = createMessageCard(msg);
+        const card = createMessageCard(msg, currentUser);
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
       }
@@ -278,7 +278,7 @@ async function loadMoreMessages() {
     }
 
     messages.forEach(msg => {
-      const card = createMessageCard(msg);
+      const card = createMessageCard(msg, currentUser);
       // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
     });
@@ -292,12 +292,9 @@ async function loadMoreMessages() {
 }
 
 function handleScroll() {
-  // Check if we are near the bottom of the page
   const scrollPosition = window.innerHeight + window.scrollY;
   const bodyHeight = document.body.offsetHeight;
-
-  // If we're within 200px of the bottom, load more
-  if (scrollPosition >= bodyHeight - 200) {
+  if (isNearBottom(scrollPosition, bodyHeight)) {
     loadMoreMessages();
   }
 }
@@ -327,9 +324,10 @@ function stopListeningMessages() {
 // ========================================
 // Create Message Card Element
 // ========================================
-function createMessageCard(msg) {
+function createMessageCard(msg, user) {
   const card = document.createElement('div');
   card.className = 'message-card';
+  card.id = `msg-${msg.id}`;
 
   const header = document.createElement('div');
   header.className = 'message-header';
@@ -353,7 +351,7 @@ function createMessageCard(msg) {
   card.appendChild(textEl);
 
   // Show delete button only for own messages
-  if (currentUser && msg.authorId === currentUser.uid) {
+  if (user && msg.authorId === user.uid) {
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete';
     deleteBtn.textContent = '🗑️';
@@ -463,3 +461,8 @@ postForm.addEventListener('submit', async (e) => {
     submitBtn.querySelector('.btn-loading').style.display = 'none';
   }
 });
+
+// Export for testing (Node.js / Jest)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { createMessageCard };
+}
