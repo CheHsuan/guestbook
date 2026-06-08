@@ -81,6 +81,13 @@ function getCharCounterState(length) {
     return { text, level };
 }
 
+/**
+ * Check if the scroll position is within threshold pixels of the bottom.
+ */
+function isNearBottom(scrollPosition, bodyHeight, threshold = 200) {
+    return scrollPosition >= bodyHeight - threshold;
+}
+
 // Emulator-only placeholder values — NOT real credentials (see CLAUDE.md).
 function getEmulatorConfig(hostname) {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -96,5 +103,5 @@ function getEmulatorConfig(hostname) {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom };
 }

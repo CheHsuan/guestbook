@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -232,5 +232,40 @@ describe('getEmulatorConfig', () => {
         expect(config).toHaveProperty('authDomain');
         expect(config).toHaveProperty('databaseURL');
         expect(config).toHaveProperty('projectId');
+    });
+});
+
+// ========================================
+// isNearBottom
+// ========================================
+describe('isNearBottom', () => {
+    test('returns true when scroll position equals body height minus threshold', () => {
+        expect(isNearBottom(800, 1000, 200)).toBe(true);
+    });
+
+    test('returns true when scroll position is past the threshold', () => {
+        expect(isNearBottom(850, 1000, 200)).toBe(true);
+    });
+
+    test('returns false when scroll position is above the threshold', () => {
+        expect(isNearBottom(799, 1000, 200)).toBe(false);
+    });
+
+    test('uses default threshold of 200', () => {
+        expect(isNearBottom(800, 1000)).toBe(true);
+        expect(isNearBottom(799, 1000)).toBe(false);
+    });
+
+    test('works with custom threshold', () => {
+        expect(isNearBottom(950, 1000, 50)).toBe(true);
+        expect(isNearBottom(949, 1000, 50)).toBe(false);
+    });
+
+    test('returns true when at exact bottom', () => {
+        expect(isNearBottom(1000, 1000, 200)).toBe(true);
+    });
+
+    test('returns false when far from bottom', () => {
+        expect(isNearBottom(100, 10000, 200)).toBe(false);
     });
 });
