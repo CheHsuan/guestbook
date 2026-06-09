@@ -438,6 +438,164 @@ describe('sign-out behaviour', () => {
   });
 });
 
+// --- infinite scroll / loadMoreMessages ---
+describe('infinite scroll / loadMoreMessages', () => {
+  let mocks;
+  let authStateCallback;
+
+  function makeMessages(n, baseTs, prefix = 'msg') {
+    const msgs = [];
+    for (let i = 0; i < n; i++) {
+      msgs.push({
+        id: `${prefix}-${i}`,
+        author: `Author ${i}`,
+        text: `Text ${i}`,
+        timestamp: baseTs - i * 1000,
+        authorId: `uid-${i}`,
+      });
+    }
+    return msgs;
+  }
+
+  function makeSnapshot(messages) {
+    return {
+      exists: () => messages.length > 0,
+      numChildren: () => messages.length,
+      forEach: fn => messages.forEach(m => fn({
+        key: m.id,
+        val: () => ({ author: m.author, text: m.text, timestamp: m.timestamp, authorId: m.authorId }),
+      })),
+    };
+  }
+
+  async function loadInitialMessages(messages) {
+    mocks.dbRef.once.mockResolvedValueOnce(makeSnapshot(messages));
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    jest.useFakeTimers();
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = jest.fn().mockReturnValue(false);
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('appends older messages to the DOM when called', async () => {
+    const BASE_TS = 1_000_000;
+    const initial = makeMessages(20, BASE_TS);
+    const older = makeMessages(5, BASE_TS - 25_000, 'old');
+
+    await loadInitialMessages(initial);
+    mocks.dbRef.once.mockResolvedValueOnce(makeSnapshot(older));
+
+    const container = document.getElementById('messages-container');
+    expect(container.querySelectorAll('.message-card').length).toBe(20);
+
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(600);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(container.querySelectorAll('.message-card').length).toBe(25);
+  });
+
+  test('uses oldest visible message timestamp as cursor for the next query', async () => {
+    const BASE_TS = 1_000_000;
+    const initial = makeMessages(20, BASE_TS);
+    await loadInitialMessages(initial);
+
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+
+    expect(mocks.dbRef.endBefore).toHaveBeenCalledWith(BASE_TS - 19_000);
+  });
+
+  test('stops loading more when Firebase returns a partial batch', async () => {
+    const BASE_TS = 1_000_000;
+    const initial = makeMessages(20, BASE_TS);
+    const partial = makeMessages(3, BASE_TS - 25_000, 'partial');
+
+    await loadInitialMessages(initial);
+    mocks.dbRef.once.mockResolvedValueOnce(makeSnapshot(partial));
+
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+
+    // First scroll — triggers load-more with 3 results (< INITIAL_LOAD_LIMIT of 20)
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(600);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const onceCountAfterFirstScroll = mocks.dbRef.once.mock.calls.length;
+
+    // Second scroll — hasMoreMessages is now false, so loadMoreMessages should bail
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+
+    expect(mocks.dbRef.once.mock.calls.length).toBe(onceCountAfterFirstScroll);
+  });
+
+  test('handleScroll triggers loadMoreMessages when near bottom of page', async () => {
+    const BASE_TS = 1_000_000;
+    const initial = makeMessages(20, BASE_TS);
+    await loadInitialMessages(initial);
+
+    const onceCallsBefore = mocks.dbRef.once.mock.calls.length;
+
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+
+    expect(mocks.dbRef.once.mock.calls.length).toBeGreaterThan(onceCallsBefore);
+  });
+
+  test('handleScroll does not trigger loadMoreMessages while a load is in flight', async () => {
+    const BASE_TS = 1_000_000;
+    const initial = makeMessages(20, BASE_TS);
+    await loadInitialMessages(initial);
+
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+
+    // First scroll starts load-more; isLoadingMore becomes true synchronously before any await
+    window.dispatchEvent(new Event('scroll'));
+    // Second scroll fires while isLoadingMore is still true — should be a no-op
+    window.dispatchEvent(new Event('scroll'));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(600);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 1 initial load + 1 load-more = 2; second scroll was ignored by isLoadingMore guard
+    expect(mocks.dbRef.once.mock.calls.length).toBe(2);
+  });
+});
+
 // --- unauthenticated visitor ---
 describe('unauthenticated visitor', () => {
   let mocks;
