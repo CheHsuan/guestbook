@@ -6,6 +6,7 @@
 
 // --- HTML fixture — mirrors the DOM elements app.js grabs at load time ---
 const APP_HTML = `
+  <button id="login-btn-header" style="display:none"></button>
   <button id="login-btn-main"></button>
   <button id="logout-btn"></button>
   <div id="user-info" style="display:none"></div>
@@ -13,16 +14,18 @@ const APP_HTML = `
   <span id="user-name"></span>
   <div id="main-content" style="display:none"></div>
   <div id="login-prompt" style="display:flex"></div>
-  <form id="post-form">
-    <input id="message-input" type="text" />
-    <span id="char-counter">0 / 250</span>
-    <button id="submit-btn" type="submit">
-      <span class="btn-text" style="display:inline"></span>
-      <span class="btn-loading" style="display:none"></span>
-    </button>
-    <span id="empty-error-msg" style="display:none"></span>
-    <div id="rate-limit-msg" style="display:none"></div>
-  </form>
+  <div id="post-section" style="display:none">
+    <form id="post-form">
+      <input id="message-input" type="text" />
+      <span id="char-counter">0 / 250</span>
+      <button id="submit-btn" type="submit">
+        <span class="btn-text" style="display:inline"></span>
+        <span class="btn-loading" style="display:none"></span>
+      </button>
+      <span id="empty-error-msg" style="display:none"></span>
+      <div id="rate-limit-msg" style="display:none"></div>
+    </form>
+  </div>
   <div id="messages-container">
     <div id="loading-state" style="display:none"></div>
     <div id="empty-state" style="display:none"></div>
@@ -348,8 +351,8 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
   });
 });
 
-// --- stopListeningMessages cleanup ---
-describe('stopListeningMessages cleanup', () => {
+// --- sign-out behaviour ---
+describe('sign-out behaviour', () => {
   let mocks;
   let authStateCallback;
 
@@ -361,7 +364,6 @@ describe('stopListeningMessages cleanup', () => {
     mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
       authStateCallback = cb;
     });
-    // Provide a snapshot with one message for initial load
     mocks.dbRef.once.mockResolvedValue({
       exists: () => true,
       numChildren: () => 1,
@@ -378,19 +380,37 @@ describe('stopListeningMessages cleanup', () => {
     require('../public/app.js');
   });
 
-  test('clears message-count to 0 on sign-out', async () => {
+  test('hides post section on sign-out', async () => {
     authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
     await Promise.resolve();
     await Promise.resolve();
 
-    // Sign out triggers stopListeningMessages
     authStateCallback(null);
 
-    const messageCount = document.getElementById('message-count');
-    expect(messageCount.textContent).toBe('0');
+    expect(document.getElementById('post-section').style.display).toBe('none');
   });
 
-  test('calls db.ref().off() for listeners on sign-out', async () => {
+  test('shows login-btn-header on sign-out', async () => {
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    authStateCallback(null);
+
+    expect(document.getElementById('login-btn-header').style.display).toBe('inline-flex');
+  });
+
+  test('keeps main-content visible on sign-out', async () => {
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    authStateCallback(null);
+
+    expect(document.getElementById('main-content').style.display).toBe('block');
+  });
+
+  test('does not detach realtime listeners on sign-out', async () => {
     authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
     await Promise.resolve();
     await Promise.resolve();
@@ -399,23 +419,110 @@ describe('stopListeningMessages cleanup', () => {
 
     authStateCallback(null);
 
-    // Should have called .off() to detach the realtime listeners
-    expect(mocks.dbRef.off.mock.calls.length).toBeGreaterThan(offCallsBefore);
+    expect(mocks.dbRef.off.mock.calls.length).toBe(offCallsBefore);
   });
 
-  test('removes message cards from DOM on sign-out', async () => {
+  test('keeps message cards in DOM on sign-out', async () => {
     authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
     await Promise.resolve();
     await Promise.resolve();
 
     const container = document.getElementById('messages-container');
-    // Manually add a card to simulate rendered state
     const card = document.createElement('div');
     card.className = 'message-card';
     container.appendChild(card);
 
     authStateCallback(null);
 
-    expect(container.querySelectorAll('.message-card').length).toBe(0);
+    expect(container.querySelectorAll('.message-card').length).toBeGreaterThan(0);
+  });
+});
+
+// --- unauthenticated visitor ---
+describe('unauthenticated visitor', () => {
+  let mocks;
+  let authStateCallback;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
+      authStateCallback = cb;
+    });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  });
+
+  test('shows main-content without sign-in', () => {
+    authStateCallback(null);
+    expect(document.getElementById('main-content').style.display).toBe('block');
+  });
+
+  test('hides post section without sign-in', () => {
+    authStateCallback(null);
+    expect(document.getElementById('post-section').style.display).toBe('none');
+  });
+
+  test('shows login-btn-header without sign-in', () => {
+    authStateCallback(null);
+    expect(document.getElementById('login-btn-header').style.display).toBe('inline-flex');
+  });
+
+  test('hides login-prompt without sign-in', () => {
+    authStateCallback(null);
+    expect(document.getElementById('login-prompt').style.display).toBe('none');
+  });
+
+  test('starts listening to messages without sign-in', () => {
+    authStateCallback(null);
+    expect(mocks.dbRef.once).toHaveBeenCalled();
+  });
+
+  test('does not start duplicate listeners when user signs in after anonymous browsing', async () => {
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const onCallsAfterAnon = mocks.dbRef.on.mock.calls.length;
+
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.on.mock.calls.length).toBe(onCallsAfterAnon);
+  });
+
+  test('shows post section after sign-in', async () => {
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    expect(document.getElementById('post-section').style.display).toBe('block');
+  });
+
+  test('hides login-btn-header after sign-in', async () => {
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    expect(document.getElementById('login-btn-header').style.display).toBe('none');
   });
 });
