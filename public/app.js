@@ -24,12 +24,14 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 // DOM Elements
 // ========================================
 const loginBtnMain = document.getElementById('login-btn-main');
+const loginBtnHeader = document.getElementById('login-btn-header');
 const logoutBtn = document.getElementById('logout-btn');
 const userInfo = document.getElementById('user-info');
 const userAvatar = document.getElementById('user-avatar');
 const userName = document.getElementById('user-name');
 const mainContent = document.getElementById('main-content');
 const loginPrompt = document.getElementById('login-prompt');
+const postSection = document.getElementById('post-section');
 const postForm = document.getElementById('post-form');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
@@ -62,6 +64,7 @@ function signOut() {
 }
 
 loginBtnMain.addEventListener('click', signIn);
+loginBtnHeader.addEventListener('click', signIn);
 logoutBtn.addEventListener('click', signOut);
 
 // ========================================
@@ -70,24 +73,25 @@ logoutBtn.addEventListener('click', signOut);
 auth.onAuthStateChanged((user) => {
   currentUser = user;
 
+  // Message feed is always visible; login prompt is never shown full-screen
+  mainContent.style.display = 'block';
+  loginPrompt.style.display = 'none';
+
   if (user) {
-    // User is signed in
     userInfo.style.display = 'flex';
     userAvatar.src = user.photoURL || '';
     userName.textContent = user.displayName || 'User';
-    mainContent.style.display = 'block';
-    loginPrompt.style.display = 'none';
-
-    // Start listening for messages
-    startListeningMessages();
+    postSection.style.display = 'block';
+    loginBtnHeader.style.display = 'none';
   } else {
-    // User is signed out
     userInfo.style.display = 'none';
-    mainContent.style.display = 'none';
-    loginPrompt.style.display = 'flex';
+    postSection.style.display = 'none';
+    loginBtnHeader.style.display = 'inline-flex';
+  }
 
-    // Stop listening for messages
-    stopListeningMessages();
+  // Start the listener once; skip if already running to avoid duplicate listeners
+  if (!realtimeAddedListener) {
+    startListeningMessages();
   }
 });
 
