@@ -13,9 +13,8 @@
   "type": "commonjs",
   "devDependencies": {
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0"
-  },
-  "dependencies": {
+    "jest-environment-jsdom": "^29.7.0",
     "firebase-admin": "^13.6.1"
-  }
+  },
+  "dependencies": {}
 }
