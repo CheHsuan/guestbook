@@ -1,0 +1,96 @@
+name: Feature Research & Spec
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # Daily at 2:00am UTC (10:00am Taipei)
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  feature-research:
+    name: Research & Write Feature Spec
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run feature research
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          claude --dangerously-skip-permissions -p "You are a senior product manager researching how to improve this guestbook web app. Your job is to identify ONE valuable feature to add, then write a complete feature spec as a GitHub Issue.
+
+          == STEP 1: UNDERSTAND THE CURRENT PRODUCT ==
+          Read these files to understand what the app currently does:
+          - CLAUDE.md (project overview)
+          - public/app.js (core functionality)
+          - public/app.html (UI structure)
+
+          == STEP 2: CHECK EXISTING ISSUES ==
+          Run: gh issue list --state open --limit 50 --json number,title,labels --label 'feature-spec'
+          Also run: gh issue list --state closed --limit 30 --json number,title,labels --label 'feature-spec'
+          Take note of all feature specs already proposed (open or closed) — do NOT propose duplicates or very similar ideas.
+
+          == STEP 3: RESEARCH COMPETING SERVICES ==
+          Use WebSearch to research:
+          1. What features do similar guestbook/comment/shoutbox services offer? (e.g. Disqus, Cove, Guestbook.io, Commento, simple guestbook apps)
+          2. What do users commonly request or complain about in these services?
+          3. What is a realistic, high-value feature that fits the simplicity of this Vanilla JS + Firebase app?
+
+          Focus on features that are:
+          - Genuinely useful to end users of a public guestbook
+          - Technically feasible with Firebase Realtime DB + Vanilla JS
+          - Not already in the app or proposed in existing issues
+
+          == STEP 4: PICK THE BEST IDEA ==
+          Choose the single most valuable feature idea. Avoid:
+          - Features requiring a backend server or paid APIs
+          - Features that dramatically change the simplicity of the app
+          - Vague ideas like 'improve performance' — must be concrete and shippable
+
+          == STEP 5: WRITE THE FEATURE SPEC ==
+          Create a GitHub Issue with this exact structure:
+
+          Title: [Feature Spec] {short feature name}
+
+          Body:
+          ## Overview
+          {1-2 sentence summary of the feature and why it matters}
+
+          ## Problem Statement
+          {What problem does this solve? Who is affected?}
+
+          ## User Story
+          As a {type of user}, I want {goal}, so that {benefit}.
+
+          ## Acceptance Criteria
+          - [ ] {specific, testable criterion 1}
+          - [ ] {specific, testable criterion 2}
+          - [ ] {specific, testable criterion 3}
+          (add more as needed)
+
+          ## UI / UX Notes
+          {Describe how it should look or behave. Include any edge cases.}
+
+          ## Out of Scope
+          {What this feature deliberately does NOT include}
+
+          ## Competitive Reference
+          {Which competing service has this feature? Link or describe how they do it.}
+
+          Then run:
+          gh issue create \
+            --title '[Feature Spec] {feature name}' \
+            --body '{full spec body above}' \
+            --label 'feature-spec,ready-for-dev,priority-medium'
+
+          == RULES ==
+          - Only create ONE issue per run
+          - Do not create an issue if all good ideas are already tracked
+          - Be specific and concrete — no vague specs
+          - The spec must be actionable by a developer with no additional context"
