@@ -37,6 +37,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
+          ref: ${{ github.head_ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -188,6 +189,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
+          ref: ${{ github.head_ref }}
 
       - uses: actions/setup-node@v4
         with:
