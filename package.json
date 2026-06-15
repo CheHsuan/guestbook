@@ -5,7 +5,7 @@
   "scripts": {
     "start": "docker compose -f emulator/docker-compose.yml up",
     "test": "jest --verbose",
-    "deploy": "npm test && npx -y firebase-tools deploy --only hosting"
+    "deploy": "npm test && npx -y firebase-tools deploy --only hosting,database"
   },
   "keywords": [],
   "author": "",
