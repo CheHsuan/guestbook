@@ -8,7 +8,8 @@
     content="A free online guestbook — share your thoughts, leave a message, and connect with people around the world.">
   <title>Guestbook — Share your thoughts with the world</title>
   <link rel="canonical" href="https://guestbook.slashstack.app/app">
-  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="alternate icon" type="image/png" href="/icon.png">
 
   <!-- Open Graph -->
   <meta property="og:title" content="Guestbook — Share your thoughts with the world">
@@ -21,23 +22,20 @@
   <meta property="og:image:height" content="630">
   <meta property="og:site_name" content="Guestbook">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 
 <body>
-  <!-- Animated background blobs -->
-  <div class="bg-blob blob-1"></div>
-  <div class="bg-blob blob-2"></div>
-  <div class="bg-blob blob-3"></div>
-
   <div class="app-container">
     <!-- Header -->
     <header class="app-header">
       <div class="logo">
-        <img src="/icon.png" alt="Guestbook" class="logo-icon-img">
+        <svg class="logo-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="var(--accent)" />
+          <path
+            d="M9 9.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7.4L11 24.5V20H9a1.5 1.5 0 0 1-1.5-1.5v-7.5A1.5 1.5 0 0 1 9 9.5Z"
+            fill="var(--accent-contrast)" />
+        </svg>
         <h1>Guestbook</h1>
       </div>
       <div id="auth-section">
@@ -108,7 +106,10 @@
     <!-- Login prompt — only visible when logged out -->
     <div id="login-prompt" class="login-prompt">
       <div class="glass-card login-card">
-        <span class="login-icon">🔒</span>
+        <svg class="login-icon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor"
+          stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
         <h2>Welcome to the Guestbook</h2>
         <p>Sign in to view and leave messages.</p>
         <button id="login-btn-main" class="btn btn-login">
@@ -140,8 +141,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <!-- Auto-initializes Firebase with project config via Firebase Hosting reserved URL -->
   <script src="/__/firebase/init.js"></script>
-  <script src="utils.js?v=3"></script>
-  <script src="app.js?v=4"></script>
+  <script src="utils.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 
 </html>

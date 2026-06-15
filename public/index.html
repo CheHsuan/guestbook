@@ -8,7 +8,8 @@
     content="A free online guestbook — share your thoughts, leave a message, and connect with people around the world. Simple, beautiful, and open to everyone.">
   <title>Guestbook — Share your thoughts with the world</title>
   <link rel="canonical" href="https://guestbook.slashstack.app/">
-  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="alternate icon" type="image/png" href="/icon.png">
 
   <!-- Open Graph -->
   <meta property="og:title" content="Guestbook — Share your thoughts and connect with the world">
@@ -39,9 +40,6 @@
   }
   </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     *,
     *::before,
@@ -52,64 +50,43 @@
     }
 
     :root {
-      --bg: #fff8f0;
-      --text: #3d2e1f;
-      --text-muted: #8a7560;
-      --accent: #d4784a;
-      --accent-hover: #b85a30;
-      --card-bg: rgba(255, 255, 255, 0.7);
-      --card-border: rgba(180, 130, 80, 0.18);
+      --bg: #ffffff;
+      --bg-subtle: #f7f9f9;
+      --text: #0f1419;
+      --text-muted: #536471;
+      --accent: #0f1419;
+      --accent-hover: #272c30;
+      --accent-contrast: #ffffff;
+      --card-bg: #ffffff;
+      --card-border: #eff3f4;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --bg-subtle: #16181c;
+        --text: #e7e9ea;
+        --text-muted: #71767b;
+        --accent: #eff3f4;
+        --accent-hover: #d7dbdc;
+        --accent-contrast: #0f1419;
+        --card-bg: #16181c;
+        --card-border: #2f3336;
+      }
     }
 
     body {
-      font-family: 'Inter', -apple-system, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      overflow-x: hidden;
-    }
-
-    /* Background blobs */
-    .blob {
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(120px);
-      opacity: 0.25;
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    .blob-1 {
-      width: 500px;
-      height: 500px;
-      background: radial-gradient(circle, #ffc87a, transparent 70%);
-      top: -120px;
-      left: -120px;
-    }
-
-    .blob-2 {
-      width: 400px;
-      height: 400px;
-      background: radial-gradient(circle, #ffb0a0, transparent 70%);
-      bottom: -80px;
-      right: -80px;
-    }
-
-    .blob-3 {
-      width: 350px;
-      height: 350px;
-      background: radial-gradient(circle, #ffe0a0, transparent 70%);
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      -webkit-font-smoothing: antialiased;
     }
 
     /* Layout */
     .container {
-      position: relative;
-      z-index: 1;
       max-width: 640px;
       margin: 0 auto;
       padding: 60px 24px 40px;
@@ -144,11 +121,8 @@
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 20px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
       padding: 48px 40px;
       text-align: center;
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
       width: 100%;
       max-width: 480px;
       margin-bottom: 40px;
@@ -162,12 +136,10 @@
 
     .hero-card h2 {
       font-size: 1.5rem;
-      font-weight: 700;
+      font-weight: 800;
+      letter-spacing: -0.01em;
       margin-bottom: 16px;
-      background: linear-gradient(135deg, var(--text), var(--accent));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--text);
     }
 
     .hero-card p {
@@ -181,23 +153,22 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 14px 32px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-hover));
-      color: #fff;
+      padding: 13px 32px;
+      background: var(--accent);
+      color: var(--accent-contrast);
       font-size: 1rem;
-      font-weight: 600;
+      font-weight: 700;
       font-family: inherit;
       border: none;
-      border-radius: 12px;
+      border-radius: 999px;
       cursor: pointer;
       text-decoration: none;
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: background 0.15s ease;
       margin-top: 8px;
     }
 
     .cta-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(212, 120, 74, 0.3);
+      background: var(--accent-hover);
     }
 
     /* Features */
@@ -298,13 +269,14 @@
 </head>
 
 <body>
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
-  <div class="blob blob-3"></div>
-
   <div class="container">
     <div class="logo">
-      <img src="/icon.png" alt="Guestbook">
+      <svg viewBox="0 0 32 32" width="40" height="40" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="var(--accent)" />
+        <path
+          d="M9 9.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7.4L11 24.5V20H9a1.5 1.5 0 0 1-1.5-1.5v-7.5A1.5 1.5 0 0 1 9 9.5Z"
+          fill="var(--accent-contrast)" />
+      </svg>
       <h1>Guestbook</h1>
     </div>
 
