@@ -343,6 +343,12 @@ function createMessageCard(msg, user) {
   const timeEl = document.createElement('span');
   timeEl.className = 'message-time';
   timeEl.textContent = formatTimestamp(msg.timestamp);
+  if (msg.editedAt) {
+    const editedLabel = document.createElement('span');
+    editedLabel.className = 'edited-label';
+    editedLabel.textContent = ' · edited';
+    timeEl.appendChild(editedLabel);
+  }
 
   header.appendChild(authorEl);
   header.appendChild(timeEl);
@@ -354,8 +360,13 @@ function createMessageCard(msg, user) {
   card.appendChild(header);
   card.appendChild(textEl);
 
-  // Show delete button only for own messages
+  // Show edit + delete buttons only for own messages
   if (user && msg.authorId === user.uid) {
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn-edit';
+    editBtn.textContent = '✏️';
+    editBtn.title = 'Edit message';
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete';
     deleteBtn.textContent = '🗑️';
@@ -369,10 +380,125 @@ function createMessageCard(msg, user) {
         alert('Failed to delete message.');
       }
     });
+
+    editBtn.addEventListener('click', () => {
+      // Hide read-only text and action buttons
+      textEl.style.display = 'none';
+      editBtn.style.display = 'none';
+      deleteBtn.style.display = 'none';
+
+      // Build edit UI
+      const editWrapper = document.createElement('div');
+      editWrapper.className = 'edit-wrapper';
+
+      const textarea = document.createElement('textarea');
+      textarea.className = 'edit-textarea';
+      textarea.value = msg.text;
+      textarea.maxLength = 250;
+
+      const editCounter = document.createElement('span');
+      editCounter.className = 'edit-char-counter';
+      updateEditCounter(editCounter, textarea.value.length);
+
+      textarea.addEventListener('input', () => {
+        updateEditCounter(editCounter, textarea.value.length);
+      });
+
+      const editError = document.createElement('p');
+      editError.className = 'edit-error-msg';
+      editError.style.display = 'none';
+
+      const editActions = document.createElement('div');
+      editActions.className = 'edit-actions';
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-save';
+      saveBtn.textContent = 'Save';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-cancel';
+      cancelBtn.textContent = 'Cancel';
+
+      editActions.appendChild(saveBtn);
+      editActions.appendChild(cancelBtn);
+
+      editWrapper.appendChild(textarea);
+      editWrapper.appendChild(editCounter);
+      editWrapper.appendChild(editError);
+      editWrapper.appendChild(editActions);
+      card.insertBefore(editWrapper, editBtn);
+
+      textarea.focus();
+
+      cancelBtn.addEventListener('click', () => {
+        editWrapper.remove();
+        textEl.style.display = '';
+        editBtn.style.display = '';
+        deleteBtn.style.display = '';
+      });
+
+      saveBtn.addEventListener('click', async () => {
+        const validation = validateMessage(textarea.value);
+        if (!validation.valid) {
+          editError.textContent = validation.error;
+          editError.style.display = 'block';
+          textarea.classList.add('input-error');
+          return;
+        }
+        editError.style.display = 'none';
+        textarea.classList.remove('input-error');
+
+        saveBtn.disabled = true;
+        cancelBtn.disabled = true;
+
+        try {
+          await db.ref(`messages/${msg.id}`).update({
+            text: validation.text,
+            editedAt: firebase.database.ServerValue.TIMESTAMP,
+          });
+
+          // Update in-memory msg for re-edits
+          msg.text = validation.text;
+          msg.editedAt = Date.now();
+
+          // Update card to reflect saved text
+          textEl.textContent = validation.text;
+          if (!timeEl.querySelector('.edited-label')) {
+            const editedLabel = document.createElement('span');
+            editedLabel.className = 'edited-label';
+            editedLabel.textContent = ' · edited';
+            timeEl.appendChild(editedLabel);
+          }
+
+          editWrapper.remove();
+          textEl.style.display = '';
+          editBtn.style.display = '';
+          deleteBtn.style.display = '';
+        } catch (err) {
+          console.error('Failed to save edit:', err);
+          editError.textContent = 'Failed to save. Please try again.';
+          editError.style.display = 'block';
+          saveBtn.disabled = false;
+          cancelBtn.disabled = false;
+        }
+      });
+    });
+
+    card.appendChild(editBtn);
     card.appendChild(deleteBtn);
   }
 
   return card;
+}
+
+function updateEditCounter(el, len) {
+  el.textContent = `${len} / 250`;
+  el.classList.remove('warning', 'danger');
+  if (len >= 230) {
+    el.classList.add('danger');
+  } else if (len >= 200) {
+    el.classList.add('warning');
+  }
 }
 
 // formatTimestamp is provided by utils.js
@@ -468,5 +594,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard };
+  module.exports = { createMessageCard, updateEditCounter };
 }
