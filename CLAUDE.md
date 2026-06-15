@@ -75,6 +75,8 @@ fix(auth): handle sign-out race condition #7
 | `in-progress` | Agent is currently working on this |
 | `needs-clarification` | Agent paused — human needs to add more details |
 | `human-in-the-loop` | Agent hit a blocker — requires human action |
+| `needs-human-approval` | Auto-merge disabled — PR must be merged manually by a human after review |
+| `feature-spec` | Feature specification written by the agent — ready for review |
 | `auto-generated` | Created automatically by the agent |
 
 ## Available Slash Commands

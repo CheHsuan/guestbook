@@ -299,7 +299,8 @@ jobs:
     if: >
       success() &&
       github.event_name == 'pull_request' &&
-      needs.claude-review.outputs.lgtm == 'true'
+      needs.claude-review.outputs.lgtm == 'true' &&
+      !contains(github.event.pull_request.labels.*.name, 'needs-human-approval')
     steps:
       - uses: actions/checkout@v4
 

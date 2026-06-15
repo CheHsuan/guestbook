@@ -118,13 +118,16 @@ jobs:
           6. Push branch and open PR:
              - Title: '[Issue #${ISSUE_NUMBER}] {description}'
              - Body: 'Closes #${ISSUE_NUMBER}\n\n## Changes\n{summary}\n\n## How to Test\n{steps}'
-          7. Comment on issue: '[Agent] Phase 2 完成。PR: {PR_URL} 分支：{branch_name}'
+          7. If the issue has the 'needs-human-approval' label, add the same label to the PR so auto-merge is skipped:
+             gh pr edit {PR_NUMBER} --add-label 'needs-human-approval'
+          8. Comment on issue: '[Agent] Phase 2 完成。PR: {PR_URL} 分支：{branch_name}'
 
           Rules:
           - Never hardcode secrets, API keys, Firebase config, or tokens — use environment variables
           - Follow existing code style (Vanilla JS, no frameworks)
           - Only modify files relevant to the issue
-          - Run tests before committing"
+          - Run tests before committing
+          - If the issue carries 'needs-human-approval', the PR must also carry it (do NOT auto-merge)"
 
       - name: Reset issue on failure
         if: failure() && steps.get-issue.outputs.has_issue == 'true'
