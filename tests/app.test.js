@@ -241,6 +241,34 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.edit-error-msg').style.display).toBe('block');
     expect(dr.update).not.toHaveBeenCalled();
   });
+
+  test('successful save calls Firebase update, updates text, shows edited label, and restores read-only view', async () => {
+    const { firebase: fb, authInstance: ai, dbInstance: di, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const ownUser = { uid: 'uid-alice' };
+    const card = cmc(baseMsg, ownUser);
+    card.querySelector('.btn-edit').click();
+    card.querySelector('.edit-textarea').value = 'Updated text';
+    card.querySelector('.btn-save').click();
+
+    // Flush microtasks so the async save handler resolves
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(di.ref).toHaveBeenCalledWith('messages/msg1');
+    expect(dr.update).toHaveBeenCalledWith({
+      text: 'Updated text',
+      editedAt: 'SERVER_TIMESTAMP',
+    });
+    expect(card.querySelector('.message-text').textContent).toBe('Updated text');
+    expect(card.querySelector('.edited-label')).not.toBeNull();
+    expect(card.querySelector('.edit-wrapper')).toBeNull();
+    expect(card.querySelector('.message-text').style.display).toBe('');
+  });
 });
 
 // --- Form submit handler ---
