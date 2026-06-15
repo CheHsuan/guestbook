@@ -125,3 +125,14 @@ jobs:
           - Follow existing code style (Vanilla JS, no frameworks)
           - Only modify files relevant to the issue
           - Run tests before committing"
+
+      - name: Reset issue on failure
+        if: failure() && steps.get-issue.outputs.has_issue == 'true'
+        run: |
+          gh issue edit ${{ steps.get-issue.outputs.issue_number }} \
+            --add-label "ready-for-dev" \
+            --remove-label "in-progress"
+          gh issue comment ${{ steps.get-issue.outputs.issue_number }} \
+            --body "[Agent] ⚠️ 開發失敗 — 已重設為 ready-for-dev。請查看 [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) 確認錯誤原因。"
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
