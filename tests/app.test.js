@@ -159,6 +159,88 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.message-text').textContent).toBe('<img src=x onerror=alert(1)>');
     expect(card.innerHTML).not.toContain('<img');
   });
+
+  // --- Edit feature ---
+  test('renders edit button for own message', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(baseMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).not.toBeNull();
+  });
+
+  test('does not render edit button when user is null', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('does not render edit button for another user\'s message', () => {
+    const otherUser = { uid: 'uid-bob' };
+    const card = createMessageCard(baseMsg, otherUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('does not render "(edited)" label when editedAt is absent', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.edited-label')).toBeNull();
+  });
+
+  test('renders "(edited)" label when editedAt is present', () => {
+    const editedMsg = { ...baseMsg, editedAt: Date.now() };
+    const card = createMessageCard(editedMsg, null);
+    const label = card.querySelector('.edited-label');
+    expect(label).not.toBeNull();
+    expect(label.textContent).toContain('edited');
+  });
+
+  test('edit textarea enforces 250-char limit via maxLength attribute', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(baseMsg, ownUser);
+    card.querySelector('.btn-edit').click();
+    const textarea = card.querySelector('.edit-textarea');
+    expect(textarea).not.toBeNull();
+    expect(Number(textarea.maxLength)).toBe(250);
+  });
+
+  test('edit textarea is pre-filled with current message text', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(baseMsg, ownUser);
+    card.querySelector('.btn-edit').click();
+    const textarea = card.querySelector('.edit-textarea');
+    expect(textarea.value).toBe(baseMsg.text);
+  });
+
+  test('cancel restores read-only view without Firebase write', () => {
+    const { firebase: fb, authInstance: ai, dbInstance: di, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const ownUser = { uid: 'uid-alice' };
+    const card = cmc(baseMsg, ownUser);
+    card.querySelector('.btn-edit').click();
+    card.querySelector('.btn-cancel').click();
+
+    expect(card.querySelector('.edit-wrapper')).toBeNull();
+    expect(card.querySelector('.message-text').style.display).toBe('');
+    expect(dr.update).not.toHaveBeenCalled();
+  });
+
+  test('saving a blank edit shows validation error without calling Firebase', async () => {
+    const { firebase: fb, authInstance: ai, dbInstance: di, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const ownUser = { uid: 'uid-alice' };
+    const card = cmc(baseMsg, ownUser);
+    card.querySelector('.btn-edit').click();
+    card.querySelector('.edit-textarea').value = '   ';
+    card.querySelector('.btn-save').click();
+
+    expect(card.querySelector('.edit-error-msg').style.display).toBe('block');
+    expect(dr.update).not.toHaveBeenCalled();
+  });
 });
 
 // --- Form submit handler ---

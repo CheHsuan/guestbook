@@ -18,7 +18,7 @@
         "timestamp"
       ],
       "$message_id": {
-        ".write": "auth != null && (!data.exists() || (data.child('authorId').val() === auth.uid && !newData.exists()))",
+        ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
         ".validate": "newData.hasChildren(['text', 'author', 'authorId', 'timestamp'])",
         "text": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
@@ -31,6 +31,9 @@
         },
         "timestamp": {
           ".validate": "newData.val() <= now && newData.val() >= now - 30000"
+        },
+        "editedAt": {
+          ".validate": "newData.isNumber()"
         },
         "$other": {
           ".validate": false
