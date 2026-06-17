@@ -383,6 +383,72 @@ body {
 }
 
 /* ========================================
+   Search / Filter
+   ======================================== */
+.search-wrapper {
+  margin-bottom: 20px;
+}
+
+.search-input-row {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 40px 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: var(--transition);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.2s;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.search-results-count {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ========================================
    Messages Section
    ======================================== */
 .message-count-badge {
