@@ -39,14 +39,76 @@ const submitBtn = document.getElementById('submit-btn');
 const rateLimitMsg = document.getElementById('rate-limit-msg');
 const messagesContainer = document.getElementById('messages-container');
 const emptyState = document.getElementById('empty-state');
+const searchEmptyState = document.getElementById('search-empty-state');
 const loadingState = document.getElementById('loading-state');
 const messageCount = document.getElementById('message-count');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
+const searchResultsCount = document.getElementById('search-results-count');
 
 // ========================================
 // State
 // ========================================
 let currentUser = null;
 let messagesListener = null;
+let searchDebounceTimer = null;
+
+// ========================================
+// Search / Filter
+// ========================================
+function normalizeStr(str) {
+  return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function filterMessages() {
+  const term = normalizeStr(searchInput.value.trim());
+  const cards = messagesContainer.querySelectorAll('.message-card');
+
+  if (!term) {
+    cards.forEach(card => { card.style.display = ''; });
+    searchClearBtn.style.display = 'none';
+    searchResultsCount.style.display = 'none';
+    searchEmptyState.style.display = 'none';
+    return;
+  }
+
+  searchClearBtn.style.display = '';
+
+  if (cards.length === 0) {
+    searchResultsCount.style.display = 'none';
+    searchEmptyState.style.display = 'none';
+    return;
+  }
+
+  let matchCount = 0;
+  cards.forEach(card => {
+    const author = normalizeStr(card.querySelector('.message-author')?.textContent || '');
+    const text = normalizeStr(card.querySelector('.message-text')?.textContent || '');
+    const matches = author.includes(term) || text.includes(term);
+    card.style.display = matches ? '' : 'none';
+    if (matches) matchCount++;
+  });
+
+  if (matchCount === 0) {
+    searchEmptyState.style.display = 'block';
+    searchResultsCount.style.display = 'none';
+  } else {
+    searchEmptyState.style.display = 'none';
+    searchResultsCount.textContent = `Showing ${matchCount} of ${cards.length}`;
+    searchResultsCount.style.display = 'block';
+  }
+}
+
+searchInput.addEventListener('input', () => {
+  searchClearBtn.style.display = searchInput.value ? '' : 'none';
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(filterMessages, 200);
+});
+
+searchClearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  filterMessages();
+});
 
 // ========================================
 // Auth: Sign In / Sign Out
@@ -208,6 +270,7 @@ async function startListeningMessages() {
         const card = createMessageCard(msg, currentUser);
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
+        filterMessages();
       }
     });
 
@@ -222,6 +285,10 @@ async function startListeningMessages() {
         const hasMessages = messagesContainer.querySelectorAll('.message-card').length > 0;
         if (!hasMessages) {
           emptyState.style.display = 'block';
+          searchEmptyState.style.display = 'none';
+          searchResultsCount.style.display = 'none';
+        } else {
+          filterMessages();
         }
       }
     });
@@ -286,6 +353,8 @@ async function loadMoreMessages() {
       // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
     });
+
+    filterMessages();
 
   } catch (error) {
     console.error('Error loading more messages:', error);
@@ -594,5 +663,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, updateEditCounter };
+  module.exports = { createMessageCard, updateEditCounter, filterMessages };
 }

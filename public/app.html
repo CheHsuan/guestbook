@@ -91,11 +91,22 @@
           Messages from the last 24 hours
           <span id="message-count" class="message-count-badge">0</span>
         </h2>
+        <div class="search-wrapper">
+          <div class="search-input-row">
+            <input type="search" id="search-input" class="search-input" placeholder="Search messages or authors..." autocomplete="off">
+            <button id="search-clear-btn" class="search-clear-btn" style="display: none;" aria-label="Clear search">&#x2715;</button>
+          </div>
+          <p id="search-results-count" class="search-results-count" style="display: none;"></p>
+        </div>
         <div id="messages-container" class="messages-container">
           <!-- Messages will be rendered here by JS -->
           <div id="empty-state" class="empty-state">
             <span class="empty-icon">💬</span>
             <p>No messages yet. Be the first to leave one!</p>
+          </div>
+          <div id="search-empty-state" class="empty-state" style="display: none;">
+            <span class="empty-icon">🔍</span>
+            <p>No messages match your search.</p>
           </div>
           <div id="loading-state" class="loading-state" style="display: none;">
             <div class="spinner"></div>

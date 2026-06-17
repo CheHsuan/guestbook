@@ -26,9 +26,13 @@ const APP_HTML = `
       <div id="rate-limit-msg" style="display:none"></div>
     </form>
   </div>
+  <input id="search-input" type="search" />
+  <button id="search-clear-btn" style="display:none"></button>
+  <p id="search-results-count" style="display:none"></p>
   <div id="messages-container">
-    <div id="loading-state" style="display:none"></div>
     <div id="empty-state" style="display:none"></div>
+    <div id="search-empty-state" style="display:none"></div>
+    <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
 `;
@@ -703,6 +707,179 @@ describe('infinite scroll / loadMoreMessages', () => {
 
     // 1 initial load + 1 load-more = 2; second scroll was ignored by isLoadingMore guard
     expect(mocks.dbRef.once.mock.calls.length).toBe(2);
+  });
+});
+
+// --- search / filter ---
+describe('search / filter', () => {
+  let filterMessages;
+  let authStateCallback;
+
+  function addCard(container, { author = 'Alice', text = 'Hello', id = 'c1' } = {}) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.id = `msg-${id}`;
+    const authorEl = document.createElement('span');
+    authorEl.className = 'message-author';
+    authorEl.textContent = author;
+    const textEl = document.createElement('p');
+    textEl.className = 'message-text';
+    textEl.textContent = text;
+    card.appendChild(authorEl);
+    card.appendChild(textEl);
+    container.appendChild(card);
+    return card;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    global.firebase = firebase;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+
+    ({ filterMessages } = require('../public/app.js'));
+  });
+
+  test('shows all cards when search term is empty', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'World', id: '2' });
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).not.toBe('none');
+  });
+
+  test('hides cards that do not match the search term', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello world', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).toBe('none');
+  });
+
+  test('matches by message text', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello world', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'world';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).toBe('none');
+  });
+
+  test('matching is case-insensitive', () => {
+    const container = document.getElementById('messages-container');
+    const card = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'ALICE';
+    filterMessages();
+
+    expect(card.style.display).not.toBe('none');
+  });
+
+  test('shows search-empty-state when no cards match', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'zzznomatch';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).toBe('block');
+  });
+
+  test('hides search-empty-state when some cards match', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).not.toBe('block');
+  });
+
+  test('shows Showing X of Y when filter is active and matches exist', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    const countEl = document.getElementById('search-results-count');
+    expect(countEl.style.display).toBe('block');
+    expect(countEl.textContent).toBe('Showing 1 of 2');
+  });
+
+  test('hides Showing X of Y when search is cleared', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(document.getElementById('search-results-count').style.display).toBe('none');
+  });
+
+  test('shows clear button when term is non-empty', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(document.getElementById('search-clear-btn').style.display).not.toBe('none');
+  });
+
+  test('hides clear button when term is cleared', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(document.getElementById('search-clear-btn').style.display).toBe('none');
+  });
+
+  test('does not show search-empty-state when there are no cards at all', () => {
+    document.getElementById('search-input').value = 'anything';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).not.toBe('block');
+  });
+
+  test('restores all cards when search is cleared after filtering', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'World', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+    expect(c2.style.display).toBe('none');
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).not.toBe('none');
   });
 });
 
