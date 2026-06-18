@@ -492,17 +492,22 @@ function createMessageCard(msg, user) {
 
   // Show edit + delete buttons only for own messages
   if (user && msg.authorId === user.uid) {
+    // Static, non-user SVG icon markup (no user data — safe to assign as innerHTML)
+    const EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
     card.classList.add('has-actions');
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
-    editBtn.textContent = '✏️';
+    editBtn.innerHTML = EDIT_ICON;
     editBtn.title = 'Edit message';
+    editBtn.setAttribute('aria-label', 'Edit message');
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'btn-delete';
-    deleteBtn.textContent = '🗑️';
+    deleteBtn.innerHTML = DELETE_ICON;
     deleteBtn.title = 'Delete message';
+    deleteBtn.setAttribute('aria-label', 'Delete message');
     deleteBtn.addEventListener('click', async () => {
       const count = replyCountMap.get(msg.id) || 0;
       const confirmMsg = count > 0
