@@ -87,10 +87,6 @@
 
       <!-- Messages list -->
       <section class="messages-section">
-        <h2 class="section-title">
-          Messages from the last 24 hours
-          <span id="message-count" class="message-count-badge">0</span>
-        </h2>
         <div class="search-wrapper">
           <div class="search-input-row">
             <input type="search" id="search-input" class="search-input" placeholder="Search messages or authors..." autocomplete="off">
@@ -98,6 +94,10 @@
           </div>
           <p id="search-results-count" class="search-results-count" style="display: none;"></p>
         </div>
+        <h2 class="section-title">
+          Messages from the last 24 hours
+          <span id="message-count" class="message-count-badge">0</span>
+        </h2>
         <div id="messages-container" class="messages-container">
           <!-- Messages will be rendered here by JS -->
           <div id="empty-state" class="empty-state">
