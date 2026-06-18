@@ -820,3 +820,109 @@ body {
 .app-footer a:hover {
   color: var(--accent);
 }
+
+/* ========================================
+   Card Footer (reply count + reply button)
+   ======================================== */
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* When the card has owner action buttons, shift footer left to avoid overlap */
+.has-actions .card-footer {
+  padding-right: 88px;
+}
+
+.reply-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.btn-reply {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+  font-family: inherit;
+}
+
+.btn-reply:hover {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+/* ========================================
+   Reply Form
+   ======================================== */
+.reply-form-wrapper {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+/* ========================================
+   Replies Section
+   ======================================== */
+.replies-section {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply-card {
+  position: relative;
+  border-left: 2px solid var(--accent);
+  padding: 8px 8px 8px 12px;
+}
+
+.reply-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.reply-author {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-light);
+}
+
+.reply-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.reply-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.btn-reply-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  opacity: 0.35;
+  transition: opacity 0.2s;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.btn-reply-delete:hover {
+  opacity: 1;
+  background: rgba(229, 62, 62, 0.1);
+}

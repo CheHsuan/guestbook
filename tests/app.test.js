@@ -971,3 +971,189 @@ describe('unauthenticated visitor', () => {
     expect(document.getElementById('login-btn-header').style.display).toBe('none');
   });
 });
+
+// --- reply feature ---
+describe('reply feature', () => {
+  let createMessageCard;
+  let createReplyCard;
+
+  const baseMsg = {
+    id: 'msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, createReplyCard } = require('../public/app.js'));
+  });
+
+  // Reply button visibility
+  test('renders reply button for authenticated user viewing own message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-reply')).not.toBeNull();
+  });
+
+  test('renders reply button for authenticated user viewing another\'s message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-reply')).not.toBeNull();
+  });
+
+  test('does not render reply button when user is null', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-reply')).toBeNull();
+  });
+
+  // Reply form toggle
+  test('clicking reply button opens reply form', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-form-wrapper')).not.toBeNull();
+  });
+
+  test('clicking reply button again closes reply form (toggle)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+  });
+
+  test('reply form textarea enforces 250-char limit via maxLength', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(Number(card.querySelector('.reply-textarea').maxLength)).toBe(250);
+  });
+
+  // Cancel
+  test('cancel removes reply form without Firebase write', () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.btn-reply-cancel').click();
+
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+    expect(dr.update).not.toHaveBeenCalled();
+  });
+
+  // Validation
+  test('submitting blank reply shows error without Firebase write', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = '   ';
+    card.querySelector('.btn-reply-post').click();
+
+    const form = card.querySelector('.reply-form-wrapper');
+    expect(form.querySelector('.edit-error-msg').style.display).toBe('block');
+  });
+
+  // Submission
+  test('submitting reply calls db.ref().update() with reply path and rate-limit update', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = cmc(baseMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Great message!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dr.update).toHaveBeenCalledTimes(1);
+    const updateArg = dr.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${baseMsg.id}/replies/`));
+    expect(replyKey).toBeTruthy();
+    const replyData = updateArg[replyKey];
+    expect(replyData.text).toBe('Great message!');
+    expect(replyData.author).toBe('Bob');
+    expect(replyData.authorId).toBe('uid-bob');
+    const rateLimitKey = Object.keys(updateArg).find(k => k.includes('/users/uid-bob/lastPostTimestamp'));
+    expect(rateLimitKey).toBeTruthy();
+  });
+
+  test('successful reply submission closes the form', async () => {
+    const { firebase: fb, authInstance: ai } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Nice!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+  });
+
+  // XSS safety in reply cards
+  test('createReplyCard escapes XSS in reply author (uses textContent)', () => {
+    const xssReply = {
+      id: 'r1',
+      author: '<script>alert(1)</script>',
+      text: 'Hello',
+      timestamp: Date.now(),
+      authorId: 'uid-x',
+    };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-author').textContent).toBe('<script>alert(1)</script>');
+    expect(card.innerHTML).not.toContain('<script>');
+  });
+
+  test('createReplyCard escapes XSS in reply text (uses textContent)', () => {
+    const xssReply = {
+      id: 'r1',
+      author: 'Eve',
+      text: '<img src=x onerror=alert(1)>',
+      timestamp: Date.now(),
+      authorId: 'uid-x',
+    };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-text').textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(card.innerHTML).not.toContain('<img');
+  });
+
+  // Reply delete button
+  test('createReplyCard renders delete button for own reply', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-alice' }, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).not.toBeNull();
+  });
+
+  test('createReplyCard does not render delete button for another user\'s reply', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).toBeNull();
+  });
+
+  test('createReplyCard does not render delete button when user is null', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).toBeNull();
+  });
+});
