@@ -52,6 +52,8 @@ const searchResultsCount = document.getElementById('search-results-count');
 let currentUser = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
+const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
+const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
 
 // ========================================
 // Search / Filter
@@ -279,6 +281,12 @@ async function startListeningMessages() {
       const msgId = childSnapshot.key;
       const cardToRemove = document.getElementById(`msg-${msgId}`);
       if (cardToRemove) {
+        const replyRef = replyListenerMap.get(msgId);
+        if (replyRef) {
+          replyRef.off();
+          replyListenerMap.delete(msgId);
+        }
+        replyCountMap.delete(msgId);
         cardToRemove.remove();
 
         // Hide empty state if there are elements besides loading/empty states
@@ -386,12 +394,65 @@ function stopListeningMessages() {
     totalMessagesListener = null;
   }
 
+  replyListenerMap.forEach(ref => ref.off());
+  replyListenerMap.clear();
+  replyCountMap.clear();
+
   window.removeEventListener('scroll', handleScroll);
 
   // Clear rendered messages
   const existingCards = messagesContainer.querySelectorAll('.message-card');
   existingCards.forEach((card) => card.remove());
   messageCount.textContent = '0';
+}
+
+// ========================================
+// Create Reply Card Element
+// ========================================
+function createReplyCard(reply, user, msgId) {
+  const card = document.createElement('div');
+  card.className = 'reply-card';
+  card.id = `reply-${reply.id}`;
+
+  const header = document.createElement('div');
+  header.className = 'reply-header';
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'reply-author';
+  authorEl.textContent = reply.author; // textContent for XSS safety
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'reply-time';
+  timeEl.textContent = formatTimestamp(reply.timestamp);
+
+  header.appendChild(authorEl);
+  header.appendChild(timeEl);
+
+  if (user && reply.authorId === user.uid) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-reply-delete';
+    deleteBtn.textContent = '🗑️';
+    deleteBtn.title = 'Delete reply';
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this reply?')) return;
+      try {
+        await db.ref(`messages/${msgId}/replies/${reply.id}`).remove();
+      } catch (err) {
+        console.error('Failed to delete reply:', err);
+        alert('Failed to delete reply.');
+      }
+    });
+    header.appendChild(deleteBtn);
+  }
+
+  const textEl = document.createElement('p');
+  textEl.className = 'reply-text';
+  textEl.textContent = reply.text; // textContent for XSS safety
+
+  card.appendChild(header);
+  card.appendChild(textEl);
+
+  return card;
 }
 
 // ========================================
@@ -431,6 +492,8 @@ function createMessageCard(msg, user) {
 
   // Show edit + delete buttons only for own messages
   if (user && msg.authorId === user.uid) {
+    card.classList.add('has-actions');
+
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
     editBtn.textContent = '✏️';
@@ -441,8 +504,15 @@ function createMessageCard(msg, user) {
     deleteBtn.textContent = '🗑️';
     deleteBtn.title = 'Delete message';
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Delete this message?')) return;
+      const count = replyCountMap.get(msg.id) || 0;
+      const confirmMsg = count > 0
+        ? `This will also delete ${count} ${count === 1 ? 'reply' : 'replies'}. Continue?`
+        : 'Delete this message?';
+      if (!confirm(confirmMsg)) return;
       try {
+        if (count > 0) {
+          await db.ref(`messages/${msg.id}/replies`).remove();
+        }
         await db.ref(`messages/${msg.id}`).remove();
       } catch (err) {
         console.error('Failed to delete:', err);
@@ -557,6 +627,159 @@ function createMessageCard(msg, user) {
     card.appendChild(deleteBtn);
   }
 
+  // Card footer: reply count + reply button (reply button for all auth'd users)
+  const cardFooter = document.createElement('div');
+  cardFooter.className = 'card-footer';
+
+  const replyCountEl = document.createElement('span');
+  replyCountEl.className = 'reply-count';
+  replyCountEl.style.display = 'none';
+  cardFooter.appendChild(replyCountEl);
+
+  if (user) {
+    const replyBtn = document.createElement('button');
+    replyBtn.className = 'btn-reply';
+    replyBtn.textContent = 'Reply';
+    replyBtn.title = 'Reply to this message';
+
+    replyBtn.addEventListener('click', () => {
+      // Toggle: close form if already open
+      const existing = card.querySelector('.reply-form-wrapper');
+      if (existing) {
+        existing.remove();
+        return;
+      }
+
+      const formWrapper = document.createElement('div');
+      formWrapper.className = 'reply-form-wrapper';
+
+      const replyTextarea = document.createElement('textarea');
+      replyTextarea.className = 'reply-textarea edit-textarea';
+      replyTextarea.placeholder = 'Write a reply...';
+      replyTextarea.maxLength = 250;
+
+      const replyCounter = document.createElement('span');
+      replyCounter.className = 'edit-char-counter';
+      updateEditCounter(replyCounter, 0);
+
+      replyTextarea.addEventListener('input', () => {
+        updateEditCounter(replyCounter, replyTextarea.value.length);
+      });
+
+      const replyError = document.createElement('p');
+      replyError.className = 'edit-error-msg';
+      replyError.style.display = 'none';
+
+      const replyActions = document.createElement('div');
+      replyActions.className = 'edit-actions';
+
+      const replyPostBtn = document.createElement('button');
+      replyPostBtn.className = 'btn btn-save btn-reply-post';
+      replyPostBtn.textContent = 'Post';
+
+      const replyCancelBtn = document.createElement('button');
+      replyCancelBtn.className = 'btn btn-cancel btn-reply-cancel';
+      replyCancelBtn.textContent = 'Cancel';
+
+      replyActions.appendChild(replyPostBtn);
+      replyActions.appendChild(replyCancelBtn);
+
+      formWrapper.appendChild(replyTextarea);
+      formWrapper.appendChild(replyCounter);
+      formWrapper.appendChild(replyError);
+      formWrapper.appendChild(replyActions);
+
+      // Insert form between footer and replies section
+      card.insertBefore(formWrapper, repliesSection);
+      replyTextarea.focus();
+
+      replyCancelBtn.addEventListener('click', () => {
+        formWrapper.remove();
+      });
+
+      replyPostBtn.addEventListener('click', async () => {
+        const validation = validateMessage(replyTextarea.value);
+        if (!validation.valid) {
+          replyError.textContent = validation.error;
+          replyError.style.display = 'block';
+          replyTextarea.classList.add('input-error');
+          return;
+        }
+        replyError.style.display = 'none';
+        replyTextarea.classList.remove('input-error');
+
+        replyPostBtn.disabled = true;
+        replyCancelBtn.disabled = true;
+
+        try {
+          const newReplyKey = db.ref(`messages/${msg.id}/replies`).push().key;
+          const updates = {};
+          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = {
+            text: validation.text,
+            author: user.displayName || 'Anonymous',
+            authorId: user.uid,
+            timestamp: firebase.database.ServerValue.TIMESTAMP,
+          };
+          updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+          await db.ref().update(updates);
+          formWrapper.remove();
+        } catch (err) {
+          console.error('Failed to post reply:', err);
+          replyError.textContent = err.code === 'PERMISSION_DENIED'
+            ? 'Please wait a few seconds before replying again.'
+            : 'Failed to post reply.';
+          replyError.style.display = 'block';
+          replyPostBtn.disabled = false;
+          replyCancelBtn.disabled = false;
+        }
+      });
+    });
+
+    cardFooter.appendChild(replyBtn);
+  }
+
+  // Replies section (hidden until replies exist)
+  const repliesSection = document.createElement('div');
+  repliesSection.className = 'replies-section';
+  repliesSection.style.display = 'none';
+
+  card.appendChild(cardFooter);
+  card.appendChild(repliesSection);
+
+  // Set up real-time listeners for replies
+  let localReplyCount = 0;
+  const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
+
+  repliesRef.on('child_added', (snap) => {
+    const reply = { id: snap.key, ...snap.val() };
+    localReplyCount++;
+    replyCountMap.set(msg.id, localReplyCount);
+
+    replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+    replyCountEl.style.display = '';
+    repliesSection.style.display = '';
+    cardFooter.style.display = '';
+
+    const replyCard = createReplyCard(reply, user, msg.id);
+    repliesSection.appendChild(replyCard);
+  });
+
+  repliesRef.on('child_removed', (snap) => {
+    const replyEl = document.getElementById(`reply-${snap.key}`);
+    if (replyEl) replyEl.remove();
+    localReplyCount = Math.max(0, localReplyCount - 1);
+    replyCountMap.set(msg.id, localReplyCount);
+
+    if (localReplyCount === 0) {
+      replyCountEl.style.display = 'none';
+      repliesSection.style.display = 'none';
+    } else {
+      replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+    }
+  });
+
+  replyListenerMap.set(msg.id, repliesRef);
+
   return card;
 }
 
@@ -663,5 +886,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, updateEditCounter, filterMessages };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages };
 }
