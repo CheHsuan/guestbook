@@ -412,8 +412,8 @@ body {
    Messages Section
    ======================================== */
 .messages-section .section-title {
-  padding: 16px 4px 4px;
-  margin-bottom: 0;
+  padding: 16px 4px 0;
+  margin-bottom: 16px;
 }
 
 .message-count-badge {
