@@ -39,14 +39,78 @@ const submitBtn = document.getElementById('submit-btn');
 const rateLimitMsg = document.getElementById('rate-limit-msg');
 const messagesContainer = document.getElementById('messages-container');
 const emptyState = document.getElementById('empty-state');
+const searchEmptyState = document.getElementById('search-empty-state');
 const loadingState = document.getElementById('loading-state');
 const messageCount = document.getElementById('message-count');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
+const searchResultsCount = document.getElementById('search-results-count');
 
 // ========================================
 // State
 // ========================================
 let currentUser = null;
 let messagesListener = null;
+let searchDebounceTimer = null;
+const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
+const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+
+// ========================================
+// Search / Filter
+// ========================================
+function normalizeStr(str) {
+  return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function filterMessages() {
+  const term = normalizeStr(searchInput.value.trim());
+  const cards = messagesContainer.querySelectorAll('.message-card');
+
+  if (!term) {
+    cards.forEach(card => { card.style.display = ''; });
+    searchClearBtn.style.display = 'none';
+    searchResultsCount.style.display = 'none';
+    searchEmptyState.style.display = 'none';
+    return;
+  }
+
+  searchClearBtn.style.display = '';
+
+  if (cards.length === 0) {
+    searchResultsCount.style.display = 'none';
+    searchEmptyState.style.display = 'none';
+    return;
+  }
+
+  let matchCount = 0;
+  cards.forEach(card => {
+    const author = normalizeStr(card.querySelector('.message-author')?.textContent || '');
+    const text = normalizeStr(card.querySelector('.message-text')?.textContent || '');
+    const matches = author.includes(term) || text.includes(term);
+    card.style.display = matches ? '' : 'none';
+    if (matches) matchCount++;
+  });
+
+  if (matchCount === 0) {
+    searchEmptyState.style.display = 'block';
+    searchResultsCount.style.display = 'none';
+  } else {
+    searchEmptyState.style.display = 'none';
+    searchResultsCount.textContent = `Showing ${matchCount} of ${cards.length}`;
+    searchResultsCount.style.display = 'block';
+  }
+}
+
+searchInput.addEventListener('input', () => {
+  searchClearBtn.style.display = searchInput.value ? '' : 'none';
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(filterMessages, 200);
+});
+
+searchClearBtn.addEventListener('click', () => {
+  searchInput.value = '';
+  filterMessages();
+});
 
 // ========================================
 // Auth: Sign In / Sign Out
@@ -208,6 +272,7 @@ async function startListeningMessages() {
         const card = createMessageCard(msg, currentUser);
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
+        filterMessages();
       }
     });
 
@@ -216,12 +281,22 @@ async function startListeningMessages() {
       const msgId = childSnapshot.key;
       const cardToRemove = document.getElementById(`msg-${msgId}`);
       if (cardToRemove) {
+        const replyRef = replyListenerMap.get(msgId);
+        if (replyRef) {
+          replyRef.off();
+          replyListenerMap.delete(msgId);
+        }
+        replyCountMap.delete(msgId);
         cardToRemove.remove();
 
         // Hide empty state if there are elements besides loading/empty states
         const hasMessages = messagesContainer.querySelectorAll('.message-card').length > 0;
         if (!hasMessages) {
           emptyState.style.display = 'block';
+          searchEmptyState.style.display = 'none';
+          searchResultsCount.style.display = 'none';
+        } else {
+          filterMessages();
         }
       }
     });
@@ -287,6 +362,8 @@ async function loadMoreMessages() {
       messagesContainer.insertBefore(card, loadingState);
     });
 
+    filterMessages();
+
   } catch (error) {
     console.error('Error loading more messages:', error);
     loadingState.style.display = 'none';
@@ -317,12 +394,65 @@ function stopListeningMessages() {
     totalMessagesListener = null;
   }
 
+  replyListenerMap.forEach(ref => ref.off());
+  replyListenerMap.clear();
+  replyCountMap.clear();
+
   window.removeEventListener('scroll', handleScroll);
 
   // Clear rendered messages
   const existingCards = messagesContainer.querySelectorAll('.message-card');
   existingCards.forEach((card) => card.remove());
   messageCount.textContent = '0';
+}
+
+// ========================================
+// Create Reply Card Element
+// ========================================
+function createReplyCard(reply, user, msgId) {
+  const card = document.createElement('div');
+  card.className = 'reply-card';
+  card.id = `reply-${reply.id}`;
+
+  const header = document.createElement('div');
+  header.className = 'reply-header';
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'reply-author';
+  authorEl.textContent = reply.author; // textContent for XSS safety
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'reply-time';
+  timeEl.textContent = formatTimestamp(reply.timestamp);
+
+  header.appendChild(authorEl);
+  header.appendChild(timeEl);
+
+  if (user && reply.authorId === user.uid) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn-reply-delete';
+    deleteBtn.textContent = '🗑️';
+    deleteBtn.title = 'Delete reply';
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Delete this reply?')) return;
+      try {
+        await db.ref(`messages/${msgId}/replies/${reply.id}`).remove();
+      } catch (err) {
+        console.error('Failed to delete reply:', err);
+        alert('Failed to delete reply.');
+      }
+    });
+    header.appendChild(deleteBtn);
+  }
+
+  const textEl = document.createElement('p');
+  textEl.className = 'reply-text';
+  textEl.textContent = reply.text; // textContent for XSS safety
+
+  card.appendChild(header);
+  card.appendChild(textEl);
+
+  return card;
 }
 
 // ========================================
@@ -365,6 +495,7 @@ function createMessageCard(msg, user) {
     // Static, non-user SVG icon markup (no user data — safe to assign as innerHTML)
     const EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
     const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+    card.classList.add('has-actions');
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -378,8 +509,15 @@ function createMessageCard(msg, user) {
     deleteBtn.title = 'Delete message';
     deleteBtn.setAttribute('aria-label', 'Delete message');
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Delete this message?')) return;
+      const count = replyCountMap.get(msg.id) || 0;
+      const confirmMsg = count > 0
+        ? `This will also delete ${count} ${count === 1 ? 'reply' : 'replies'}. Continue?`
+        : 'Delete this message?';
+      if (!confirm(confirmMsg)) return;
       try {
+        if (count > 0) {
+          await db.ref(`messages/${msg.id}/replies`).remove();
+        }
         await db.ref(`messages/${msg.id}`).remove();
       } catch (err) {
         console.error('Failed to delete:', err);
@@ -494,6 +632,159 @@ function createMessageCard(msg, user) {
     card.appendChild(deleteBtn);
   }
 
+  // Card footer: reply count + reply button (reply button for all auth'd users)
+  const cardFooter = document.createElement('div');
+  cardFooter.className = 'card-footer';
+
+  const replyCountEl = document.createElement('span');
+  replyCountEl.className = 'reply-count';
+  replyCountEl.style.display = 'none';
+  cardFooter.appendChild(replyCountEl);
+
+  if (user) {
+    const replyBtn = document.createElement('button');
+    replyBtn.className = 'btn-reply';
+    replyBtn.textContent = 'Reply';
+    replyBtn.title = 'Reply to this message';
+
+    replyBtn.addEventListener('click', () => {
+      // Toggle: close form if already open
+      const existing = card.querySelector('.reply-form-wrapper');
+      if (existing) {
+        existing.remove();
+        return;
+      }
+
+      const formWrapper = document.createElement('div');
+      formWrapper.className = 'reply-form-wrapper';
+
+      const replyTextarea = document.createElement('textarea');
+      replyTextarea.className = 'reply-textarea edit-textarea';
+      replyTextarea.placeholder = 'Write a reply...';
+      replyTextarea.maxLength = 250;
+
+      const replyCounter = document.createElement('span');
+      replyCounter.className = 'edit-char-counter';
+      updateEditCounter(replyCounter, 0);
+
+      replyTextarea.addEventListener('input', () => {
+        updateEditCounter(replyCounter, replyTextarea.value.length);
+      });
+
+      const replyError = document.createElement('p');
+      replyError.className = 'edit-error-msg';
+      replyError.style.display = 'none';
+
+      const replyActions = document.createElement('div');
+      replyActions.className = 'edit-actions';
+
+      const replyPostBtn = document.createElement('button');
+      replyPostBtn.className = 'btn btn-save btn-reply-post';
+      replyPostBtn.textContent = 'Post';
+
+      const replyCancelBtn = document.createElement('button');
+      replyCancelBtn.className = 'btn btn-cancel btn-reply-cancel';
+      replyCancelBtn.textContent = 'Cancel';
+
+      replyActions.appendChild(replyPostBtn);
+      replyActions.appendChild(replyCancelBtn);
+
+      formWrapper.appendChild(replyTextarea);
+      formWrapper.appendChild(replyCounter);
+      formWrapper.appendChild(replyError);
+      formWrapper.appendChild(replyActions);
+
+      // Insert form between footer and replies section
+      card.insertBefore(formWrapper, repliesSection);
+      replyTextarea.focus();
+
+      replyCancelBtn.addEventListener('click', () => {
+        formWrapper.remove();
+      });
+
+      replyPostBtn.addEventListener('click', async () => {
+        const validation = validateMessage(replyTextarea.value);
+        if (!validation.valid) {
+          replyError.textContent = validation.error;
+          replyError.style.display = 'block';
+          replyTextarea.classList.add('input-error');
+          return;
+        }
+        replyError.style.display = 'none';
+        replyTextarea.classList.remove('input-error');
+
+        replyPostBtn.disabled = true;
+        replyCancelBtn.disabled = true;
+
+        try {
+          const newReplyKey = db.ref(`messages/${msg.id}/replies`).push().key;
+          const updates = {};
+          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = {
+            text: validation.text,
+            author: user.displayName || 'Anonymous',
+            authorId: user.uid,
+            timestamp: firebase.database.ServerValue.TIMESTAMP,
+          };
+          updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+          await db.ref().update(updates);
+          formWrapper.remove();
+        } catch (err) {
+          console.error('Failed to post reply:', err);
+          replyError.textContent = err.code === 'PERMISSION_DENIED'
+            ? 'Please wait a few seconds before replying again.'
+            : 'Failed to post reply.';
+          replyError.style.display = 'block';
+          replyPostBtn.disabled = false;
+          replyCancelBtn.disabled = false;
+        }
+      });
+    });
+
+    cardFooter.appendChild(replyBtn);
+  }
+
+  // Replies section (hidden until replies exist)
+  const repliesSection = document.createElement('div');
+  repliesSection.className = 'replies-section';
+  repliesSection.style.display = 'none';
+
+  card.appendChild(cardFooter);
+  card.appendChild(repliesSection);
+
+  // Set up real-time listeners for replies
+  let localReplyCount = 0;
+  const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
+
+  repliesRef.on('child_added', (snap) => {
+    const reply = { id: snap.key, ...snap.val() };
+    localReplyCount++;
+    replyCountMap.set(msg.id, localReplyCount);
+
+    replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+    replyCountEl.style.display = '';
+    repliesSection.style.display = '';
+    cardFooter.style.display = '';
+
+    const replyCard = createReplyCard(reply, user, msg.id);
+    repliesSection.appendChild(replyCard);
+  });
+
+  repliesRef.on('child_removed', (snap) => {
+    const replyEl = document.getElementById(`reply-${snap.key}`);
+    if (replyEl) replyEl.remove();
+    localReplyCount = Math.max(0, localReplyCount - 1);
+    replyCountMap.set(msg.id, localReplyCount);
+
+    if (localReplyCount === 0) {
+      replyCountEl.style.display = 'none';
+      repliesSection.style.display = 'none';
+    } else {
+      replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+    }
+  });
+
+  replyListenerMap.set(msg.id, repliesRef);
+
   return card;
 }
 
@@ -600,5 +891,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, updateEditCounter };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages };
 }

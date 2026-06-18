@@ -342,6 +342,73 @@ body {
 }
 
 /* ========================================
+   Search / Filter
+   ======================================== */
+.search-wrapper {
+  margin-bottom: 20px;
+}
+
+.search-input-row {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 40px 10px 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: var(--transition);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--link);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  background: var(--surface);
+}
+
+.search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.2s;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.search-results-count {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ========================================
    Messages Section
    ======================================== */
 .messages-section .section-title {
@@ -650,4 +717,112 @@ body {
 .app-footer a:hover {
   color: var(--text-primary);
   text-decoration: underline;
+}
+
+/* ========================================
+   Card Footer (reply count + reply button)
+   ======================================== */
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* When the card has owner action buttons, shift footer left to avoid overlap */
+.has-actions .card-footer {
+  padding-right: 88px;
+}
+
+.reply-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.btn-reply {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+  font-family: inherit;
+}
+
+.btn-reply:hover {
+  color: var(--link);
+  background: var(--bg-subtle);
+}
+
+/* ========================================
+   Reply Form
+   ======================================== */
+.reply-form-wrapper {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+/* ========================================
+   Replies Section
+   ======================================== */
+.replies-section {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply-card {
+  position: relative;
+  border-left: 2px solid var(--border-strong);
+  padding: 8px 8px 8px 12px;
+}
+
+.reply-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.reply-author {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.reply-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.reply-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.btn-reply-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: opacity 0.2s, color 0.2s, background 0.2s;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.btn-reply-delete:hover {
+  opacity: 1;
+  color: var(--danger);
+  background: var(--danger-bg);
 }

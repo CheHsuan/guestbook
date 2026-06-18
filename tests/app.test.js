@@ -26,9 +26,13 @@ const APP_HTML = `
       <div id="rate-limit-msg" style="display:none"></div>
     </form>
   </div>
+  <input id="search-input" type="search" />
+  <button id="search-clear-btn" style="display:none"></button>
+  <p id="search-results-count" style="display:none"></p>
   <div id="messages-container">
-    <div id="loading-state" style="display:none"></div>
     <div id="empty-state" style="display:none"></div>
+    <div id="search-empty-state" style="display:none"></div>
+    <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
 `;
@@ -706,6 +710,179 @@ describe('infinite scroll / loadMoreMessages', () => {
   });
 });
 
+// --- search / filter ---
+describe('search / filter', () => {
+  let filterMessages;
+  let authStateCallback;
+
+  function addCard(container, { author = 'Alice', text = 'Hello', id = 'c1' } = {}) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.id = `msg-${id}`;
+    const authorEl = document.createElement('span');
+    authorEl.className = 'message-author';
+    authorEl.textContent = author;
+    const textEl = document.createElement('p');
+    textEl.className = 'message-text';
+    textEl.textContent = text;
+    card.appendChild(authorEl);
+    card.appendChild(textEl);
+    container.appendChild(card);
+    return card;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    global.firebase = firebase;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+
+    ({ filterMessages } = require('../public/app.js'));
+  });
+
+  test('shows all cards when search term is empty', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'World', id: '2' });
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).not.toBe('none');
+  });
+
+  test('hides cards that do not match the search term', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello world', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).toBe('none');
+  });
+
+  test('matches by message text', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello world', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'world';
+    filterMessages();
+
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).toBe('none');
+  });
+
+  test('matching is case-insensitive', () => {
+    const container = document.getElementById('messages-container');
+    const card = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'ALICE';
+    filterMessages();
+
+    expect(card.style.display).not.toBe('none');
+  });
+
+  test('shows search-empty-state when no cards match', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'zzznomatch';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).toBe('block');
+  });
+
+  test('hides search-empty-state when some cards match', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).not.toBe('block');
+  });
+
+  test('shows Showing X of Y when filter is active and matches exist', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    addCard(container, { author: 'Bob', text: 'Goodbye', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    const countEl = document.getElementById('search-results-count');
+    expect(countEl.style.display).toBe('block');
+    expect(countEl.textContent).toBe('Showing 1 of 2');
+  });
+
+  test('hides Showing X of Y when search is cleared', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(document.getElementById('search-results-count').style.display).toBe('none');
+  });
+
+  test('shows clear button when term is non-empty', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(document.getElementById('search-clear-btn').style.display).not.toBe('none');
+  });
+
+  test('hides clear button when term is cleared', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(document.getElementById('search-clear-btn').style.display).toBe('none');
+  });
+
+  test('does not show search-empty-state when there are no cards at all', () => {
+    document.getElementById('search-input').value = 'anything';
+    filterMessages();
+
+    expect(document.getElementById('search-empty-state').style.display).not.toBe('block');
+  });
+
+  test('restores all cards when search is cleared after filtering', () => {
+    const container = document.getElementById('messages-container');
+    const c1 = addCard(container, { author: 'Alice', text: 'Hello', id: '1' });
+    const c2 = addCard(container, { author: 'Bob', text: 'World', id: '2' });
+
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+    expect(c2.style.display).toBe('none');
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+    expect(c1.style.display).not.toBe('none');
+    expect(c2.style.display).not.toBe('none');
+  });
+});
+
 // --- unauthenticated visitor ---
 describe('unauthenticated visitor', () => {
   let mocks;
@@ -792,5 +969,191 @@ describe('unauthenticated visitor', () => {
     authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
 
     expect(document.getElementById('login-btn-header').style.display).toBe('none');
+  });
+});
+
+// --- reply feature ---
+describe('reply feature', () => {
+  let createMessageCard;
+  let createReplyCard;
+
+  const baseMsg = {
+    id: 'msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, createReplyCard } = require('../public/app.js'));
+  });
+
+  // Reply button visibility
+  test('renders reply button for authenticated user viewing own message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-reply')).not.toBeNull();
+  });
+
+  test('renders reply button for authenticated user viewing another\'s message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-reply')).not.toBeNull();
+  });
+
+  test('does not render reply button when user is null', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-reply')).toBeNull();
+  });
+
+  // Reply form toggle
+  test('clicking reply button opens reply form', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-form-wrapper')).not.toBeNull();
+  });
+
+  test('clicking reply button again closes reply form (toggle)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+  });
+
+  test('reply form textarea enforces 250-char limit via maxLength', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(Number(card.querySelector('.reply-textarea').maxLength)).toBe(250);
+  });
+
+  // Cancel
+  test('cancel removes reply form without Firebase write', () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.btn-reply-cancel').click();
+
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+    expect(dr.update).not.toHaveBeenCalled();
+  });
+
+  // Validation
+  test('submitting blank reply shows error without Firebase write', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = '   ';
+    card.querySelector('.btn-reply-post').click();
+
+    const form = card.querySelector('.reply-form-wrapper');
+    expect(form.querySelector('.edit-error-msg').style.display).toBe('block');
+  });
+
+  // Submission
+  test('submitting reply calls db.ref().update() with reply path and rate-limit update', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = cmc(baseMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Great message!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dr.update).toHaveBeenCalledTimes(1);
+    const updateArg = dr.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${baseMsg.id}/replies/`));
+    expect(replyKey).toBeTruthy();
+    const replyData = updateArg[replyKey];
+    expect(replyData.text).toBe('Great message!');
+    expect(replyData.author).toBe('Bob');
+    expect(replyData.authorId).toBe('uid-bob');
+    const rateLimitKey = Object.keys(updateArg).find(k => k.includes('/users/uid-bob/lastPostTimestamp'));
+    expect(rateLimitKey).toBeTruthy();
+  });
+
+  test('successful reply submission closes the form', async () => {
+    const { firebase: fb, authInstance: ai } = makeFirebaseMock();
+    global.firebase = fb;
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Nice!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(card.querySelector('.reply-form-wrapper')).toBeNull();
+  });
+
+  // XSS safety in reply cards
+  test('createReplyCard escapes XSS in reply author (uses textContent)', () => {
+    const xssReply = {
+      id: 'r1',
+      author: '<script>alert(1)</script>',
+      text: 'Hello',
+      timestamp: Date.now(),
+      authorId: 'uid-x',
+    };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-author').textContent).toBe('<script>alert(1)</script>');
+    expect(card.innerHTML).not.toContain('<script>');
+  });
+
+  test('createReplyCard escapes XSS in reply text (uses textContent)', () => {
+    const xssReply = {
+      id: 'r1',
+      author: 'Eve',
+      text: '<img src=x onerror=alert(1)>',
+      timestamp: Date.now(),
+      authorId: 'uid-x',
+    };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-text').textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(card.innerHTML).not.toContain('<img');
+  });
+
+  // Reply delete button
+  test('createReplyCard renders delete button for own reply', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-alice' }, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).not.toBeNull();
+  });
+
+  test('createReplyCard does not render delete button for another user\'s reply', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).toBeNull();
+  });
+
+  test('createReplyCard does not render delete button when user is null', () => {
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('.btn-reply-delete')).toBeNull();
   });
 });
