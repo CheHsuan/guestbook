@@ -24,7 +24,7 @@
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
         },
         "author": {
-          ".validate": "data.exists() ? newData.val() === data.val() : (newData.isString() && newData.val().length > 0)"
+          ".validate": "data.exists() ? newData.val() === data.val() : newData.val() === auth.token.name"
         },
         "authorId": {
           ".validate": "newData.val() === auth.uid"
@@ -43,7 +43,7 @@
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
             },
             "author": {
-              ".validate": "data.exists() ? newData.val() === data.val() : (newData.isString() && newData.val().length > 0)"
+              ".validate": "data.exists() ? newData.val() === data.val() : newData.val() === auth.token.name"
             },
             "authorId": {
               ".validate": "newData.val() === auth.uid"
