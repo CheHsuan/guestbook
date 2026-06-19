@@ -41,6 +41,10 @@ npm run deploy
 
 Never commit directly to `main`.
 
+Agent-created worktree branches (e.g. `claude/abc123`) must also be renamed to follow this convention before creating a PR. Create a GitHub issue first if one does not exist.
+
+Issue titles must follow the `[Category] Description` format (e.g. `[Health Check] ...`, `[Feature Spec] ...`). Never use conventional commit format for issue titles.
+
 ## Commit Format (Conventional Commits)
 
 ```
