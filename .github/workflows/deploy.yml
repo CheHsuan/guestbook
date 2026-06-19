@@ -26,7 +26,6 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
-          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
           channelId: preview-${{ github.event.release.tag_name }}
           expires: 1d
 
@@ -49,7 +48,6 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
-          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
           channelId: live
 
       - name: Authenticate for Firebase CLI
@@ -58,4 +56,4 @@ jobs:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
 
       - name: Deploy Database Rules
-        run: npx -y firebase-tools deploy --only database --project "${{ vars.FIREBASE_PROJECT_ID }}"
+        run: npx -y firebase-tools deploy --only database 
