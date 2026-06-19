@@ -119,7 +119,10 @@ jobs:
     name: Claude Code Review
     runs-on: ubuntu-latest
     needs: [test]
-    if: success() && github.event_name == 'pull_request'
+    if: >
+      success() &&
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'needs-human-approval')
     outputs:
       lgtm: ${{ steps.review-outcome.outputs.lgtm }}
     permissions:
