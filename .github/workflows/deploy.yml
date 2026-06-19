@@ -26,8 +26,8 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
-          projectId: guestbook-3c7eb
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
           channelId: live
 
       - name: Deploy Database Rules
-        run: npx -y firebase-tools deploy --only database --project guestbook-3c7eb
+        run: npx -y firebase-tools deploy --only database --project "${{ vars.FIREBASE_PROJECT_ID }}"
