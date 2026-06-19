@@ -273,6 +273,60 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.edit-wrapper')).toBeNull();
     expect(card.querySelector('.message-text').style.display).toBe('');
   });
+
+  // --- Avatar feature ---
+  test('renders <img class="message-avatar"> when photoURL is provided', () => {
+    const msgWithPhoto = { ...baseMsg, photoURL: 'https://example.com/avatar.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    const img = card.querySelector('.message-avatar');
+    expect(img).not.toBeNull();
+    expect(img.tagName).toBe('IMG');
+  });
+
+  test('sets avatar src to photoURL via property assignment', () => {
+    const msgWithPhoto = { ...baseMsg, photoURL: 'https://example.com/avatar.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    expect(card.querySelector('.message-avatar').src).toContain('example.com/avatar.jpg');
+  });
+
+  test('sets referrerpolicy="no-referrer" on avatar img', () => {
+    const msgWithPhoto = { ...baseMsg, photoURL: 'https://example.com/avatar.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    expect(card.querySelector('.message-avatar').getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  test('sets alt text to author name for screen reader accessibility', () => {
+    const msgWithPhoto = { ...baseMsg, photoURL: 'https://example.com/avatar.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    expect(card.querySelector('.message-avatar').alt).toBe('Alice');
+  });
+
+  test('renders .avatar-fallback div when photoURL is absent', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.avatar-fallback')).not.toBeNull();
+    expect(card.querySelector('.message-avatar')).toBeNull();
+  });
+
+  test('fallback contains author first initial via textContent (not innerHTML)', () => {
+    const card = createMessageCard(baseMsg, null);
+    const fallback = card.querySelector('.avatar-fallback');
+    expect(fallback.textContent).toBe('A');
+    expect(fallback.children.length).toBe(0);
+  });
+
+  test('onerror on avatar img replaces it with .avatar-fallback', () => {
+    const msgWithPhoto = { ...baseMsg, photoURL: 'https://broken.example.com/avatar.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    const header = card.querySelector('.message-header');
+
+    document.body.appendChild(card);
+    card.querySelector('.message-avatar').onerror();
+
+    expect(header.querySelector('.message-avatar')).toBeNull();
+    expect(header.querySelector('.avatar-fallback')).not.toBeNull();
+
+    document.body.removeChild(card);
+  });
 });
 
 // --- Form submit handler ---
@@ -370,6 +424,22 @@ describe('post form submit handler', () => {
     input.value = 'Should not post';
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  test('post payload includes photoURL from currentUser', async () => {
+    simulateSignIn({ uid: 'uid-test', displayName: 'Tester', photoURL: 'https://example.com/photo.jpg' });
+    const form = document.getElementById('post-form');
+    const input = document.getElementById('message-input');
+
+    input.value = 'Testing photo URL inclusion';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = mocks.dbRef.update.mock.calls[0][0];
+    const msgEntry = Object.values(updateArg).find(v => v && v.text);
+    expect(msgEntry.photoURL).toBe('https://example.com/photo.jpg');
   });
 });
 

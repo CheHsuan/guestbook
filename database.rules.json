@@ -35,6 +35,9 @@
         "editedAt": {
           ".validate": "newData.isNumber()"
         },
+        "photoURL": {
+          ".validate": "newData.isString()"
+        },
         "replies": {
           "$reply_id": {
             ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",

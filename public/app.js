@@ -456,6 +456,37 @@ function createReplyCard(reply, user, msgId) {
 }
 
 // ========================================
+// Avatar Element
+// ========================================
+const AVATAR_FALLBACK_COLORS = ['#e8b4b8', '#a8d8ea', '#b8d8be', '#f9c784', '#c5b8e8', '#f2c4a0'];
+
+function createAvatarElement(photoURL, author) {
+  function makeFallback() {
+    const div = document.createElement('div');
+    div.className = 'avatar-fallback';
+    const colorIndex = (author ? author.charCodeAt(0) : 0) % AVATAR_FALLBACK_COLORS.length;
+    div.style.backgroundColor = AVATAR_FALLBACK_COLORS[colorIndex];
+    div.textContent = author ? author.charAt(0).toUpperCase() : '?';
+    return div;
+  }
+
+  if (!photoURL) {
+    return makeFallback();
+  }
+
+  const img = document.createElement('img');
+  img.className = 'message-avatar';
+  img.alt = author || '';
+  img.setAttribute('referrerpolicy', 'no-referrer');
+  img.src = photoURL;
+  img.onerror = function () {
+    const fallback = makeFallback();
+    if (img.parentNode) img.parentNode.replaceChild(fallback, img);
+  };
+  return img;
+}
+
+// ========================================
 // Create Message Card Element
 // ========================================
 function createMessageCard(msg, user) {
@@ -480,6 +511,8 @@ function createMessageCard(msg, user) {
     timeEl.appendChild(editedLabel);
   }
 
+  const avatarEl = createAvatarElement(msg.photoURL, msg.author);
+  header.appendChild(avatarEl);
   header.appendChild(authorEl);
   header.appendChild(timeEl);
 
@@ -860,7 +893,8 @@ postForm.addEventListener('submit', async (e) => {
       text: text,
       author: currentUser.displayName || 'Anonymous',
       authorId: currentUser.uid,
-      timestamp: firebase.database.ServerValue.TIMESTAMP
+      timestamp: firebase.database.ServerValue.TIMESTAMP,
+      photoURL: currentUser.photoURL || ''
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -891,5 +925,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement };
 }
