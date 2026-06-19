@@ -833,13 +833,21 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   color: var(--text-muted);
   opacity: 0.6;
   transition: opacity 0.2s, color 0.2s, background 0.2s;
-  padding: 2px 4px;
-  border-radius: var(--radius-sm);
   flex-shrink: 0;
+}
+
+.btn-reply-delete svg {
+  width: 14px;
+  height: 14px;
 }
 
 .btn-reply-delete:hover {
