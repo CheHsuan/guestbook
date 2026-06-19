@@ -1,33 +1,33 @@
 {
-    "hosting": {
-        "public": "public",
-        "cleanUrls": true,
-        "ignore": [
-            "firebase.json",
-            "**/.*",
-            "**/node_modules/**"
-        ]
-    },
+  "hosting": {
+    "public": "public",
+    "cleanUrls": true,
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  },
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "emulators": {
     "database": {
-        "rules": "database.rules.json"
+      "port": 9000,
+      "host": "0.0.0.0"
     },
-    "emulators": {
-        "database": {
-            "port": 9000,
-            "host": "0.0.0.0"
-        },
-        "auth": {
-            "port": 9099,
-            "host": "0.0.0.0"
-        },
-        "hosting": {
-            "port": 5005,
-            "host": "0.0.0.0"
-        },
-        "ui": {
-            "enabled": true,
-            "port": 4000,
-            "host": "0.0.0.0"
-        }
+    "auth": {
+      "port": 9099,
+      "host": "0.0.0.0"
+    },
+    "hosting": {
+      "port": 5005,
+      "host": "0.0.0.0"
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000,
+      "host": "0.0.0.0"
     }
+  }
 }

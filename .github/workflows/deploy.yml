@@ -1,8 +1,8 @@
 name: Deploy to Firebase
 
 on:
-  push:
-    branches: [production]
+  release:
+    types: [published]
 
 jobs:
   deploy:
@@ -21,7 +21,18 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Deploy to Firebase
-        run: npx -y firebase-tools deploy --only hosting,database --token "$FIREBASE_TOKEN"
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Deploy Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          channelId: live
+
+      - name: Authenticate for Firebase CLI
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
+
+      - name: Deploy Database Rules
+        run: npx -y firebase-tools deploy --only database --project "${{ vars.FIREBASE_PROJECT_ID }}"
