@@ -33,6 +33,7 @@ jobs:
     name: Deploy Hosting and Database to Live
     runs-on: ubuntu-latest
     needs: [preview]
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
