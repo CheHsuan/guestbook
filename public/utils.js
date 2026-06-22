@@ -99,7 +99,21 @@ function getEmulatorConfig(hostname) {
     return null;
 }
 
+/**
+ * Resolve the initial theme from persisted storage and OS preference.
+ * @param {Storage|null} storage - localStorage or a test stub (may throw).
+ * @param {boolean} matchesDark  - result of matchMedia('prefers-color-scheme: dark').matches.
+ * @returns {'dark'|'light'}
+ */
+function getInitialTheme(storage, matchesDark) {
+    try {
+        var saved = storage ? storage.getItem('theme') : null;
+        if (saved === 'dark' || saved === 'light') return saved;
+    } catch (e) { /* localStorage unavailable — fall through */ }
+    return matchesDark ? 'dark' : 'light';
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme };
 }

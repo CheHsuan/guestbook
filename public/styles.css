@@ -49,6 +49,45 @@
   }
 }
 
+/* Explicit theme overrides — take precedence over the OS media query */
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #f7f9f9;
+  --surface: #ffffff;
+  --border: #eff3f4;
+  --border-strong: #cfd9de;
+  --text-primary: #0f1419;
+  --text-secondary: #536471;
+  --text-muted: #8b98a5;
+  --accent: #0f1419;
+  --accent-hover: #272c30;
+  --accent-contrast: #ffffff;
+  --link: #1d9bf0;
+  --danger: #f4212e;
+  --danger-bg: rgba(244, 33, 46, 0.1);
+  --warning: #b8860b;
+  --focus-ring: rgba(29, 155, 240, 0.4);
+}
+
+[data-theme="dark"] {
+  --bg: #000000;
+  --bg-subtle: #16181c;
+  --surface: #000000;
+  --border: #2f3336;
+  --border-strong: #3e4144;
+  --text-primary: #e7e9ea;
+  --text-secondary: #71767b;
+  --text-muted: #565a5f;
+  --accent: #eff3f4;
+  --accent-hover: #d7dbdc;
+  --accent-contrast: #0f1419;
+  --link: #1d9bf0;
+  --danger: #f4212e;
+  --danger-bg: rgba(244, 33, 46, 0.18);
+  --warning: #e3b341;
+  --focus-ring: rgba(29, 155, 240, 0.5);
+}
+
 /* ========================================
    Reset & Base
    ======================================== */
@@ -713,6 +752,39 @@ body {
   .login-card {
     padding: 32px 22px;
   }
+}
+
+/* ========================================
+   Theme Toggle Button
+   ======================================== */
+.btn-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color var(--transition), background var(--transition);
+}
+
+.btn-theme-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.btn-theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.btn-theme-toggle svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* ========================================
