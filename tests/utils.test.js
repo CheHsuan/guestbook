@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -232,6 +232,47 @@ describe('getEmulatorConfig', () => {
         expect(config).toHaveProperty('authDomain');
         expect(config).toHaveProperty('databaseURL');
         expect(config).toHaveProperty('projectId');
+    });
+});
+
+// ========================================
+// getInitialTheme
+// ========================================
+describe('getInitialTheme', () => {
+    function makeStorage(value) {
+        return { getItem: () => value };
+    }
+
+    test('returns "dark" when localStorage has "dark"', () => {
+        expect(getInitialTheme(makeStorage('dark'), false)).toBe('dark');
+    });
+
+    test('returns "light" when localStorage has "light"', () => {
+        expect(getInitialTheme(makeStorage('light'), true)).toBe('light');
+    });
+
+    test('falls back to "dark" when localStorage is empty and OS prefers dark', () => {
+        expect(getInitialTheme(makeStorage(null), true)).toBe('dark');
+    });
+
+    test('falls back to "light" when localStorage is empty and OS prefers light', () => {
+        expect(getInitialTheme(makeStorage(null), false)).toBe('light');
+    });
+
+    test('ignores unrecognised localStorage values and falls back to OS preference', () => {
+        expect(getInitialTheme(makeStorage('system'), true)).toBe('dark');
+        expect(getInitialTheme(makeStorage('system'), false)).toBe('light');
+    });
+
+    test('falls back silently to OS preference when localStorage throws', () => {
+        const badStorage = { getItem: () => { throw new Error('QuotaExceededError'); } };
+        expect(getInitialTheme(badStorage, true)).toBe('dark');
+        expect(getInitialTheme(badStorage, false)).toBe('light');
+    });
+
+    test('falls back to OS preference when storage is null', () => {
+        expect(getInitialTheme(null, true)).toBe('dark');
+        expect(getInitialTheme(null, false)).toBe('light');
     });
 });
 

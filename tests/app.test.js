@@ -103,6 +103,7 @@ describe('createMessageCard', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -350,6 +351,7 @@ describe('post form submit handler', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -467,6 +469,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -559,6 +562,7 @@ describe('sign-out behaviour', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -814,6 +818,7 @@ describe('search / filter', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -977,6 +982,7 @@ describe('unauthenticated visitor', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1061,6 +1067,7 @@ describe('reply feature', () => {
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
