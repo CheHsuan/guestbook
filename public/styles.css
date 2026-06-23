@@ -695,6 +695,33 @@ body {
 }
 
 /* ========================================
+   Typing Indicator
+   ======================================== */
+.typing-indicator {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-muted);
+  padding: 0 0 8px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  min-height: 1.4em;
+}
+
+.typing-indicator--visible {
+  opacity: 1;
+}
+
+.typing-indicator--visible::after {
+  content: '...';
+  animation: typing-dots 1.4s ease-in-out infinite;
+}
+
+@keyframes typing-dots {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ========================================
    Login Prompt
    ======================================== */
 .login-prompt {
