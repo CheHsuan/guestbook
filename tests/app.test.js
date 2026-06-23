@@ -35,6 +35,7 @@ const APP_HTML = `
     <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
+  <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -1461,5 +1462,136 @@ describe('handleDeepLink', () => {
     expect(card.scrollIntoView).not.toHaveBeenCalled();
 
     document.getElementById('messages-container').removeChild(card);
+  });
+});
+
+// --- renderTypingLabel ---
+describe('renderTypingLabel', () => {
+  let renderTypingLabel;
+
+  beforeAll(() => {
+    jest.useFakeTimers();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+
+    const { firebase, authInstance, dbInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ renderTypingLabel } = require('../public/app.js'));
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
+  beforeEach(() => {
+    const el = document.getElementById('typing-indicator');
+    el.style.display = 'none';
+    el.textContent = '';
+    el.className = 'typing-indicator';
+  });
+
+  test('hides indicator when map is empty', () => {
+    const el = document.getElementById('typing-indicator');
+    el.style.display = '';
+    el.classList.add('typing-indicator--visible');
+
+    renderTypingLabel(new Map(), 'uid-me');
+
+    expect(el.classList.contains('typing-indicator--visible')).toBe(false);
+    jest.runAllTimers();
+    expect(el.style.display).toBe('none');
+  });
+
+  test('shows single user label', () => {
+    const map = new Map([['uid-alice', { name: 'Alice', timestamp: Date.now() }]]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('Alice is typing');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(true);
+    expect(el.style.display).not.toBe('none');
+  });
+
+  test('shows two-user label', () => {
+    const now = Date.now();
+    const map = new Map([
+      ['uid-alice', { name: 'Alice', timestamp: now }],
+      ['uid-bob',   { name: 'Bob',   timestamp: now }],
+    ]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('Alice and Bob are typing');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(true);
+  });
+
+  test('shows "Several people are typing" for 3+ users', () => {
+    const now = Date.now();
+    const map = new Map([
+      ['uid-a', { name: 'Alice',   timestamp: now }],
+      ['uid-b', { name: 'Bob',     timestamp: now }],
+      ['uid-c', { name: 'Charlie', timestamp: now }],
+    ]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('Several people are typing');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(true);
+  });
+
+  test('excludes the current user from the label', () => {
+    const now = Date.now();
+    const map = new Map([
+      ['uid-me',    { name: 'Me',    timestamp: now }],
+      ['uid-alice', { name: 'Alice', timestamp: now }],
+    ]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('Alice is typing');
+  });
+
+  test('hides indicator when only the current user is typing', () => {
+    const map = new Map([['uid-me', { name: 'Me', timestamp: Date.now() }]]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(false);
+  });
+
+  test('ignores stale records older than 30 seconds', () => {
+    const staleTimestamp = Date.now() - 31000;
+    const map = new Map([['uid-alice', { name: 'Alice', timestamp: staleTimestamp }]]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(false);
+  });
+
+  test('truncates names longer than 25 characters', () => {
+    const longName = 'A'.repeat(30);
+    const map = new Map([['uid-long', { name: longName, timestamp: Date.now() }]]);
+    renderTypingLabel(map, 'uid-me');
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('AAAAAAAAAAAAAAAAAAAAAAAAA… is typing');
+  });
+
+  test('handles null currentUid (unauthenticated visitor)', () => {
+    const map = new Map([['uid-alice', { name: 'Alice', timestamp: Date.now() }]]);
+    renderTypingLabel(map, null);
+
+    const el = document.getElementById('typing-indicator');
+    expect(el.textContent).toBe('Alice is typing');
+    expect(el.classList.contains('typing-indicator--visible')).toBe(true);
   });
 });

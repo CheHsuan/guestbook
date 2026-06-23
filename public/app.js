@@ -97,6 +97,104 @@ const replyCountMap = new Map(); // msgId -> current reply count (for delete war
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
 
 // ========================================
+// Typing Indicator
+// ========================================
+const typingMap = new Map(); // uid -> { name, timestamp }
+let typingRef = null;        // db ref for current user's typing record
+let typingDebounceTimer = null;
+let typingListener = null;
+let typingHideTimer = null;
+
+function renderTypingLabel(map, currentUid) {
+  const thirtySecondsAgo = Date.now() - 30000;
+  const typers = [];
+
+  for (const [uid, data] of map.entries()) {
+    if (uid === currentUid) continue;
+    if (data.timestamp < thirtySecondsAgo) continue;
+    const name = data.name || '';
+    typers.push(name.length > 25 ? name.slice(0, 25) + '…' : name);
+  }
+
+  const el = document.getElementById('typing-indicator');
+  if (!el) return;
+
+  if (typers.length === 0) {
+    clearTimeout(typingHideTimer);
+    el.classList.remove('typing-indicator--visible');
+    typingHideTimer = setTimeout(() => {
+      if (!el.classList.contains('typing-indicator--visible')) {
+        el.style.display = 'none';
+        el.textContent = '';
+      }
+    }, 200);
+    return;
+  }
+
+  let text;
+  if (typers.length === 1) {
+    text = `${typers[0]} is typing`;
+  } else if (typers.length === 2) {
+    text = `${typers[0]} and ${typers[1]} are typing`;
+  } else {
+    text = 'Several people are typing';
+  }
+
+  el.textContent = text;
+
+  if (!el.classList.contains('typing-indicator--visible')) {
+    clearTimeout(typingHideTimer);
+    el.style.display = '';
+    void el.offsetWidth; // force reflow to enable the CSS transition
+    el.classList.add('typing-indicator--visible');
+  }
+}
+
+function startTyping() {
+  if (!currentUser) return;
+
+  if (!typingRef) {
+    typingRef = db.ref(`typing/${currentUser.uid}`);
+    typingRef.onDisconnect().remove();
+  }
+
+  typingRef.set({
+    name: currentUser.displayName || 'Anonymous',
+    timestamp: firebase.database.ServerValue.TIMESTAMP,
+  });
+
+  clearTimeout(typingDebounceTimer);
+  typingDebounceTimer = setTimeout(stopTyping, 5000);
+}
+
+function stopTyping() {
+  clearTimeout(typingDebounceTimer);
+  if (typingRef) {
+    typingRef.remove();
+  }
+}
+
+function setupTypingInputListeners() {
+  const isMobile = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: none) and (pointer: coarse)').matches
+    : false;
+
+  messageInput.addEventListener('input', () => {
+    if (!currentUser) return;
+    if (isMobile && messageInput.value.length === 0) return;
+    if (messageInput.value.length > 0) {
+      startTyping();
+    }
+  });
+
+  messageInput.addEventListener('blur', () => {
+    if (!messageInput.value.trim()) {
+      stopTyping();
+    }
+  });
+}
+
+// ========================================
 // Permalink: Toast + Deep-link
 // ========================================
 let deepLinkHandled = false;
@@ -208,6 +306,12 @@ logoutBtn.addEventListener('click', signOut);
 // Auth: State Observer
 // ========================================
 auth.onAuthStateChanged((user) => {
+  // Clean up typing indicator when signing out
+  if (!user && currentUser) {
+    stopTyping();
+    typingRef = null;
+  }
+
   currentUser = user;
 
   // Message feed is always visible; login prompt is never shown full-screen
@@ -381,6 +485,24 @@ async function startListeningMessages() {
     // Assign scroll listener
     window.addEventListener('scroll', handleScroll);
 
+    // 4. Listen for typing indicators
+    if (!typingListener) {
+      const typingDbRef = db.ref('typing');
+      typingDbRef.on('child_added', (snap) => {
+        typingMap.set(snap.key, snap.val());
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingDbRef.on('child_changed', (snap) => {
+        typingMap.set(snap.key, snap.val());
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingDbRef.on('child_removed', (snap) => {
+        typingMap.delete(snap.key);
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingListener = typingDbRef;
+    }
+
   } catch (error) {
     console.error('Error loading initial messages:', error);
     loadingState.style.display = 'none';
@@ -470,6 +592,11 @@ function stopListeningMessages() {
   if (totalMessagesListener) {
     db.ref('messages').off('value', totalMessagesListener);
     totalMessagesListener = null;
+  }
+  if (typingListener) {
+    typingListener.off();
+    typingListener = null;
+    typingMap.clear();
   }
 
   replyListenerMap.forEach(ref => ref.off());
@@ -948,6 +1075,9 @@ function updateEditCounter(el, len) {
 
 // formatTimestamp is provided by utils.js
 
+// Wire up typing indicator listeners
+setupTypingInputListeners();
+
 // ========================================
 // Character Counter
 // ========================================
@@ -1016,7 +1146,8 @@ postForm.addEventListener('submit', async (e) => {
     // Send the atomic update
     await db.ref().update(updates);
 
-    // Success — clear input
+    // Success — clear input and stop typing indicator
+    stopTyping();
     messageInput.value = '';
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
@@ -1040,5 +1171,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel };
 }
