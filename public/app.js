@@ -25,6 +25,7 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 // ========================================
 const MOON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 const SUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -94,6 +95,38 @@ let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+
+// ========================================
+// Permalink: Toast + Deep-link
+// ========================================
+let deepLinkHandled = false;
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'permalink-toast permalink-toast--visible';
+  toast.textContent = message; // textContent — never user-derived
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.remove('permalink-toast--visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+function handleDeepLink() {
+  if (deepLinkHandled) return;
+  const hash = location.hash;
+  if (!hash.startsWith('#msg-')) return;
+  const targetEl = document.getElementById(hash.slice(1));
+  if (targetEl) {
+    deepLinkHandled = true;
+    targetEl.scrollIntoView({ behavior: 'smooth' });
+    targetEl.classList.add('permalink-highlight');
+    setTimeout(() => targetEl.classList.remove('permalink-highlight'), 2000);
+  } else if (!hasMoreMessages) {
+    deepLinkHandled = true;
+    showToast('Message not found — it may have expired.');
+  }
+}
 
 // ========================================
 // Search / Filter
@@ -227,6 +260,7 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
+  deepLinkHandled = false;
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
@@ -246,6 +280,7 @@ async function startListeningMessages() {
 
     if (!snapshot.exists()) {
       emptyState.style.display = 'block';
+      hasMoreMessages = false;
     } else {
       emptyState.style.display = 'none';
       const messages = [];
@@ -270,6 +305,8 @@ async function startListeningMessages() {
         messagesContainer.appendChild(card);
       });
     }
+
+    handleDeepLink();
 
     // Start listening for true total count for the badge
     if (!totalMessagesListener) {
@@ -403,6 +440,7 @@ async function loadMoreMessages() {
     });
 
     filterMessages();
+    handleDeepLink();
 
   } catch (error) {
     console.error('Error loading more messages:', error);
@@ -714,6 +752,41 @@ function createMessageCard(msg, user) {
   replyCountEl.style.display = 'none';
   cardFooter.appendChild(replyCountEl);
 
+  // Permalink button — visible to all visitors (not gated on auth)
+  const isMobile = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: none)').matches
+    : false;
+
+  const permalinkBtn = document.createElement('button');
+  permalinkBtn.className = 'btn-permalink';
+  permalinkBtn.setAttribute('aria-label', 'Copy link to this message');
+  permalinkBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+  permalinkBtn.innerHTML = LINK_ICON; // static SVG — no user data
+
+  const permalinkTooltip = document.createElement('span');
+  permalinkTooltip.className = 'permalink-tooltip';
+  permalinkTooltip.textContent = 'Copied!';
+  permalinkBtn.appendChild(permalinkTooltip);
+
+  if (!isMobile) {
+    card.addEventListener('mouseenter', () => permalinkBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => permalinkBtn.setAttribute('tabindex', '-1'));
+  }
+
+  permalinkBtn.addEventListener('click', () => {
+    const url = 'https://guestbook.slashstack.app/app#msg-' + msg.id;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        permalinkTooltip.classList.add('permalink-tooltip--visible');
+        setTimeout(() => permalinkTooltip.classList.remove('permalink-tooltip--visible'), 1500);
+      }).catch(() => {
+        prompt('Copy this link:', url);
+      });
+    } else {
+      prompt('Copy this link:', url);
+    }
+  });
+
   if (user) {
     const replyBtn = document.createElement('button');
     replyBtn.className = 'btn-reply';
@@ -815,6 +888,8 @@ function createMessageCard(msg, user) {
 
     cardFooter.appendChild(replyBtn);
   }
+
+  cardFooter.appendChild(permalinkBtn);
 
   // Replies section (hidden until replies exist)
   const repliesSection = document.createElement('div');
@@ -965,5 +1040,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast };
 }
