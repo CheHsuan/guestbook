@@ -1234,3 +1234,232 @@ describe('reply feature', () => {
     expect(card.querySelector('.btn-reply-delete')).toBeNull();
   });
 });
+
+// --- permalink button ---
+describe('permalink button', () => {
+  let createMessageCard;
+
+  const baseMsg = {
+    id: 'permalink-msg-1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('renders .btn-permalink on every card (no user)', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+  });
+
+  test('renders .btn-permalink on every card (own message)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+  });
+
+  test('renders .btn-permalink on every card (other user)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+  });
+
+  test('.btn-permalink has aria-label="Copy link to this message"', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-permalink').getAttribute('aria-label'))
+      .toBe('Copy link to this message');
+  });
+
+  test('.btn-permalink has tabindex="-1" in non-touch environment (jsdom has no matchMedia)', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-permalink').getAttribute('tabindex')).toBe('-1');
+  });
+
+  test('.btn-permalink comes after .btn-reply in the footer', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const replyIdx = children.findIndex(el => el.classList.contains('btn-reply'));
+    const permalinkIdx = children.findIndex(el => el.classList.contains('btn-permalink'));
+    expect(replyIdx).toBeGreaterThanOrEqual(0);
+    expect(permalinkIdx).toBeGreaterThan(replyIdx);
+  });
+
+  test('.btn-permalink contains .permalink-tooltip with text "Copied!"', () => {
+    const card = createMessageCard(baseMsg, null);
+    const tooltip = card.querySelector('.btn-permalink .permalink-tooltip');
+    expect(tooltip).not.toBeNull();
+    expect(tooltip.textContent).toBe('Copied!');
+  });
+
+  test('.permalink-tooltip does not use innerHTML for its text', () => {
+    const card = createMessageCard(baseMsg, null);
+    const tooltip = card.querySelector('.permalink-tooltip');
+    expect(tooltip.children.length).toBe(0);
+  });
+
+  test('clicking .btn-permalink calls clipboard.writeText with full permalink URL', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-permalink').click();
+    await Promise.resolve();
+
+    expect(writeText).toHaveBeenCalledWith(
+      `https://guestbook.slashstack.app/app#msg-${baseMsg.id}`
+    );
+  });
+
+  test('successful clipboard copy adds permalink-tooltip--visible class to tooltip', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-permalink').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(card.querySelector('.permalink-tooltip').classList.contains('permalink-tooltip--visible'))
+      .toBe(true);
+  });
+
+  test('falls back to prompt() when clipboard API is unavailable', () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: null,
+      writable: true,
+      configurable: true,
+    });
+    const promptSpy = jest.spyOn(window, 'prompt').mockImplementation(() => null);
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-permalink').click();
+
+    expect(promptSpy).toHaveBeenCalledWith(
+      'Copy this link:',
+      `https://guestbook.slashstack.app/app#msg-${baseMsg.id}`
+    );
+    promptSpy.mockRestore();
+  });
+});
+
+// --- handleDeepLink ---
+describe('handleDeepLink', () => {
+  let handleDeepLink;
+  let mocks;
+  let authStateCallback;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.firebase = mocks.firebase;
+
+    ({ handleDeepLink } = require('../public/app.js'));
+  });
+
+  test('adds permalink-highlight class and calls scrollIntoView when hash target is in DOM', () => {
+    const targetId = 'msg-deep-link-target';
+    const card = document.createElement('div');
+    card.id = targetId;
+    card.scrollIntoView = jest.fn();
+    document.getElementById('messages-container').appendChild(card);
+
+    window.location.hash = `#${targetId}`;
+    handleDeepLink();
+
+    expect(card.classList.contains('permalink-highlight')).toBe(true);
+    expect(card.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+
+    document.getElementById('messages-container').removeChild(card);
+  });
+
+  test('does not show toast when hash target not found but hasMoreMessages is still true', () => {
+    window.location.hash = '#msg-nonexistent-id';
+    handleDeepLink();
+    expect(document.querySelector('.permalink-toast')).toBeNull();
+  });
+
+  test('shows toast when hash target not found and no more messages (empty DB)', async () => {
+    window.location.hash = '#msg-nonexistent-id';
+    // Trigger startListeningMessages via auth state; empty DB → hasMoreMessages = false
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector('.permalink-toast')).not.toBeNull();
+    expect(document.querySelector('.permalink-toast').textContent)
+      .toBe('Message not found — it may have expired.');
+  });
+
+  test('does not run handleDeepLink twice (deepLinkHandled guard)', () => {
+    const targetId = 'msg-guard-test';
+    const card = document.createElement('div');
+    card.id = targetId;
+    card.scrollIntoView = jest.fn();
+    document.getElementById('messages-container').appendChild(card);
+
+    window.location.hash = `#${targetId}`;
+    handleDeepLink();
+    card.classList.remove('permalink-highlight');
+    handleDeepLink(); // should be a no-op
+
+    expect(card.classList.contains('permalink-highlight')).toBe(false);
+
+    document.getElementById('messages-container').removeChild(card);
+  });
+
+  test('does nothing when hash does not start with #msg-', () => {
+    const card = document.createElement('div');
+    card.id = 'msg-some-id';
+    card.scrollIntoView = jest.fn();
+    document.getElementById('messages-container').appendChild(card);
+
+    window.location.hash = '#unrelated-hash';
+    handleDeepLink();
+
+    expect(card.classList.contains('permalink-highlight')).toBe(false);
+    expect(card.scrollIntoView).not.toHaveBeenCalled();
+
+    document.getElementById('messages-container').removeChild(card);
+  });
+});

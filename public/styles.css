@@ -26,6 +26,7 @@
   --radius-sm: 8px;
   --radius-pill: 999px;
   --transition: 0.15s ease;
+  --accent-faint: rgba(251, 188, 5, 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,6 +47,7 @@
     --danger-bg: rgba(244, 33, 46, 0.18);
     --warning: #e3b341;
     --focus-ring: rgba(29, 155, 240, 0.5);
+    --accent-faint: rgba(251, 188, 5, 0.12);
   }
 }
 
@@ -86,6 +88,7 @@
   --danger-bg: rgba(244, 33, 46, 0.18);
   --warning: #e3b341;
   --focus-ring: rgba(29, 155, 240, 0.5);
+  --accent-faint: rgba(251, 188, 5, 0.12);
 }
 
 /* ========================================
@@ -926,4 +929,113 @@ body {
   opacity: 1;
   color: var(--danger);
   background: var(--danger-bg);
+}
+
+/* ========================================
+   Permalink Button
+   ======================================== */
+.btn-permalink {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.btn-permalink svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-card:hover .btn-permalink {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-permalink:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-permalink:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .btn-permalink {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.permalink-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: var(--accent-contrast);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  font-family: inherit;
+}
+
+.permalink-tooltip--visible {
+  opacity: 1;
+}
+
+/* ========================================
+   Deep-link Highlight Animation
+   ======================================== */
+@keyframes permalink-highlight-fade {
+  0% { background-color: var(--accent-faint); }
+  100% { background-color: transparent; }
+}
+
+.permalink-highlight {
+  animation: permalink-highlight-fade 2s ease-out forwards;
+}
+
+/* ========================================
+   Not-found Toast
+   ======================================== */
+.permalink-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--text-primary);
+  color: var(--accent-contrast);
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 0.85rem;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 100;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.permalink-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
