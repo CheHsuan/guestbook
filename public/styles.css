@@ -540,6 +540,12 @@ body {
   white-space: pre-wrap;
 }
 
+.message-text a,
+.reply-text a {
+  color: var(--link);
+  text-decoration: underline;
+}
+
 .edited-label {
   color: var(--text-muted);
   font-size: 0.8rem;

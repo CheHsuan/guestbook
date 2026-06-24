@@ -105,6 +105,8 @@ describe('createMessageCard', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -353,6 +355,8 @@ describe('post form submit handler', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -471,6 +475,8 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -564,6 +570,8 @@ describe('sign-out behaviour', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -677,6 +685,8 @@ describe('infinite scroll / loadMoreMessages', () => {
     global.getEmulatorConfig = utils.getEmulatorConfig;
     global.validateMessage = utils.validateMessage;
     global.formatTimestamp = utils.formatTimestamp;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.isNearBottom = jest.fn().mockReturnValue(false);
     global.firebase = mocks.firebase;
 
@@ -820,6 +830,8 @@ describe('search / filter', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -984,6 +996,8 @@ describe('unauthenticated visitor', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1069,6 +1083,8 @@ describe('reply feature', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1257,6 +1273,8 @@ describe('permalink button', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1392,6 +1410,8 @@ describe('handleDeepLink', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
     global.firebase = mocks.firebase;
 
     ({ handleDeepLink } = require('../public/app.js'));
@@ -1478,6 +1498,8 @@ describe('renderTypingLabel', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.isNearBottom = utils.isNearBottom;
     global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;

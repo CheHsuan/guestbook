@@ -652,7 +652,7 @@ function createReplyCard(reply, user, msgId) {
 
   const textEl = document.createElement('p');
   textEl.className = 'reply-text';
-  textEl.textContent = reply.text; // textContent for XSS safety
+  renderTextWithLinks(textEl, reply.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
@@ -723,7 +723,7 @@ function createMessageCard(msg, user) {
 
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  textEl.textContent = msg.text; // textContent for XSS safety
+  renderTextWithLinks(textEl, msg.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
@@ -844,7 +844,7 @@ function createMessageCard(msg, user) {
           msg.editedAt = Date.now();
 
           // Update card to reflect saved text
-          textEl.textContent = validation.text;
+          renderTextWithLinks(textEl, validation.text);
           if (!timeEl.querySelector('.edited-label')) {
             const editedLabel = document.createElement('span');
             editedLabel.className = 'edited-label';
