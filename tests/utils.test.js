@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -273,6 +273,74 @@ describe('getInitialTheme', () => {
     test('falls back to OS preference when storage is null', () => {
         expect(getInitialTheme(null, true)).toBe('dark');
         expect(getInitialTheme(null, false)).toBe('light');
+    });
+});
+
+// ========================================
+// parseTextSegments
+// ========================================
+describe('parseTextSegments', () => {
+    test('plain URL only', () => {
+        const segs = parseTextSegments('https://example.com');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toMatchObject({ type: 'url', value: 'https://example.com', display: 'https://example.com' });
+    });
+
+    test('URL mid-sentence', () => {
+        const segs = parseTextSegments('check out https://example.com cool');
+        expect(segs).toHaveLength(3);
+        expect(segs[0]).toEqual({ type: 'text', value: 'check out ' });
+        expect(segs[1]).toMatchObject({ type: 'url', value: 'https://example.com' });
+        expect(segs[2]).toEqual({ type: 'text', value: ' cool' });
+    });
+
+    test('URL at end of sentence', () => {
+        const segs = parseTextSegments('visit https://example.com');
+        expect(segs).toHaveLength(2);
+        expect(segs[0]).toEqual({ type: 'text', value: 'visit ' });
+        expect(segs[1]).toMatchObject({ type: 'url', value: 'https://example.com' });
+    });
+
+    test('multiple URLs', () => {
+        const segs = parseTextSegments('https://a.com and https://b.com');
+        const urls = segs.filter(s => s.type === 'url');
+        expect(urls).toHaveLength(2);
+        expect(urls[0].value).toBe('https://a.com');
+        expect(urls[1].value).toBe('https://b.com');
+    });
+
+    test('no URL returns single text segment', () => {
+        const segs = parseTextSegments('just plain text');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: 'just plain text' });
+    });
+
+    test('javascript: scheme is NOT linked', () => {
+        const segs = parseTextSegments('javascript:alert(1)');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('long URL display label is truncated to 50 chars + ellipsis', () => {
+        const longUrl = 'https://example.com/' + 'a'.repeat(60);
+        const segs = parseTextSegments(longUrl);
+        expect(segs[0].type).toBe('url');
+        expect(segs[0].value).toBe(longUrl);
+        expect(segs[0].display).toBe(longUrl.slice(0, 50) + '…');
+    });
+
+    test('trailing period stripped from URL', () => {
+        const segs = parseTextSegments('see https://example.com.');
+        const urlSeg = segs.find(s => s.type === 'url');
+        expect(urlSeg.value).toBe('https://example.com');
+        expect(segs.some(s => s.type === 'text' && s.value === '.')).toBe(true);
+    });
+
+    test('empty string returns empty array', () => {
+        expect(parseTextSegments('')).toEqual([]);
+    });
+
+    test('null returns empty array', () => {
+        expect(parseTextSegments(null)).toEqual([]);
     });
 });
 
