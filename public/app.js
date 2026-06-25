@@ -21,6 +21,16 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 }
 
 // ========================================
+// Keyboard Shortcut: Cmd/Ctrl+Enter
+// ========================================
+const SUBMIT_HINT_TEXT = (function () {
+  try {
+    if (/Mac|iPhone|iPad|iPod/.test(navigator.platform || '')) return 'or press ⌘↵';
+  } catch (_) {}
+  return 'or press Ctrl+↵';
+}());
+
+// ========================================
 // Theme Toggle
 // ========================================
 const MOON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
@@ -77,6 +87,7 @@ const postForm = document.getElementById('post-form');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
 const submitBtn = document.getElementById('submit-btn');
+const submitHint = document.getElementById('submit-hint');
 const rateLimitMsg = document.getElementById('rate-limit-msg');
 const messagesContainer = document.getElementById('messages-container');
 const emptyState = document.getElementById('empty-state');
@@ -854,6 +865,10 @@ function createMessageCard(msg, user) {
       cancelBtn.className = 'btn btn-cancel';
       cancelBtn.textContent = 'Cancel';
 
+      const editHint = document.createElement('span');
+      editHint.className = 'submit-hint';
+      editHint.textContent = SUBMIT_HINT_TEXT;
+
       editActions.appendChild(saveBtn);
       editActions.appendChild(cancelBtn);
 
@@ -861,7 +876,15 @@ function createMessageCard(msg, user) {
       editWrapper.appendChild(editCounter);
       editWrapper.appendChild(editError);
       editWrapper.appendChild(editActions);
+      editWrapper.appendChild(editHint);
       card.insertBefore(editWrapper, editBtn);
+
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          saveBtn.click();
+        }
+      });
 
       textarea.focus();
 
@@ -1012,6 +1035,10 @@ function createMessageCard(msg, user) {
       replyCancelBtn.className = 'btn btn-cancel btn-reply-cancel';
       replyCancelBtn.textContent = 'Cancel';
 
+      const replyHint = document.createElement('span');
+      replyHint.className = 'submit-hint';
+      replyHint.textContent = SUBMIT_HINT_TEXT;
+
       replyActions.appendChild(replyPostBtn);
       replyActions.appendChild(replyCancelBtn);
 
@@ -1019,6 +1046,14 @@ function createMessageCard(msg, user) {
       formWrapper.appendChild(replyCounter);
       formWrapper.appendChild(replyError);
       formWrapper.appendChild(replyActions);
+      formWrapper.appendChild(replyHint);
+
+      replyTextarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          replyPostBtn.click();
+        }
+      });
 
       // Insert form between footer and replies section
       card.insertBefore(formWrapper, repliesSection);
@@ -1130,6 +1165,17 @@ function updateEditCounter(el, len) {
 
 // Wire up typing indicator listeners
 setupTypingInputListeners();
+
+// Set platform-appropriate keyboard shortcut hint
+if (submitHint) submitHint.textContent = SUBMIT_HINT_TEXT;
+
+// Cmd/Ctrl+Enter on main textarea submits the post form
+messageInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    postForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  }
+});
 
 // ========================================
 // Character Counter
