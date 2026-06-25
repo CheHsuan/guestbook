@@ -22,6 +22,7 @@ const APP_HTML = `
         <span class="btn-text" style="display:inline"></span>
         <span class="btn-loading" style="display:none"></span>
       </button>
+      <span id="submit-hint" class="submit-hint"></span>
       <span id="empty-error-msg" style="display:none"></span>
       <div id="rate-limit-msg" style="display:none"></div>
     </form>
@@ -1616,6 +1617,94 @@ describe('renderTypingLabel', () => {
     const el = document.getElementById('typing-indicator');
     expect(el.textContent).toBe('Alice is typing');
     expect(el.classList.contains('typing-indicator--visible')).toBe(true);
+  });
+});
+
+// --- Cmd/Ctrl+Enter keyboard shortcut ---
+describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
+  let mocks;
+  let authStateCallback;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
+      authStateCallback = cb;
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  });
+
+  function simulateSignIn(user = { uid: 'uid-test', displayName: 'Tester', photoURL: '' }) {
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+    authStateCallback(user);
+  }
+
+  test('metaKey+Enter on main textarea triggers submit handler', async () => {
+    simulateSignIn();
+    const input = document.getElementById('message-input');
+    input.value = 'Hello via shortcut!';
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledTimes(1);
+    const updateArg = mocks.dbRef.update.mock.calls[0][0];
+    const msgEntry = Object.values(updateArg).find(v => v && v.text);
+    expect(msgEntry.text).toBe('Hello via shortcut!');
+  });
+
+  test('ctrlKey+Enter on main textarea triggers submit handler', async () => {
+    simulateSignIn();
+    const input = document.getElementById('message-input');
+    input.value = 'Hello via ctrl shortcut!';
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledTimes(1);
+    const updateArg = mocks.dbRef.update.mock.calls[0][0];
+    const msgEntry = Object.values(updateArg).find(v => v && v.text);
+    expect(msgEntry.text).toBe('Hello via ctrl shortcut!');
+  });
+
+  test('Enter alone on main textarea does NOT trigger submit', async () => {
+    simulateSignIn();
+    const input = document.getElementById('message-input');
+    input.value = 'Hello plain enter';
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  test('Cmd/Ctrl+Enter is no-op when user is not authenticated', async () => {
+    const input = document.getElementById('message-input');
+    input.value = 'Should not post';
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
   });
 });
 

@@ -370,6 +370,20 @@ body {
   text-align: center;
 }
 
+.submit-hint {
+  display: block;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .submit-hint {
+    display: none;
+  }
+}
+
 #message-input.input-error {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-bg);
