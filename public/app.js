@@ -86,6 +86,7 @@ const messageCount = document.getElementById('message-count');
 const searchInput = document.getElementById('search-input');
 const searchClearBtn = document.getElementById('search-clear-btn');
 const searchResultsCount = document.getElementById('search-results-count');
+const newMessagesBanner = document.getElementById('new-messages-banner');
 
 // ========================================
 // State
@@ -95,6 +96,8 @@ let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+let newMessageCount = 0;
+let bannerHideTimer = null;
 
 // ========================================
 // Typing Indicator
@@ -193,6 +196,38 @@ function setupTypingInputListeners() {
     }
   });
 }
+
+// ========================================
+// New Messages Banner
+// ========================================
+function updateNewMessagesBanner() {
+  const label = newMessageCount === 1 ? 'new message' : 'new messages';
+  newMessagesBanner.textContent = `↑ ${newMessageCount} ${label}`;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.style.display = '';
+  void newMessagesBanner.offsetWidth; // force reflow for CSS transition
+  newMessagesBanner.classList.add('new-messages-banner--visible');
+}
+
+function hideNewMessagesBanner() {
+  newMessageCount = 0;
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  clearTimeout(bannerHideTimer);
+  bannerHideTimer = setTimeout(() => {
+    if (!newMessagesBanner.classList.contains('new-messages-banner--visible')) {
+      newMessagesBanner.style.display = 'none';
+    }
+  }, 220);
+}
+
+newMessagesBanner.addEventListener('click', () => {
+  if (searchInput.value) {
+    searchInput.value = '';
+    filterMessages();
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  hideNewMessagesBanner();
+});
 
 // ========================================
 // Permalink: Toast + Deep-link
@@ -365,6 +400,10 @@ async function startListeningMessages() {
   newestMessageTimestamp = null;
   hasMoreMessages = true;
   deepLinkHandled = false;
+  newMessageCount = 0;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  newMessagesBanner.style.display = 'none';
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
@@ -454,6 +493,12 @@ async function startListeningMessages() {
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
         filterMessages();
+
+        // Show banner when user is scrolled down so new arrivals aren't missed
+        if (window.scrollY > 200) {
+          newMessageCount++;
+          updateNewMessagesBanner();
+        }
       }
     });
 
@@ -578,6 +623,9 @@ function handleScroll() {
   if (isNearBottom(scrollPosition, bodyHeight)) {
     loadMoreMessages();
   }
+  if (window.scrollY <= 200 && newMessageCount > 0) {
+    hideNewMessagesBanner();
+  }
 }
 
 function stopListeningMessages() {
@@ -609,6 +657,11 @@ function stopListeningMessages() {
   const existingCards = messagesContainer.querySelectorAll('.message-card');
   existingCards.forEach((card) => card.remove());
   messageCount.textContent = '0';
+
+  newMessageCount = 0;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  newMessagesBanner.style.display = 'none';
 }
 
 // ========================================
@@ -1171,5 +1224,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner };
 }

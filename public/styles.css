@@ -1072,3 +1072,43 @@ body {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ========================================
+   New Messages Arrival Banner
+   ======================================== */
+.new-messages-banner {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 0.875rem;
+  font-weight: 700;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.new-messages-banner--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.new-messages-banner:hover {
+  background: var(--accent-hover);
+}
+
+.new-messages-banner:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}

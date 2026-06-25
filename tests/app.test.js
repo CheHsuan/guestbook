@@ -36,6 +36,7 @@ const APP_HTML = `
   </div>
   <span id="message-count">0</span>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
+  <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -1615,5 +1616,246 @@ describe('renderTypingLabel', () => {
     const el = document.getElementById('typing-indicator');
     expect(el.textContent).toBe('Alice is typing');
     expect(el.classList.contains('typing-indicator--visible')).toBe(true);
+  });
+});
+
+// --- new messages banner ---
+describe('new messages banner', () => {
+  let mocks;
+  let authStateCallback;
+  let childAddedCallback;
+
+  const T1 = 2_000_000;
+  const T2 = 2_001_000;
+  const T3 = 2_002_000;
+
+  function setScrollY(value) {
+    Object.defineProperty(window, 'scrollY', { value, configurable: true, writable: true });
+  }
+
+  function makeChildSnapshot(key, ts) {
+    return { key, val: () => ({ author: 'Tester', text: 'Hello', timestamp: ts, authorId: 'uid-test' }) };
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    jest.useFakeTimers();
+    setScrollY(0);
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+
+    // Capture the first child_added callback (messages), skip subsequent (typing)
+    let childAddedCallCount = 0;
+    mocks.dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'child_added') {
+        childAddedCallCount++;
+        if (childAddedCallCount === 1) childAddedCallback = cb;
+      }
+      return 'listener-token';
+    });
+
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = jest.fn().mockReturnValue(false);
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    setScrollY(0);
+  });
+
+  async function startWithEmptyFeed() {
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  test('banner is hidden on initial load', async () => {
+    await startWithEmptyFeed();
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.style.display).toBe('none');
+  });
+
+  test('banner does not appear when new message arrives at top (scrollY <= 200)', async () => {
+    await startWithEmptyFeed();
+    setScrollY(0);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.style.display).toBe('none');
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(false);
+  });
+
+  test('banner appears when new message arrives while scrolled down (scrollY > 200)', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.style.display).not.toBe('none');
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(true);
+  });
+
+  test('banner reads "↑ 1 new message" (singular) for one arrival', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    expect(document.getElementById('new-messages-banner').textContent).toBe('↑ 1 new message');
+  });
+
+  test('banner reads "↑ 2 new messages" (plural) for two arrivals', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    childAddedCallback(makeChildSnapshot('msg-2', T2));
+
+    expect(document.getElementById('new-messages-banner').textContent).toBe('↑ 2 new messages');
+  });
+
+  test('counter increments with each new arrival while scrolled down', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    childAddedCallback(makeChildSnapshot('msg-2', T2));
+    childAddedCallback(makeChildSnapshot('msg-3', T3));
+
+    expect(document.getElementById('new-messages-banner').textContent).toBe('↑ 3 new messages');
+  });
+
+  test('clicking banner removes --visible class', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(true);
+
+    banner.click();
+
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(false);
+  });
+
+  test('clicking banner resets counter so next arrival starts from 1', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    childAddedCallback(makeChildSnapshot('msg-2', T2));
+
+    const banner = document.getElementById('new-messages-banner');
+    banner.click();
+
+    // counter reset — next arrival while scrolled down starts from 1
+    childAddedCallback(makeChildSnapshot('msg-3', T3));
+
+    expect(banner.textContent).toBe('↑ 1 new message');
+  });
+
+  test('clicking banner hides it after animation timeout', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    const banner = document.getElementById('new-messages-banner');
+    banner.click();
+
+    jest.advanceTimersByTime(250);
+
+    expect(banner.style.display).toBe('none');
+  });
+
+  test('scrolling to top removes --visible class from banner', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(true);
+
+    setScrollY(0);
+    window.dispatchEvent(new Event('scroll'));
+
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(false);
+  });
+
+  test('scrolling to top hides banner after animation timeout', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    setScrollY(0);
+    window.dispatchEvent(new Event('scroll'));
+    jest.advanceTimersByTime(250);
+
+    expect(document.getElementById('new-messages-banner').style.display).toBe('none');
+  });
+
+  test('banner does not appear for loadMoreMessages (historical messages use once(), not child_added)', async () => {
+    // Initial load with 20 messages (full batch → hasMoreMessages stays true)
+    const initialMsgs = Array.from({ length: 20 }, (_, i) => ({
+      key: `init-${i}`,
+      val: () => ({ author: 'A', text: 'T', timestamp: 1_000_000 - i * 1000, authorId: 'uid-a' }),
+    }));
+    mocks.dbRef.once
+      .mockResolvedValueOnce({
+        exists: () => true,
+        numChildren: () => 20,
+        forEach: fn => initialMsgs.forEach(m => fn({ key: m.key, val: m.val })),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        numChildren: () => 5,
+        forEach: fn => Array.from({ length: 5 }, (_, i) => ({
+          key: `old-${i}`,
+          val: () => ({ author: 'B', text: 'U', timestamp: 900_000 - i * 1000, authorId: 'uid-b' }),
+        })).forEach(m => fn({ key: m.key, val: m.val })),
+      });
+
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    setScrollY(250);
+
+    // Trigger loadMoreMessages via scroll near bottom
+    global.isNearBottom = jest.fn().mockReturnValue(true);
+    window.dispatchEvent(new Event('scroll'));
+    await Promise.resolve();
+    await Promise.resolve();
+    jest.advanceTimersByTime(600);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const banner = document.getElementById('new-messages-banner');
+    expect(banner.style.display).toBe('none');
+    expect(banner.classList.contains('new-messages-banner--visible')).toBe(false);
   });
 });
