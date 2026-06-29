@@ -109,6 +109,7 @@ describe('createMessageCard', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -359,6 +360,7 @@ describe('post form submit handler', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -479,6 +481,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -574,6 +577,7 @@ describe('sign-out behaviour', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -689,6 +693,7 @@ describe('infinite scroll / loadMoreMessages', () => {
     global.formatTimestamp = utils.formatTimestamp;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.isNearBottom = jest.fn().mockReturnValue(false);
     global.firebase = mocks.firebase;
 
@@ -834,6 +839,7 @@ describe('search / filter', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -1000,6 +1006,7 @@ describe('unauthenticated visitor', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1087,6 +1094,7 @@ describe('reply feature', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1277,6 +1285,7 @@ describe('permalink button', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1414,6 +1423,7 @@ describe('handleDeepLink', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     ({ handleDeepLink } = require('../public/app.js'));
@@ -1502,6 +1512,7 @@ describe('renderTypingLabel', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1642,6 +1653,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1759,6 +1771,7 @@ describe('new messages banner', () => {
     global.getInitialTheme = utils.getInitialTheme;
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1946,5 +1959,285 @@ describe('new messages banner', () => {
     const banner = document.getElementById('new-messages-banner');
     expect(banner.style.display).toBe('none');
     expect(banner.classList.contains('new-messages-banner--visible')).toBe(false);
+  });
+});
+
+// --- renderMessageText (DOM) ---
+describe('renderMessageText (DOM)', () => {
+  let renderMessageText;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    renderMessageText = utils.renderMessageText;
+  });
+
+  function makeContainer() {
+    return document.createElement('p');
+  }
+
+  test('renders plain text as text node', () => {
+    const el = makeContainer();
+    renderMessageText(el, 'Hello world');
+    expect(el.textContent).toBe('Hello world');
+    expect(el.children.length).toBe(0);
+  });
+
+  test('renders @mention as <span class="mention"> with @ prefix', () => {
+    const el = makeContainer();
+    renderMessageText(el, '@Alice');
+    const span = el.querySelector('.mention');
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('@Alice');
+  });
+
+  test('mention span uses textContent — no innerHTML injection', () => {
+    const el = makeContainer();
+    renderMessageText(el, '@<script>alert(1)</script>');
+    expect(el.innerHTML).not.toContain('<script>');
+  });
+
+  test('renders URL as anchor', () => {
+    const el = makeContainer();
+    renderMessageText(el, 'https://example.com');
+    const a = el.querySelector('a');
+    expect(a).not.toBeNull();
+    expect(a.href).toContain('example.com');
+  });
+
+  test('clears existing children before rendering', () => {
+    const el = makeContainer();
+    el.appendChild(document.createTextNode('old'));
+    renderMessageText(el, 'new');
+    expect(el.textContent).toBe('new');
+  });
+
+  test('mix of text, @mention, and URL renders all three', () => {
+    const el = makeContainer();
+    renderMessageText(el, 'Hey @Bob see https://example.com');
+    expect(el.querySelector('.mention')).not.toBeNull();
+    expect(el.querySelector('a')).not.toBeNull();
+    expect(el.textContent).toContain('Hey ');
+  });
+});
+
+// --- @mention rendering ---
+describe('@mention rendering in message cards', () => {
+  let createMessageCard;
+  let createReplyCard;
+
+  const baseMsg = {
+    id: 'msg-mention-1',
+    author: 'Alice',
+    text: 'Hello @Bob how are you?',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    ({ createMessageCard, createReplyCard } = require('../public/app.js'));
+  });
+
+  test('renders @mention as <span class="mention"> in message text', () => {
+    const card = createMessageCard(baseMsg, null);
+    const mentionEl = card.querySelector('.message-text .mention');
+    expect(mentionEl).not.toBeNull();
+    expect(mentionEl.textContent).toBe('@Bob');
+  });
+
+  test('@mention span uses textContent — does not inject HTML', () => {
+    const xssMsg = { ...baseMsg, id: 'msg-xss-1', text: '@<script>alert(1)</script>' };
+    const card = createMessageCard(xssMsg, null);
+    expect(card.querySelector('.message-text').innerHTML).not.toContain('<script>');
+  });
+
+  test('non-mention text is preserved around the mention', () => {
+    const card = createMessageCard(baseMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent).toBe('Hello @Bob how are you?');
+  });
+
+  test('renders @mention in reply card', () => {
+    const reply = {
+      id: 'r-mention-1',
+      author: 'Charlie',
+      text: 'Thanks @Alice!',
+      timestamp: Date.now(),
+      authorId: 'uid-charlie',
+    };
+    const card = createReplyCard(reply, null, 'msg1');
+    const mentionEl = card.querySelector('.reply-text .mention');
+    expect(mentionEl).not.toBeNull();
+    expect(mentionEl.textContent).toBe('@Alice');
+  });
+
+  test('message with no @mention has no .mention span', () => {
+    const noMentionMsg = { ...baseMsg, id: 'msg-no-mention', text: 'Hello world' };
+    const card = createMessageCard(noMentionMsg, null);
+    expect(card.querySelector('.message-text .mention')).toBeNull();
+  });
+
+  test('multiple @mentions all render as .mention spans', () => {
+    const multiMsg = { ...baseMsg, id: 'msg-multi-mention', text: '@Alice and @Bob both said hi' };
+    const card = createMessageCard(multiMsg, null);
+    const mentions = card.querySelectorAll('.message-text .mention');
+    expect(mentions.length).toBe(2);
+    expect(mentions[0].textContent).toBe('@Alice');
+    expect(mentions[1].textContent).toBe('@Bob');
+  });
+});
+
+// --- @mention author pool ---
+describe('@mention author pool', () => {
+  let trackAuthor;
+  let getAuthorSuggestions;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ trackAuthor, getAuthorSuggestions } = require('../public/app.js'));
+  });
+
+  test('getAuthorSuggestions returns empty array when pool is empty', () => {
+    expect(getAuthorSuggestions('A')).toEqual([]);
+  });
+
+  test('getAuthorSuggestions returns matching names after trackAuthor', () => {
+    trackAuthor('Alice', 1000);
+    trackAuthor('Bob', 2000);
+    const results = getAuthorSuggestions('A');
+    expect(results).toContain('Alice');
+    expect(results).not.toContain('Bob');
+  });
+
+  test('getAuthorSuggestions is case-insensitive', () => {
+    trackAuthor('Alice', 1000);
+    expect(getAuthorSuggestions('ali')).toContain('Alice');
+  });
+
+  test('getAuthorSuggestions returns at most 5 results', () => {
+    for (let i = 0; i < 10; i++) trackAuthor('Author' + i, i * 1000);
+    expect(getAuthorSuggestions('Author').length).toBeLessThanOrEqual(5);
+  });
+
+  test('getAuthorSuggestions sorts by most recent timestamp first', () => {
+    trackAuthor('Alice', 1000);
+    trackAuthor('Abe', 5000);
+    trackAuthor('Amy', 3000);
+    const results = getAuthorSuggestions('A');
+    expect(results[0]).toBe('Abe');
+    expect(results[1]).toBe('Amy');
+    expect(results[2]).toBe('Alice');
+  });
+
+  test('getAuthorSuggestions returns empty array for empty prefix', () => {
+    trackAuthor('Alice', 1000);
+    expect(getAuthorSuggestions('')).toEqual([]);
+  });
+
+  test('trackAuthor updates timestamp when newer value is provided', () => {
+    trackAuthor('Alice', 1000);
+    trackAuthor('Alice', 5000);
+    trackAuthor('Bob', 3000);
+    const results = getAuthorSuggestions('');
+    // Alice should be most recent, then Bob
+    // getAuthorSuggestions('A') should show Alice
+    const aliceResults = getAuthorSuggestions('A');
+    expect(aliceResults).toContain('Alice');
+  });
+});
+
+// --- getMentionPrefix ---
+describe('getMentionPrefix', () => {
+  let getMentionPrefix;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ getMentionPrefix } = require('../public/app.js'));
+  });
+
+  function makeTextarea(value, cursorPos) {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.selectionStart = cursorPos;
+    ta.selectionEnd = cursorPos;
+    return ta;
+  }
+
+  test('returns prefix when cursor is right after @word', () => {
+    const ta = makeTextarea('Hello @Ali', 10);
+    const result = getMentionPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('Ali');
+    expect(result.atIndex).toBe(6);
+  });
+
+  test('returns null when no @ before cursor word', () => {
+    const ta = makeTextarea('Hello world', 11);
+    expect(getMentionPrefix(ta)).toBeNull();
+  });
+
+  test('returns null for lone @ with no following characters', () => {
+    const ta = makeTextarea('Hello @', 7);
+    expect(getMentionPrefix(ta)).toBeNull();
+  });
+
+  test('returns correct prefix mid-word', () => {
+    const ta = makeTextarea('@Bo', 3);
+    const result = getMentionPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('Bo');
+  });
+
+  test('returns null after completed @mention followed by space', () => {
+    const ta = makeTextarea('@Bob ', 5);
+    expect(getMentionPrefix(ta)).toBeNull();
   });
 });

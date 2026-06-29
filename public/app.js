@@ -111,6 +111,32 @@ let newMessageCount = 0;
 let bannerHideTimer = null;
 
 // ========================================
+// Author Pool (for @mention autocomplete)
+// ========================================
+const authorPool = new Map(); // authorName -> most-recent timestamp
+
+function trackAuthor(name, timestamp) {
+  if (!name) return;
+  const existing = authorPool.get(name);
+  if (!existing || timestamp > existing) {
+    authorPool.set(name, timestamp || 0);
+  }
+}
+
+function getAuthorSuggestions(prefix) {
+  if (!prefix) return [];
+  const lower = prefix.toLowerCase();
+  const matches = [];
+  for (const [name, ts] of authorPool.entries()) {
+    if (name.toLowerCase().startsWith(lower)) {
+      matches.push({ name, ts });
+    }
+  }
+  matches.sort((a, b) => b.ts - a.ts);
+  return matches.slice(0, 5).map(m => m.name);
+}
+
+// ========================================
 // Typing Indicator
 // ========================================
 const typingMap = new Map(); // uid -> { name, timestamp }
@@ -455,6 +481,7 @@ async function startListeningMessages() {
       }
 
       messages.forEach(msg => {
+        trackAuthor(msg.author, msg.timestamp);
         const card = createMessageCard(msg, currentUser);
         messagesContainer.appendChild(card);
       });
@@ -500,6 +527,7 @@ async function startListeningMessages() {
         newestMessageTimestamp = msg.timestamp;
         emptyState.style.display = 'none';
 
+        trackAuthor(msg.author, msg.timestamp);
         const card = createMessageCard(msg, currentUser);
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
@@ -612,6 +640,7 @@ async function loadMoreMessages() {
     }
 
     messages.forEach(msg => {
+      trackAuthor(msg.author, msg.timestamp);
       const card = createMessageCard(msg, currentUser);
       // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
@@ -716,7 +745,7 @@ function createReplyCard(reply, user, msgId) {
 
   const textEl = document.createElement('p');
   textEl.className = 'reply-text';
-  renderTextWithLinks(textEl, reply.text);
+  renderMessageText(textEl, reply.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
@@ -787,7 +816,7 @@ function createMessageCard(msg, user) {
 
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  renderTextWithLinks(textEl, msg.text);
+  renderMessageText(textEl, msg.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
@@ -920,7 +949,7 @@ function createMessageCard(msg, user) {
           msg.editedAt = Date.now();
 
           // Update card to reflect saved text
-          renderTextWithLinks(textEl, validation.text);
+          renderMessageText(textEl, validation.text);
           if (!timeEl.querySelector('.edited-label')) {
             const editedLabel = document.createElement('span');
             editedLabel.className = 'edited-label';
@@ -1055,6 +1084,10 @@ function createMessageCard(msg, user) {
         }
       });
 
+      // Attach @mention autocomplete to reply textarea
+      formWrapper.style.position = 'relative';
+      attachMentionAutocomplete(replyTextarea, formWrapper);
+
       // Insert form between footer and replies section
       card.insertBefore(formWrapper, repliesSection);
       replyTextarea.focus();
@@ -1163,8 +1196,152 @@ function updateEditCounter(el, len) {
 
 // formatTimestamp is provided by utils.js
 
+// ========================================
+// @mention Autocomplete
+// ========================================
+
+/**
+ * Get the @-prefix the user is currently typing at the cursor position.
+ * Returns the partial name string (without @), or null if not in a mention.
+ */
+function getMentionPrefix(textarea) {
+  const val = textarea.value;
+  const pos = textarea.selectionStart;
+  // Walk backwards from cursor to find an @ that started a mention token
+  let i = pos - 1;
+  while (i >= 0 && /\w/.test(val[i])) i--;
+  if (i >= 0 && val[i] === '@') {
+    const prefix = val.slice(i + 1, pos);
+    // Require at least one character after @
+    return prefix.length > 0 ? { prefix, atIndex: i } : null;
+  }
+  return null;
+}
+
+/**
+ * Attach autocomplete dropdown behaviour to a textarea.
+ * The dropdown is appended to relativeParent (must have position:relative or absolute).
+ */
+function attachMentionAutocomplete(textarea, relativeParent) {
+  let dropdown = null;
+  let activeIndex = -1;
+  let currentPrefix = null;
+  let currentAtIndex = -1;
+
+  function removeDropdown() {
+    if (dropdown) {
+      dropdown.remove();
+      dropdown = null;
+    }
+    activeIndex = -1;
+    currentPrefix = null;
+    currentAtIndex = -1;
+  }
+
+  function selectItem(name) {
+    const val = textarea.value;
+    const pos = textarea.selectionStart;
+    // Replace @prefix with @name + space
+    const before = val.slice(0, currentAtIndex);
+    const after = val.slice(pos);
+    const inserted = '@' + name + ' ';
+    textarea.value = before + inserted + after;
+    const newCursor = before.length + inserted.length;
+    textarea.setSelectionRange(newCursor, newCursor);
+    removeDropdown();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function renderDropdown(suggestions, atIndex) {
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'mention-dropdown';
+      relativeParent.appendChild(dropdown);
+    }
+
+    // Position below textarea
+    const taRect = textarea.getBoundingClientRect();
+    const parentRect = relativeParent.getBoundingClientRect();
+    dropdown.style.top = (taRect.bottom - parentRect.top + relativeParent.scrollTop) + 'px';
+    dropdown.style.left = (taRect.left - parentRect.left) + 'px';
+    dropdown.style.width = taRect.width + 'px';
+
+    dropdown.innerHTML = '';
+    activeIndex = -1;
+
+    suggestions.forEach((name, idx) => {
+      const item = document.createElement('div');
+      item.className = 'mention-dropdown-item';
+      item.textContent = '@' + name; // textContent — XSS safe
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // prevent textarea blur
+        selectItem(name);
+      });
+      dropdown.appendChild(item);
+    });
+  }
+
+  function setActiveIndex(idx) {
+    const items = dropdown ? dropdown.querySelectorAll('.mention-dropdown-item') : [];
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.remove('active');
+    }
+    activeIndex = idx;
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.add('active');
+      items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  textarea.addEventListener('input', () => {
+    const match = getMentionPrefix(textarea);
+    if (!match) {
+      removeDropdown();
+      return;
+    }
+    const { prefix, atIndex } = match;
+    currentPrefix = prefix;
+    currentAtIndex = atIndex;
+    const suggestions = getAuthorSuggestions(prefix);
+    if (suggestions.length === 0) {
+      removeDropdown();
+      return;
+    }
+    renderDropdown(suggestions, atIndex);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (!dropdown) return;
+    const items = dropdown.querySelectorAll('.mention-dropdown-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(Math.min(activeIndex + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(Math.max(activeIndex - 1, 0));
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      const name = items[activeIndex].textContent.slice(1); // strip leading @
+      selectItem(name);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
+    // Delay so mousedown on item fires first
+    setTimeout(removeDropdown, 150);
+  });
+
+  return { removeDropdown };
+}
+
 // Wire up typing indicator listeners
 setupTypingInputListeners();
+
+// Attach @mention autocomplete to the main message textarea
+attachMentionAutocomplete(messageInput, messageInput.parentElement);
 
 // Set platform-appropriate keyboard shortcut hint
 if (submitHint) submitHint.textContent = SUBMIT_HINT_TEXT;
@@ -1270,5 +1447,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix };
 }

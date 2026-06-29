@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -378,3 +378,72 @@ describe('isNearBottom', () => {
         expect(isNearBottom(100, 10000, 200)).toBe(false);
     });
 });
+
+// ========================================
+// parseMessageSegments
+// ========================================
+describe('parseMessageSegments', () => {
+    test('plain text returns single text segment', () => {
+        const segs = parseMessageSegments('Hello world');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: 'Hello world' });
+    });
+
+    test('@mention returns mention segment', () => {
+        const segs = parseMessageSegments('@Alice');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'mention', value: 'Alice' });
+    });
+
+    test('@mention mid-sentence splits correctly', () => {
+        const segs = parseMessageSegments('Hey @Bob, how are you?');
+        const mention = segs.find(s => s.type === 'mention');
+        expect(mention).toBeDefined();
+        expect(mention.value).toBe('Bob');
+    });
+
+    test('multiple @mentions are all parsed', () => {
+        const segs = parseMessageSegments('@Alice and @Bob');
+        const mentions = segs.filter(s => s.type === 'mention');
+        expect(mentions).toHaveLength(2);
+        expect(mentions[0].value).toBe('Alice');
+        expect(mentions[1].value).toBe('Bob');
+    });
+
+    test('URL is still parsed as url segment', () => {
+        const segs = parseMessageSegments('visit https://example.com now');
+        const url = segs.find(s => s.type === 'url');
+        expect(url).toBeDefined();
+        expect(url.value).toBe('https://example.com');
+    });
+
+    test('mix of @mention and URL', () => {
+        const segs = parseMessageSegments('@Alice check https://example.com');
+        const mention = segs.find(s => s.type === 'mention');
+        const url = segs.find(s => s.type === 'url');
+        expect(mention).toBeDefined();
+        expect(url).toBeDefined();
+    });
+
+    test('empty string returns empty array', () => {
+        expect(parseMessageSegments('')).toEqual([]);
+    });
+
+    test('null returns empty array', () => {
+        expect(parseMessageSegments(null)).toEqual([]);
+    });
+
+    test('@mention only captures one word (no spaces in mention)', () => {
+        const segs = parseMessageSegments('@John Doe');
+        const mentions = segs.filter(s => s.type === 'mention');
+        expect(mentions).toHaveLength(1);
+        expect(mentions[0].value).toBe('John');
+    });
+
+    test('@ without following word is plain text', () => {
+        const segs = parseMessageSegments('email me @ later');
+        const mentions = segs.filter(s => s.type === 'mention');
+        expect(mentions).toHaveLength(0);
+    });
+});
+
