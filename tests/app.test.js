@@ -38,6 +38,13 @@ const APP_HTML = `
   <span id="message-count">0</span>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
+  <button id="saved-badge" style="display:none;"></button>
+  <section id="saved-panel" style="display:none;">
+    <div class="saved-panel-header">
+      <button id="saved-panel-clear"></button>
+    </div>
+    <div id="saved-panel-list"></div>
+  </section>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -2239,5 +2246,351 @@ describe('getMentionPrefix', () => {
   test('returns null after completed @mention followed by space', () => {
     const ta = makeTextarea('@Bob ', 5);
     expect(getMentionPrefix(ta)).toBeNull();
+  });
+});
+
+// --- Bookmark feature ---
+describe('bookmark feature', () => {
+  let createMessageCard;
+  let loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel;
+
+  const baseMsg = {
+    id: 'bm-msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+    photoURL: null,
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    createMessageCard = mod.createMessageCard;
+    loadBookmarks = mod.loadBookmarks;
+    saveBookmarksToStorage = mod.saveBookmarksToStorage;
+    isBookmarked = mod.isBookmarked;
+    addBookmark = mod.addBookmark;
+    removeBookmark = mod.removeBookmark;
+    updateSavedBadge = mod.updateSavedBadge;
+    refreshSavedPanel = mod.refreshSavedPanel;
+  }
+
+  beforeEach(setupModule);
+
+  test('bookmark button is present on every message card', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-bookmark')).not.toBeNull();
+  });
+
+  test('bookmark button has aria-label "Bookmark this message" when not bookmarked', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-bookmark').getAttribute('aria-label')).toBe('Bookmark this message');
+  });
+
+  test('bookmark button is present for authenticated users too', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-bookmark')).not.toBeNull();
+  });
+
+  test('clicking bookmark button saves message to localStorage', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const list = loadBookmarks();
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe(baseMsg.id);
+    expect(list[0].author).toBe(baseMsg.author);
+    expect(list[0].text).toBe(baseMsg.text);
+  });
+
+  test('bookmark stores all required fields', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const bm = loadBookmarks()[0];
+    expect(bm).toHaveProperty('id');
+    expect(bm).toHaveProperty('author');
+    expect(bm).toHaveProperty('authorId');
+    expect(bm).toHaveProperty('text');
+    expect(bm).toHaveProperty('timestamp');
+    expect(bm).toHaveProperty('savedAt');
+  });
+
+  test('clicking bookmarked button again removes it (toggle)', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click(); // bookmark
+    btn.click(); // unbookmark
+    expect(loadBookmarks()).toHaveLength(0);
+  });
+
+  test('aria-label updates to "Remove bookmark" after bookmarking', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click();
+    expect(btn.getAttribute('aria-label')).toBe('Remove bookmark');
+  });
+
+  test('aria-label restores to "Bookmark this message" after unbookmarking', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click();
+    btn.click();
+    expect(btn.getAttribute('aria-label')).toBe('Bookmark this message');
+  });
+
+  test('btn-bookmark--active class added after bookmarking', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click();
+    expect(btn.classList.contains('btn-bookmark--active')).toBe(true);
+  });
+
+  test('btn-bookmark--active class removed after unbookmarking', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click();
+    btn.click();
+    expect(btn.classList.contains('btn-bookmark--active')).toBe(false);
+  });
+
+  test('bookmark limit shows toast when 100 bookmarks already exist', () => {
+    const existing = Array.from({ length: 100 }, (_, i) => ({
+      id: 'bm-fill-' + i, author: 'A', authorId: 'u', text: 'T', timestamp: 1, savedAt: 1,
+    }));
+    localStorage.setItem('guestbook_bookmarks', JSON.stringify(existing));
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toContain('Bookmark limit reached');
+    expect(loadBookmarks()).toHaveLength(100); // not added
+  });
+
+  test('bookmark does not exceed 100 entries after limit toast', () => {
+    const existing = Array.from({ length: 100 }, (_, i) => ({
+      id: 'bm-fill-' + i, author: 'A', authorId: 'u', text: 'T', timestamp: 1, savedAt: 1,
+    }));
+    localStorage.setItem('guestbook_bookmarks', JSON.stringify(existing));
+
+    addBookmark(baseMsg);
+    expect(loadBookmarks()).toHaveLength(100);
+  });
+
+  test('localStorage unavailable shows toast', () => {
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('SecurityError');
+    });
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toContain('Bookmarks unavailable');
+
+    Storage.prototype.setItem.mockRestore();
+  });
+
+  test('bookmark text stored via data property — XSS-safe storage', () => {
+    const xssMsg = { ...baseMsg, id: 'bm-xss', text: '<script>evil()</script>' };
+    const card = createMessageCard(xssMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    expect(loadBookmarks()[0].text).toBe('<script>evil()</script>');
+  });
+
+  test('saved badge is hidden when no bookmarks', () => {
+    updateSavedBadge();
+    expect(document.getElementById('saved-badge').style.display).toBe('none');
+  });
+
+  test('saved badge becomes visible after bookmarking', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const badge = document.getElementById('saved-badge');
+    expect(badge.style.display).not.toBe('none');
+  });
+
+  test('saved badge shows bookmark count', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    expect(document.getElementById('saved-badge').textContent).toContain('1');
+  });
+
+  test('saved badge updates count after second bookmark', () => {
+    const msg2 = { ...baseMsg, id: 'bm-msg2' };
+    const c1 = createMessageCard(baseMsg, null);
+    const c2 = createMessageCard(msg2, null);
+    c1.querySelector('.btn-bookmark').click();
+    c2.querySelector('.btn-bookmark').click();
+    expect(document.getElementById('saved-badge').textContent).toContain('2');
+  });
+
+  test('saved badge hides again after removing last bookmark', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click();
+    btn.click();
+    expect(document.getElementById('saved-badge').style.display).toBe('none');
+  });
+
+  test('saved panel renders bookmarks when opened via badge click', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+
+    document.getElementById('saved-badge').click();
+
+    const panel = document.getElementById('saved-panel');
+    expect(panel.style.display).not.toBe('none');
+    expect(panel.querySelector('.saved-message')).not.toBeNull();
+  });
+
+  test('saved panel shows author name via textContent (XSS safe)', () => {
+    const xssMsg = { ...baseMsg, id: 'bm-xss2', author: '<b>evil</b>' };
+    addBookmark(xssMsg);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    const authorEl = document.querySelector('.saved-message-author');
+    expect(authorEl).not.toBeNull();
+    expect(authorEl.textContent).toBe('<b>evil</b>');
+    expect(authorEl.innerHTML).not.toContain('<b>');
+  });
+
+  test('saved panel shows message text via textContent (XSS safe)', () => {
+    const xssMsg = { ...baseMsg, id: 'bm-xss3', text: '<img src=x onerror=evil()>' };
+    addBookmark(xssMsg);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    const textEl = document.querySelector('.saved-message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent).toBe('<img src=x onerror=evil()>');
+    expect(textEl.innerHTML).not.toContain('<img');
+  });
+
+  test('saved panel shows expired badge for messages older than 24 hours', () => {
+    const oldMsg = { ...baseMsg, id: 'bm-old', timestamp: Date.now() - 25 * 60 * 60 * 1000 };
+    addBookmark(oldMsg);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    expect(document.querySelector('.expired-badge')).not.toBeNull();
+    expect(document.querySelector('.expired-badge').textContent).toContain('Expired');
+  });
+
+  test('saved panel shows no expired badge for recent messages', () => {
+    addBookmark(baseMsg);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    expect(document.querySelector('.expired-badge')).toBeNull();
+  });
+
+  test('expired message card has saved-message--expired class', () => {
+    const oldMsg = { ...baseMsg, id: 'bm-old2', timestamp: Date.now() - 25 * 60 * 60 * 1000 };
+    addBookmark(oldMsg);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    expect(document.querySelector('.saved-message--expired')).not.toBeNull();
+  });
+
+  test('saved panel shows "Content may have changed" when live text differs', () => {
+    addBookmark(baseMsg);
+
+    // Simulate the live card existing with different text
+    const liveCard = document.createElement('div');
+    liveCard.id = 'msg-' + baseMsg.id;
+    const liveText = document.createElement('p');
+    liveText.className = 'message-text';
+    liveText.textContent = 'Updated text';
+    liveCard.appendChild(liveText);
+    document.getElementById('messages-container').appendChild(liveCard);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    const note = document.querySelector('.changed-note');
+    expect(note).not.toBeNull();
+    expect(note.textContent).toContain('Content may have changed');
+  });
+
+  test('saved panel does NOT show changed note when live text matches', () => {
+    addBookmark(baseMsg);
+
+    const liveCard = document.createElement('div');
+    liveCard.id = 'msg-' + baseMsg.id;
+    const liveText = document.createElement('p');
+    liveText.className = 'message-text';
+    liveText.textContent = baseMsg.text;
+    liveCard.appendChild(liveText);
+    document.getElementById('messages-container').appendChild(liveCard);
+
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    expect(document.querySelector('.changed-note')).toBeNull();
+  });
+
+  test('saved panel empty state shown when no bookmarks', () => {
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+
+    expect(document.querySelector('.saved-panel-empty')).not.toBeNull();
+  });
+
+  test('badge click closes panel when already open', () => {
+    addBookmark(baseMsg);
+    const badge = document.getElementById('saved-badge');
+    const panel = document.getElementById('saved-panel');
+
+    badge.click(); // open
+    badge.click(); // close
+    expect(panel.style.display).toBe('none');
+  });
+
+  test('isBookmarked returns true after adding bookmark', () => {
+    addBookmark(baseMsg);
+    expect(isBookmarked(baseMsg.id)).toBe(true);
+  });
+
+  test('isBookmarked returns false after removing bookmark', () => {
+    addBookmark(baseMsg);
+    removeBookmark(baseMsg.id);
+    expect(isBookmarked(baseMsg.id)).toBe(false);
+  });
+
+  test('loadBookmarks returns empty array when localStorage is empty', () => {
+    expect(loadBookmarks()).toEqual([]);
+  });
+
+  test('bookmarks persist across loadBookmarks calls', () => {
+    addBookmark(baseMsg);
+    expect(loadBookmarks()).toHaveLength(1);
+    expect(loadBookmarks()[0].id).toBe(baseMsg.id);
   });
 });

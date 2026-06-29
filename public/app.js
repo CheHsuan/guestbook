@@ -36,6 +36,8 @@ const SUBMIT_HINT_TEXT = (function () {
 const MOON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 const SUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
 const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -705,6 +707,177 @@ function stopListeningMessages() {
 }
 
 // ========================================
+// Bookmarks (localStorage)
+// ========================================
+const BOOKMARK_KEY = 'guestbook_bookmarks';
+const BOOKMARK_LIMIT = 100;
+
+function loadBookmarks() {
+  try {
+    const raw = localStorage.getItem(BOOKMARK_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveBookmarksToStorage(list) {
+  try {
+    localStorage.setItem(BOOKMARK_KEY, JSON.stringify(list));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isBookmarked(msgId) {
+  return loadBookmarks().some(b => b.id === msgId);
+}
+
+function addBookmark(msg) {
+  try {
+    localStorage.setItem('__bm_probe__', '1');
+    localStorage.removeItem('__bm_probe__');
+  } catch (e) {
+    showToast('Bookmarks unavailable in this browser mode.');
+    return false;
+  }
+
+  const list = loadBookmarks();
+  if (list.length >= BOOKMARK_LIMIT) {
+    showToast('Bookmark limit reached (100). Remove some bookmarks to save more.');
+    return false;
+  }
+
+  list.unshift({
+    id: msg.id,
+    author: msg.author,
+    authorId: msg.authorId,
+    photoURL: msg.photoURL || null,
+    text: msg.text,
+    timestamp: msg.timestamp,
+    savedAt: Date.now(),
+  });
+
+  saveBookmarksToStorage(list);
+  updateSavedBadge();
+  refreshSavedPanel();
+  return true;
+}
+
+function removeBookmark(msgId) {
+  const list = loadBookmarks().filter(b => b.id !== msgId);
+  saveBookmarksToStorage(list);
+  updateSavedBadge();
+  refreshSavedPanel();
+}
+
+function updateSavedBadge() {
+  const badgeEl = document.getElementById('saved-badge');
+  if (!badgeEl) return;
+  const count = loadBookmarks().length;
+  if (count === 0) {
+    badgeEl.style.display = 'none';
+  } else {
+    badgeEl.textContent = '⊟ ' + count;
+    badgeEl.style.display = '';
+  }
+}
+
+function refreshSavedPanel() {
+  const panel = document.getElementById('saved-panel');
+  if (!panel || panel.style.display === 'none') return;
+
+  const listEl = document.getElementById('saved-panel-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  const list = loadBookmarks();
+
+  if (list.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'saved-panel-empty';
+    empty.textContent = 'No saved messages.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
+  list.forEach(bookmark => {
+    const isExpired = now - bookmark.timestamp > TWENTY_FOUR_HOURS;
+
+    let contentChanged = false;
+    const liveCard = document.getElementById('msg-' + bookmark.id);
+    if (liveCard) {
+      const liveTextEl = liveCard.querySelector('.message-text');
+      if (liveTextEl && liveTextEl.textContent !== bookmark.text) {
+        contentChanged = true;
+      }
+    }
+
+    const item = document.createElement('div');
+    item.className = 'saved-message' + (isExpired ? ' saved-message--expired' : '');
+
+    const unsaveBtn = document.createElement('button');
+    unsaveBtn.className = 'btn-unsave';
+    unsaveBtn.setAttribute('aria-label', 'Remove bookmark');
+    unsaveBtn.textContent = '✕';
+    unsaveBtn.addEventListener('click', () => {
+      removeBookmark(bookmark.id);
+      const liveBtn = document.querySelector('#msg-' + bookmark.id + ' .btn-bookmark');
+      if (liveBtn) {
+        liveBtn.innerHTML = BOOKMARK_ICON;
+        liveBtn.setAttribute('aria-label', 'Bookmark this message');
+        liveBtn.classList.remove('btn-bookmark--active');
+      }
+    });
+
+    const msgHeader = document.createElement('div');
+    msgHeader.className = 'saved-message-header';
+
+    const avatarEl = createAvatarElement(bookmark.photoURL, bookmark.author);
+
+    const authorEl = document.createElement('span');
+    authorEl.className = 'saved-message-author';
+    authorEl.textContent = bookmark.author; // textContent — XSS safe
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'saved-message-time';
+    if (isExpired) {
+      const badge = document.createElement('span');
+      badge.className = 'expired-badge';
+      badge.textContent = 'Expired \xB7 ' + formatTimestamp(bookmark.timestamp);
+      timeEl.appendChild(badge);
+    } else {
+      timeEl.textContent = formatTimestamp(bookmark.timestamp);
+    }
+
+    msgHeader.appendChild(avatarEl);
+    msgHeader.appendChild(authorEl);
+    msgHeader.appendChild(timeEl);
+
+    const textEl = document.createElement('p');
+    textEl.className = 'saved-message-text';
+    textEl.textContent = bookmark.text; // textContent — XSS safe
+
+    item.appendChild(unsaveBtn);
+    item.appendChild(msgHeader);
+    item.appendChild(textEl);
+
+    if (contentChanged) {
+      const changedNote = document.createElement('p');
+      changedNote.className = 'changed-note';
+      changedNote.textContent = 'Content may have changed';
+      item.appendChild(changedNote);
+    }
+
+    listEl.appendChild(item);
+  });
+}
+
+// ========================================
 // Create Reply Card Element
 // ========================================
 function createReplyCard(reply, user, msgId) {
@@ -1137,6 +1310,42 @@ function createMessageCard(msg, user) {
     cardFooter.appendChild(replyBtn);
   }
 
+  // Bookmark button — visible to all visitors (not gated on auth)
+  const bookmarked = isBookmarked(msg.id);
+  const bookmarkBtn = document.createElement('button');
+  bookmarkBtn.className = 'btn-bookmark' + (bookmarked ? ' btn-bookmark--active' : '');
+  bookmarkBtn.innerHTML = bookmarked ? BOOKMARK_FILLED_ICON : BOOKMARK_ICON; // static SVG — no user data
+  bookmarkBtn.setAttribute('aria-label', bookmarked ? 'Remove bookmark' : 'Bookmark this message');
+  bookmarkBtn.setAttribute('tabindex', isMobile || bookmarked ? '0' : '-1');
+
+  if (!isMobile) {
+    card.addEventListener('mouseenter', () => bookmarkBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => {
+      if (!bookmarkBtn.classList.contains('btn-bookmark--active')) {
+        bookmarkBtn.setAttribute('tabindex', '-1');
+      }
+    });
+  }
+
+  bookmarkBtn.addEventListener('click', () => {
+    if (isBookmarked(msg.id)) {
+      removeBookmark(msg.id);
+      bookmarkBtn.innerHTML = BOOKMARK_ICON;
+      bookmarkBtn.setAttribute('aria-label', 'Bookmark this message');
+      bookmarkBtn.classList.remove('btn-bookmark--active');
+      if (!isMobile) bookmarkBtn.setAttribute('tabindex', '-1');
+    } else {
+      const success = addBookmark(msg);
+      if (success) {
+        bookmarkBtn.innerHTML = BOOKMARK_FILLED_ICON;
+        bookmarkBtn.setAttribute('aria-label', 'Remove bookmark');
+        bookmarkBtn.classList.add('btn-bookmark--active');
+        bookmarkBtn.setAttribute('tabindex', '0');
+      }
+    }
+  });
+
+  cardFooter.appendChild(bookmarkBtn);
   cardFooter.appendChild(permalinkBtn);
 
   // Replies section (hidden until replies exist)
@@ -1340,6 +1549,43 @@ function attachMentionAutocomplete(textarea, relativeParent) {
 // Wire up typing indicator listeners
 setupTypingInputListeners();
 
+// ========================================
+// Bookmark badge + saved panel setup
+// ========================================
+updateSavedBadge();
+
+const savedBadgeEl = document.getElementById('saved-badge');
+if (savedBadgeEl) {
+  savedBadgeEl.addEventListener('click', () => {
+    const panel = document.getElementById('saved-panel');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      savedBadgeEl.setAttribute('aria-expanded', 'false');
+    } else {
+      panel.style.display = '';
+      savedBadgeEl.setAttribute('aria-expanded', 'true');
+      refreshSavedPanel();
+    }
+  });
+}
+
+const savedPanelClearEl = document.getElementById('saved-panel-clear');
+if (savedPanelClearEl) {
+  savedPanelClearEl.addEventListener('click', () => {
+    if (!confirm('Remove all saved messages?')) return;
+    saveBookmarksToStorage([]);
+    updateSavedBadge();
+    refreshSavedPanel();
+    document.querySelectorAll('.btn-bookmark--active').forEach(btn => {
+      btn.innerHTML = BOOKMARK_ICON;
+      btn.setAttribute('aria-label', 'Bookmark this message');
+      btn.classList.remove('btn-bookmark--active');
+    });
+  });
+}
+
 // Attach @mention autocomplete to the main message textarea
 attachMentionAutocomplete(messageInput, messageInput.parentElement);
 
@@ -1447,5 +1693,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel };
 }
