@@ -1050,6 +1050,225 @@ body {
 }
 
 /* ========================================
+   Bookmark Button
+   ======================================== */
+.btn-bookmark {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-bookmark svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-card:hover .btn-bookmark {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-bookmark--active {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--link);
+}
+
+.btn-bookmark:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-bookmark:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .btn-bookmark {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ========================================
+   Saved Badge (header)
+   ======================================== */
+.saved-badge {
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.saved-badge:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.saved-badge:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ========================================
+   Saved Panel
+   ======================================== */
+.saved-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.saved-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.saved-panel-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.saved-panel-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-family: inherit;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+
+.saved-panel-clear:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.saved-panel-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.saved-panel-empty {
+  padding: 16px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.saved-message {
+  position: relative;
+  padding: 12px 40px 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.saved-message:last-child {
+  border-bottom: none;
+}
+
+.saved-message-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.saved-message-author {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.saved-message-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.saved-message-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.saved-message--expired .saved-message-author,
+.saved-message--expired .saved-message-text {
+  opacity: 0.5;
+}
+
+.expired-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  padding: 1px 6px;
+}
+
+.changed-note {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.btn-unsave {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: inherit;
+  transition: color var(--transition), background var(--transition);
+}
+
+.btn-unsave:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* ========================================
    Deep-link Highlight Animation
    ======================================== */
 @keyframes permalink-highlight-fade {
