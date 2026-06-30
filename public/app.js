@@ -112,6 +112,7 @@ const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
+let notificationPermissionRequested = false;
 
 // ========================================
 // Author Pool (for @mention autocomplete)
@@ -275,6 +276,31 @@ document.addEventListener('visibilitychange', () => {
     hideNewMessagesBanner();
   }
 });
+
+// ========================================
+// Browser Notifications (reply alerts)
+// ========================================
+function maybeFireReplyNotification(msg, reply) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!currentUser || msg.authorId !== currentUser.uid) return;
+  if (reply.authorId === currentUser.uid) return;
+  if (document.visibilityState === 'visible') return;
+  if (!document.getElementById('msg-' + msg.id)) return;
+
+  const raw = typeof reply.text === 'string' ? reply.text : '';
+  const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
+  const notif = new Notification('New reply on Guestbook', {
+    body: (reply.author || 'Someone') + ' replied: ' + snippet,
+    icon: '/icon.png',
+  });
+  notif.addEventListener('click', () => {
+    window.focus();
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+    notif.close();
+  });
+}
 
 // ========================================
 // Permalink: Toast + Deep-link
@@ -1371,7 +1397,11 @@ function createMessageCard(msg, user) {
 
   // Set up real-time listeners for replies
   let localReplyCount = 0;
+  let initialReplyLoadComplete = false;
   const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
+
+  // child_added fires synchronously for pre-existing replies; mark them done after
+  Promise.resolve().then(() => { initialReplyLoadComplete = true; });
 
   repliesRef.on('child_added', (snap) => {
     const reply = { id: snap.key, ...snap.val() };
@@ -1385,6 +1415,10 @@ function createMessageCard(msg, user) {
 
     const replyCard = createReplyCard(reply, user, msg.id);
     repliesSection.appendChild(replyCard);
+
+    if (initialReplyLoadComplete) {
+      maybeFireReplyNotification(msg, reply);
+    }
   });
 
   repliesRef.on('child_removed', (snap) => {
@@ -1681,6 +1715,14 @@ postForm.addEventListener('submit', async (e) => {
     // Send the atomic update
     await db.ref().update(updates);
 
+    // Request notification permission once per session after the user's first post
+    if ('Notification' in window &&
+        Notification.permission === 'default' &&
+        !notificationPermissionRequested) {
+      notificationPermissionRequested = true;
+      Notification.requestPermission();
+    }
+
     // Success — clear input and stop typing indicator
     stopTyping();
     messageInput.value = '';
@@ -1706,5 +1748,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification };
 }

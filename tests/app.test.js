@@ -2799,3 +2799,383 @@ describe('bookmark feature', () => {
     expect(loadBookmarks()[0].id).toBe(baseMsg.id);
   });
 });
+
+// --- browser notifications: maybeFireReplyNotification ---
+describe('browser notifications — maybeFireReplyNotification', () => {
+  let maybeFireReplyNotification;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Me', photoURL: '' };
+
+  const myMsg = {
+    id: 'notif-msg-1',
+    author: 'Me',
+    text: 'Hello',
+    timestamp: 1000,
+    authorId: 'uid-me',
+  };
+
+  const otherReply = {
+    id: 'r1',
+    author: 'Bob',
+    text: 'Nice message!',
+    timestamp: 2000,
+    authorId: 'uid-bob',
+  };
+
+  function setVisibility(state) {
+    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true, writable: true });
+  }
+
+  function mockNotificationCtor(permission = 'granted') {
+    const instances = [];
+    const Ctor = jest.fn().mockImplementation(() => {
+      const inst = { addEventListener: jest.fn(), close: jest.fn() };
+      instances.push(inst);
+      return inst;
+    });
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    Ctor.instances = instances;
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  function addCard(msgId) {
+    const el = document.createElement('div');
+    el.id = 'msg-' + msgId;
+    document.getElementById('messages-container').appendChild(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.firebase = mocks.firebase;
+
+    ({ maybeFireReplyNotification } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+    setVisibility('hidden');
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    setVisibility('visible');
+  });
+
+  test('does not throw when Notification API is unavailable', () => {
+    addCard(myMsg.id);
+    expect(() => maybeFireReplyNotification(myMsg, otherReply)).not.toThrow();
+  });
+
+  test('does not fire when permission is "denied"', () => {
+    const Ctor = mockNotificationCtor('denied');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when permission is "default"', () => {
+    const Ctor = mockNotificationCtor('default');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does not fire for a message not authored by current user', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    const othersMsg = { ...myMsg, authorId: 'uid-other' };
+    maybeFireReplyNotification(othersMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when replier is the current user (self-reply)', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    const selfReply = { ...otherReply, authorId: 'uid-me' };
+    maybeFireReplyNotification(myMsg, selfReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when tab is visible', () => {
+    const Ctor = mockNotificationCtor('granted');
+    setVisibility('visible');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when message card is not in the DOM', () => {
+    const Ctor = mockNotificationCtor('granted');
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('fires notification when all conditions are met', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('notification title is "New reply on Guestbook"', () => {
+    mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(global.Notification.mock.calls[0][0]).toBe('New reply on Guestbook');
+  });
+
+  test('notification body is "{replierName} replied: {text}"', () => {
+    mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(global.Notification.mock.calls[0][1].body).toBe('Bob replied: Nice message!');
+  });
+
+  test('notification body snippet is truncated to 80 chars with ellipsis when reply text is long', () => {
+    mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    const longReply = { ...otherReply, text: 'A'.repeat(100) };
+    maybeFireReplyNotification(myMsg, longReply);
+    const body = global.Notification.mock.calls[0][1].body;
+    expect(body).toBe('Bob replied: ' + 'A'.repeat(80) + '…');
+  });
+
+  test('notification body is not truncated when reply text is exactly 80 chars', () => {
+    mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    const exactReply = { ...otherReply, text: 'A'.repeat(80) };
+    maybeFireReplyNotification(myMsg, exactReply);
+    const body = global.Notification.mock.calls[0][1].body;
+    expect(body).toBe('Bob replied: ' + 'A'.repeat(80));
+    expect(body.endsWith('…')).toBe(false);
+  });
+
+  test('notification icon is /icon.png', () => {
+    mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(global.Notification.mock.calls[0][1].icon).toBe('/icon.png');
+  });
+
+  test('clicking notification calls window.focus() and scrolls to message card', () => {
+    const Ctor = mockNotificationCtor('granted');
+    const card = addCard(myMsg.id);
+    card.scrollIntoView = jest.fn();
+    const focusSpy = jest.spyOn(window, 'focus').mockImplementation(() => {});
+
+    maybeFireReplyNotification(myMsg, otherReply);
+
+    const notifInstance = Ctor.instances[0];
+    const clickArgs = notifInstance.addEventListener.mock.calls.find(c => c[0] === 'click');
+    expect(clickArgs).toBeDefined();
+    clickArgs[1]();
+
+    expect(focusSpy).toHaveBeenCalled();
+    expect(card.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+
+    focusSpy.mockRestore();
+  });
+});
+
+// --- browser notifications: permission request ---
+describe('browser notifications — permission request on post', () => {
+  let mocks;
+  let authStateCallback;
+
+  function mockNotificationCtor(permission = 'default') {
+    const Ctor = jest.fn();
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  async function submitPost(text = 'Hello!') {
+    const input = document.getElementById('message-input');
+    const form = document.getElementById('post-form');
+    input.value = text;
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+  });
+
+  test('calls Notification.requestPermission() after first successful post when permission is "default"', async () => {
+    const Ctor = mockNotificationCtor('default');
+    await submitPost();
+    expect(Ctor.requestPermission).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not request permission when already "granted"', async () => {
+    const Ctor = mockNotificationCtor('granted');
+    await submitPost();
+    expect(Ctor.requestPermission).not.toHaveBeenCalled();
+  });
+
+  test('does not request permission when already "denied"', async () => {
+    const Ctor = mockNotificationCtor('denied');
+    await submitPost();
+    expect(Ctor.requestPermission).not.toHaveBeenCalled();
+  });
+
+  test('does not throw when Notification API is unavailable', async () => {
+    await expect(submitPost()).resolves.not.toThrow();
+  });
+
+  test('requests permission at most once per session even after multiple posts', async () => {
+    const Ctor = mockNotificationCtor('default');
+    await submitPost('First post');
+    await submitPost('Second post');
+    expect(Ctor.requestPermission).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- browser notifications: initial load gate ---
+describe('browser notifications — initial load gate in createMessageCard', () => {
+  let createMessageCard;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Me', photoURL: '' };
+
+  const myMsg = {
+    id: 'gate-msg-1',
+    author: 'Me',
+    text: 'Hello',
+    timestamp: 1000,
+    authorId: 'uid-me',
+  };
+
+  function setVisibility(state) {
+    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true, writable: true });
+  }
+
+  function mockNotificationCtor(permission = 'granted') {
+    const Ctor = jest.fn().mockImplementation(() => ({
+      addEventListener: jest.fn(),
+      close: jest.fn(),
+    }));
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  function addCard(msgId) {
+    const el = document.createElement('div');
+    el.id = 'msg-' + msgId;
+    document.getElementById('messages-container').appendChild(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.firebase = mocks.firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+    setVisibility('hidden');
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    setVisibility('visible');
+  });
+
+  test('does not fire notification for replies present when card is first created', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+
+    mocks.dbRef.on.mockClear();
+    createMessageCard(myMsg, currentUserMock);
+
+    const childAddedCall = mocks.dbRef.on.mock.calls.find(c => c[0] === 'child_added');
+    expect(childAddedCall).toBeDefined();
+    const childAddedCb = childAddedCall[1];
+
+    // Fire before the microtask resolves (initialReplyLoadComplete is still false)
+    childAddedCb({ key: 'r1', val: () => ({ author: 'Bob', text: 'Hi', authorId: 'uid-bob', timestamp: 2000 }) });
+
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('fires notification for new replies arriving after initial load completes', async () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+
+    mocks.dbRef.on.mockClear();
+    createMessageCard(myMsg, currentUserMock);
+
+    const childAddedCall = mocks.dbRef.on.mock.calls.find(c => c[0] === 'child_added');
+    expect(childAddedCall).toBeDefined();
+    const childAddedCb = childAddedCall[1];
+
+    // Let Promise.resolve().then(...) run so initialReplyLoadComplete becomes true
+    await Promise.resolve();
+
+    childAddedCb({ key: 'r2', val: () => ({ author: 'Bob', text: 'Hello!', authorId: 'uid-bob', timestamp: 3000 }) });
+
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+});
