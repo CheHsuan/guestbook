@@ -1969,6 +1969,211 @@ describe('new messages banner', () => {
   });
 });
 
+// --- browser tab unread count ---
+describe('browser tab unread count', () => {
+  let mocks;
+  let authStateCallback;
+  let childAddedCallback;
+
+  const T1 = 3_000_000;
+  const T2 = 3_001_000;
+  const T3 = 3_002_000;
+  const TITLE = 'Guestbook — Share your thoughts with the world';
+
+  function setScrollY(value) {
+    Object.defineProperty(window, 'scrollY', { value, configurable: true, writable: true });
+  }
+
+  function setDocumentHidden(hidden) {
+    Object.defineProperty(document, 'hidden', { value: hidden, configurable: true, writable: true });
+    Object.defineProperty(document, 'visibilityState', {
+      value: hidden ? 'hidden' : 'visible',
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  function makeChildSnapshot(key, ts) {
+    return { key, val: () => ({ author: 'Tester', text: 'Hello', timestamp: ts, authorId: 'uid-test' }) };
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    document.title = TITLE;
+    jest.useFakeTimers();
+    setScrollY(0);
+    setDocumentHidden(false);
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+
+    let childAddedCallCount = 0;
+    mocks.dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'child_added') {
+        childAddedCallCount++;
+        if (childAddedCallCount === 1) childAddedCallback = cb;
+      }
+      return 'listener-token';
+    });
+
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = jest.fn().mockReturnValue(false);
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    setScrollY(0);
+    setDocumentHidden(false);
+  });
+
+  async function startWithEmptyFeed() {
+    authStateCallback(null);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  test('tab title is unchanged on initial load', async () => {
+    await startWithEmptyFeed();
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('tab title updates when tab is hidden and message arrives at scroll top', async () => {
+    await startWithEmptyFeed();
+    setScrollY(0);
+    setDocumentHidden(true);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    expect(document.title).toBe(`(1) ${TITLE}`);
+  });
+
+  test('tab title updates when scrolled down and tab is visible', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+    setDocumentHidden(false);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    expect(document.title).toBe(`(1) ${TITLE}`);
+  });
+
+  test('tab title does NOT change when at top and tab is focused', async () => {
+    await startWithEmptyFeed();
+    setScrollY(0);
+    setDocumentHidden(false);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('tab title increments correctly for multiple arrivals while hidden', async () => {
+    await startWithEmptyFeed();
+    setScrollY(0);
+    setDocumentHidden(true);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    childAddedCallback(makeChildSnapshot('msg-2', T2));
+    childAddedCallback(makeChildSnapshot('msg-3', T3));
+
+    expect(document.title).toBe(`(3) ${TITLE}`);
+  });
+
+  test('tab title increments without resetting between arrivals while scrolled down', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+    setDocumentHidden(false);
+
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    expect(document.title).toBe(`(1) ${TITLE}`);
+
+    childAddedCallback(makeChildSnapshot('msg-2', T2));
+    expect(document.title).toBe(`(2) ${TITLE}`);
+  });
+
+  test('tab title restores when visibilitychange fires with visibilityState=visible', async () => {
+    await startWithEmptyFeed();
+    setScrollY(0);
+    setDocumentHidden(true);
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    expect(document.title).toBe(`(1) ${TITLE}`);
+
+    setDocumentHidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('visibilitychange when count is 0 does not change title', async () => {
+    await startWithEmptyFeed();
+    document.title = TITLE;
+
+    setDocumentHidden(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('tab title restores when banner is clicked', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    expect(document.title).toBe(`(1) ${TITLE}`);
+
+    document.getElementById('new-messages-banner').click();
+
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('tab title restores when user scrolls back to top', async () => {
+    await startWithEmptyFeed();
+    setScrollY(250);
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    expect(document.title).toBe(`(1) ${TITLE}`);
+
+    setScrollY(0);
+    window.dispatchEvent(new Event('scroll'));
+
+    expect(document.title).toBe(TITLE);
+  });
+
+  test('tab title restores on sign-out', async () => {
+    // Sign in first, then build up unread count
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    setScrollY(0);
+    setDocumentHidden(true);
+    childAddedCallback(makeChildSnapshot('msg-1', T1));
+    expect(document.title).toBe(`(1) ${TITLE}`);
+
+    // Sign out
+    authStateCallback(null);
+
+    expect(document.title).toBe(TITLE);
+  });
+});
+
 // --- renderMessageText (DOM) ---
 describe('renderMessageText (DOM)', () => {
   let renderMessageText;

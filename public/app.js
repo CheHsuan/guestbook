@@ -111,6 +111,7 @@ const replyCountMap = new Map(); // msgId -> current reply count (for delete war
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
 let newMessageCount = 0;
 let bannerHideTimer = null;
+const ORIGINAL_TITLE = document.title;
 
 // ========================================
 // Author Pool (for @mention autocomplete)
@@ -250,6 +251,7 @@ function updateNewMessagesBanner() {
 
 function hideNewMessagesBanner() {
   newMessageCount = 0;
+  document.title = ORIGINAL_TITLE;
   newMessagesBanner.classList.remove('new-messages-banner--visible');
   clearTimeout(bannerHideTimer);
   bannerHideTimer = setTimeout(() => {
@@ -266,6 +268,12 @@ newMessagesBanner.addEventListener('click', () => {
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
   hideNewMessagesBanner();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && newMessageCount > 0) {
+    hideNewMessagesBanner();
+  }
 });
 
 // ========================================
@@ -402,6 +410,7 @@ auth.onAuthStateChanged((user) => {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
+    hideNewMessagesBanner();
   }
 
   // Start the listener once; skip if already running to avoid duplicate listeners
@@ -535,10 +544,13 @@ async function startListeningMessages() {
         messagesContainer.insertBefore(card, loadingState.nextSibling);
         filterMessages();
 
-        // Show banner when user is scrolled down so new arrivals aren't missed
-        if (window.scrollY > 200) {
+        // Show banner and update tab title when user is scrolled down or tab is hidden
+        if (window.scrollY > 200 || document.hidden) {
           newMessageCount++;
-          updateNewMessagesBanner();
+          if (window.scrollY > 200) {
+            updateNewMessagesBanner();
+          }
+          document.title = `(${newMessageCount}) ${ORIGINAL_TITLE}`;
         }
       }
     });
@@ -701,6 +713,7 @@ function stopListeningMessages() {
   messageCount.textContent = '0';
 
   newMessageCount = 0;
+  document.title = ORIGINAL_TITLE;
   clearTimeout(bannerHideTimer);
   newMessagesBanner.classList.remove('new-messages-banner--visible');
   newMessagesBanner.style.display = 'none';
