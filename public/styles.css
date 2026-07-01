@@ -560,6 +560,19 @@ body {
   text-decoration: underline;
 }
 
+.expiry-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.expiry-label.expiry--warning {
+  color: var(--warning);
+}
+
+.expiry-label.expiry--danger {
+  color: var(--danger);
+}
+
 .edited-label {
   color: var(--text-muted);
   font-size: 0.8rem;

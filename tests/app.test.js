@@ -533,7 +533,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     await Promise.resolve();
 
     // Advance fake timers past the 5s timeout
-    jest.runAllTimers();
+    jest.advanceTimersByTime(6000);
 
     expect(rateLimitMsg.style.display).toBe('none');
   });
@@ -3177,5 +3177,283 @@ describe('browser notifications — initial load gate in createMessageCard', () 
     childAddedCb({ key: 'r2', val: () => ({ author: 'Bob', text: 'Hello!', authorId: 'uid-bob', timestamp: 3000 }) });
 
     expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- Expiry Countdown ---
+describe('formatExpiryLabel', () => {
+  let formatExpiryLabel;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ formatExpiryLabel } = require('../public/app.js'));
+  });
+
+  test('returns hours+minutes format and no class for >= 2 hours', () => {
+    const ms = 4 * 3600000 + 23 * 60000; // 4h 23m
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expires in 4h 23m');
+    expect(result.cls).toBe('');
+  });
+
+  test('returns hours+minutes format and no class for exactly 1 hour', () => {
+    const ms = 3600000; // 1h 0m
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expires in 1h 0m');
+    expect(result.cls).toBe('');
+  });
+
+  test('returns minutes format and warning class for < 1 hour but >= 10 min', () => {
+    const ms = 52 * 60000; // 52 minutes
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expires in 52m');
+    expect(result.cls).toBe('expiry--warning');
+  });
+
+  test('returns minutes format and warning class for exactly 10 minutes', () => {
+    const ms = 600000; // 10 minutes
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expires in 10m');
+    expect(result.cls).toBe('expiry--warning');
+  });
+
+  test('returns "expiring soon" and danger class for < 10 minutes', () => {
+    const ms = 9 * 60000; // 9 minutes
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expiring soon');
+    expect(result.cls).toBe('expiry--danger');
+  });
+
+  test('returns "expiring soon" and danger class for 1 ms remaining', () => {
+    const result = formatExpiryLabel(1);
+    expect(result.text).toBe('expiring soon');
+    expect(result.cls).toBe('expiry--danger');
+  });
+
+  test('floors hours and minutes correctly', () => {
+    const ms = 2 * 3600000 + 59000; // 2h 0m (59 seconds left over, rounds down)
+    const result = formatExpiryLabel(ms);
+    expect(result.text).toBe('expires in 2h 0m');
+    expect(result.cls).toBe('');
+  });
+});
+
+describe('createExpiryLabel', () => {
+  let createExpiryLabel;
+
+  beforeAll(() => {
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createExpiryLabel } = require('../public/app.js'));
+  });
+
+  test('returns an element with class expiry-label', () => {
+    const now = Date.now();
+    const el = createExpiryLabel(now - (20 * 3600000)); // 4h remaining
+    expect(el.classList.contains('expiry-label')).toBe(true);
+  });
+
+  test('sets data-expiry to timestamp + 86400000', () => {
+    const ts = Date.now() - (20 * 3600000); // 4h remaining
+    const el = createExpiryLabel(ts);
+    expect(Number(el.dataset.expiry)).toBe(ts + 86400000);
+  });
+
+  test('sets aria-label with absolute expiry time', () => {
+    const ts = Date.now() - (20 * 3600000);
+    const el = createExpiryLabel(ts);
+    expect(el.getAttribute('aria-label')).toMatch(/^Expires at \d/);
+  });
+
+  test('text includes formatted countdown', () => {
+    const ts = Date.now() - (20 * 3600000); // 4h remaining
+    const el = createExpiryLabel(ts);
+    expect(el.textContent).toMatch(/expires in \d+h \d+m/);
+  });
+
+  test('adds expiry--warning class when < 1 hour remaining', () => {
+    const ts = Date.now() - (23.5 * 3600000); // 30 minutes remaining
+    const el = createExpiryLabel(ts);
+    expect(el.classList.contains('expiry--warning')).toBe(true);
+  });
+
+  test('adds expiry--danger class when < 10 minutes remaining', () => {
+    const ts = Date.now() - (24 * 3600000 - 5 * 60000); // 5 minutes remaining
+    const el = createExpiryLabel(ts);
+    expect(el.classList.contains('expiry--danger')).toBe(true);
+  });
+
+  test('shows expiring soon for already-expired timestamp', () => {
+    const ts = Date.now() - (25 * 3600000); // already expired
+    const el = createExpiryLabel(ts);
+    expect(el.textContent).toContain('expiring soon');
+    expect(el.classList.contains('expiry--danger')).toBe(true);
+  });
+});
+
+describe('createMessageCard expiry label', () => {
+  let createMessageCard;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  const baseMsg = {
+    id: 'msg-expiry-1',
+    author: 'Alice',
+    text: 'Hello',
+    timestamp: Date.now() - (20 * 3600000), // 4h remaining
+    authorId: 'uid-alice',
+  };
+
+  test('renders .expiry-label inside .message-time', () => {
+    const card = createMessageCard(baseMsg, null);
+    const timeEl = card.querySelector('.message-time');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl.querySelector('.expiry-label')).not.toBeNull();
+  });
+
+  test('expiry label has data-expiry attribute set to timestamp + 86400000', () => {
+    const card = createMessageCard(baseMsg, null);
+    const label = card.querySelector('.expiry-label');
+    expect(Number(label.dataset.expiry)).toBe(baseMsg.timestamp + 86400000);
+  });
+
+  test('expiry label has aria-label with expiry time', () => {
+    const card = createMessageCard(baseMsg, null);
+    const label = card.querySelector('.expiry-label');
+    expect(label.getAttribute('aria-label')).toMatch(/^Expires at/);
+  });
+
+  test('expiry label shows warning class when < 1 hour remaining', () => {
+    const msg = { ...baseMsg, id: 'msg-warn', timestamp: Date.now() - (23.5 * 3600000) };
+    const card = createMessageCard(msg, null);
+    const label = card.querySelector('.expiry-label');
+    expect(label.classList.contains('expiry--warning')).toBe(true);
+  });
+
+  test('expiry label shows danger class when < 10 minutes remaining', () => {
+    const msg = { ...baseMsg, id: 'msg-danger', timestamp: Date.now() - (24 * 3600000 - 5 * 60000) };
+    const card = createMessageCard(msg, null);
+    const label = card.querySelector('.expiry-label');
+    expect(label.classList.contains('expiry--danger')).toBe(true);
+  });
+});
+
+describe('tickExpiryLabels', () => {
+  let createMessageCard;
+  let tickExpiryLabels;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    ({ createMessageCard, tickExpiryLabels } = require('../public/app.js'));
+  });
+
+  function appendCard(msg) {
+    const card = createMessageCard(msg, null);
+    document.getElementById('messages-container').appendChild(card);
+    return card;
+  }
+
+  test('updates expiry label text and class on tick', () => {
+    const msg = {
+      id: 'tick-1',
+      author: 'Alice',
+      text: 'hi',
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining
+      authorId: 'uid-alice',
+    };
+    const card = appendCard(msg);
+    const label = card.querySelector('.expiry-label');
+
+    // Simulate time passing: change data-expiry to 30 min from now
+    const thirtyMin = Date.now() + (30 * 60000);
+    label.dataset.expiry = String(thirtyMin);
+
+    tickExpiryLabels();
+
+    expect(label.textContent).toContain('expires in 30m');
+    expect(label.classList.contains('expiry--warning')).toBe(true);
+  });
+
+  test('removes expired message card from DOM on tick', () => {
+    const msg = {
+      id: 'tick-expire',
+      author: 'Alice',
+      text: 'hi',
+      timestamp: Date.now() - (20 * 3600000),
+      authorId: 'uid-alice',
+    };
+    const card = appendCard(msg);
+    const label = card.querySelector('.expiry-label');
+
+    // Set expiry to the past
+    label.dataset.expiry = String(Date.now() - 1000);
+
+    tickExpiryLabels();
+
+    expect(document.getElementById('msg-tick-expire')).toBeNull();
+  });
+
+  test('does not remove card with time remaining', () => {
+    const msg = {
+      id: 'tick-keep',
+      author: 'Alice',
+      text: 'hi',
+      timestamp: Date.now() - (20 * 3600000),
+      authorId: 'uid-alice',
+    };
+    appendCard(msg);
+
+    tickExpiryLabels();
+
+    expect(document.getElementById('msg-tick-keep')).not.toBeNull();
   });
 });
