@@ -458,6 +458,7 @@ let newestMessageTimestamp = null;
 let isLoadingMore = false;
 let hasMoreMessages = true;
 let totalMessagesListener = null;
+let expiryInterval = null;
 const INITIAL_LOAD_LIMIT = 20;
 
 // ========================================
@@ -465,6 +466,10 @@ const INITIAL_LOAD_LIMIT = 20;
 // ========================================
 
 async function startListeningMessages() {
+  if (!expiryInterval) {
+    expiryInterval = setInterval(tickExpiryLabels, 60000);
+  }
+
   // Show loading
   loadingState.style.display = 'block';
   emptyState.style.display = 'none';
@@ -709,6 +714,11 @@ function handleScroll() {
 }
 
 function stopListeningMessages() {
+  if (expiryInterval) {
+    clearInterval(expiryInterval);
+    expiryInterval = null;
+  }
+
   if (realtimeAddedListener) {
     db.ref('messages').off('child_added', realtimeAddedListener);
     realtimeAddedListener = null;
@@ -743,6 +753,83 @@ function stopListeningMessages() {
   clearTimeout(bannerHideTimer);
   newMessagesBanner.classList.remove('new-messages-banner--visible');
   newMessagesBanner.style.display = 'none';
+}
+
+// ========================================
+// Expiry Countdown
+// ========================================
+const MESSAGE_LIFETIME_MS = 86400000; // 24 hours
+
+function formatExpiryLabel(msRemaining) {
+  if (msRemaining >= 3600000) {
+    const hours = Math.floor(msRemaining / 3600000);
+    const minutes = Math.floor((msRemaining % 3600000) / 60000);
+    return { text: `expires in ${hours}h ${minutes}m`, cls: '' };
+  }
+  if (msRemaining >= 600000) {
+    const minutes = Math.floor(msRemaining / 60000);
+    return { text: `expires in ${minutes}m`, cls: 'expiry--warning' };
+  }
+  return { text: 'expiring soon', cls: 'expiry--danger' };
+}
+
+function createExpiryLabel(timestamp) {
+  const expiry = timestamp + MESSAGE_LIFETIME_MS;
+  const msRemaining = expiry - Date.now();
+  const { text, cls } = msRemaining > 0 ? formatExpiryLabel(msRemaining) : { text: 'expiring soon', cls: 'expiry--danger' };
+
+  const el = document.createElement('span');
+  el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+  el.dataset.expiry = String(expiry);
+  el.textContent = ' \xB7 ' + text;
+
+  const expiryTimeStr = new Date(expiry).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  el.setAttribute('aria-label', 'Expires at ' + expiryTimeStr);
+
+  return el;
+}
+
+function tickExpiryLabels() {
+  const now = Date.now();
+
+  document.querySelectorAll('.message-card .expiry-label[data-expiry]').forEach(el => {
+    const expiry = Number(el.dataset.expiry);
+    const msRemaining = expiry - now;
+    if (msRemaining <= 0) {
+      const card = el.closest('.message-card');
+      if (card) {
+        const msgId = card.id.replace(/^msg-/, '');
+        const replyRef = replyListenerMap.get(msgId);
+        if (replyRef) {
+          replyRef.off();
+          replyListenerMap.delete(msgId);
+        }
+        replyCountMap.delete(msgId);
+        card.remove();
+      }
+    } else {
+      const { text, cls } = formatExpiryLabel(msRemaining);
+      el.textContent = ' \xB7 ' + text;
+      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+    }
+  });
+
+  let savedPanelNeedsRefresh = false;
+  document.querySelectorAll('.saved-message .expiry-label[data-expiry]').forEach(el => {
+    const expiry = Number(el.dataset.expiry);
+    const msRemaining = expiry - now;
+    if (msRemaining <= 0) {
+      savedPanelNeedsRefresh = true;
+    } else {
+      const { text, cls } = formatExpiryLabel(msRemaining);
+      el.textContent = ' \xB7 ' + text;
+      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+    }
+  });
+
+  if (savedPanelNeedsRefresh) {
+    refreshSavedPanel();
+  }
 }
 
 // ========================================
@@ -891,6 +978,7 @@ function refreshSavedPanel() {
       timeEl.appendChild(badge);
     } else {
       timeEl.textContent = formatTimestamp(bookmark.timestamp);
+      timeEl.appendChild(createExpiryLabel(bookmark.timestamp));
     }
 
     msgHeader.appendChild(avatarEl);
@@ -1020,6 +1108,7 @@ function createMessageCard(msg, user) {
     editedLabel.textContent = ' · edited';
     timeEl.appendChild(editedLabel);
   }
+  timeEl.appendChild(createExpiryLabel(msg.timestamp));
 
   const avatarEl = createAvatarElement(msg.photoURL, msg.author);
   header.appendChild(avatarEl);
@@ -1748,5 +1837,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels };
 }
