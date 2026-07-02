@@ -87,7 +87,7 @@
       ".read": true,
       "$message_id": {
         ".write": "auth != null",
-        ".validate": "newData.isNumber() && newData.val() >= 0"
+        ".validate": "newData.isNumber() && newData.val() >= 0 && (data.exists() ? (newData.val() == data.val() + 1 || newData.val() == data.val() - 1) : newData.val() == 1)"
       }
     },
     "reports": {
