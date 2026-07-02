@@ -60,6 +60,7 @@ function makeFirebaseMock() {
       numChildren: () => 0,
     }),
     remove: jest.fn().mockResolvedValue(undefined),
+    transaction: jest.fn().mockResolvedValue(undefined),
     orderByChild: jest.fn().mockReturnThis(),
     startAt: jest.fn().mockReturnThis(),
     startAfter: jest.fn().mockReturnThis(),
@@ -3468,14 +3469,23 @@ describe('flag feature', () => {
     authorId: 'uid-alice',
   };
 
-  function setupModule(onMockImpl) {
+  function setupModule() {
     jest.resetModules();
     document.body.innerHTML = APP_HTML;
 
-    const { firebase, authInstance, dbRef } = makeFirebaseMock();
-    if (onMockImpl) {
-      dbRef.on.mockImplementation(onMockImpl);
-    }
+    const { firebase, authInstance, dbInstance, dbRef } = makeFirebaseMock();
+
+    const valueCallbacks = {};
+    let lastRefPath = '';
+    dbInstance.ref.mockImplementation((path) => {
+      lastRefPath = path || '';
+      return dbRef;
+    });
+    dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'value') valueCallbacks[lastRefPath] = cb;
+      return 'listener-token';
+    });
+
     authInstance.onAuthStateChanged.mockImplementation(() => {});
     global.firebase = firebase;
 
@@ -3490,7 +3500,7 @@ describe('flag feature', () => {
     global.renderMessageText = utils.renderMessageText;
 
     const mod = require('../public/app.js');
-    return { ...mod, firebase, dbRef };
+    return { ...mod, firebase, dbRef, valueCallbacks };
   }
 
   // --- Button visibility ---
@@ -3612,21 +3622,11 @@ describe('flag feature', () => {
 
   // --- Reports listener: dimming ---
   test('reports listener dims card and replaces text when 3+ flags', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-a': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-b': { reportedAt: 2, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 3, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 3 });
 
     expect(card.style.opacity).toBe('0.4');
     expect(card.querySelector('.message-text').textContent)
@@ -3634,51 +3634,27 @@ describe('flag feature', () => {
   });
 
   test('reports listener does not dim card when fewer than 3 flags', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-a': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-b': { reportedAt: 2, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 2 });
 
     expect(card.style.opacity).not.toBe('0.4');
     expect(card.querySelector('.message-text').textContent).toBe(baseMsg.text);
   });
 
   test('reports listener restores text and opacity when flags drop below 3', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
     // Apply dimming
-    reportsValueCallback({
-      val: () => ({
-        'uid-a': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-b': { reportedAt: 2, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 3, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 3 });
     expect(card.style.opacity).toBe('0.4');
 
     // Remove one flag (drop to 2)
-    reportsValueCallback({
-      val: () => ({
-        'uid-a': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-b': { reportedAt: 2, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 2 });
 
     expect(card.style.opacity).toBe('');
     expect(card.querySelector('.message-text').textContent).toBe(baseMsg.text);
@@ -3686,22 +3662,12 @@ describe('flag feature', () => {
 
   // --- Reports listener: author notice ---
   test('reports listener shows author notice (not dimming) when own message has 3+ flags', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
     const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-b': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 2, authorId: 'uid-alice' },
-        'uid-d': { reportedAt: 3, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 3 });
 
     expect(card.style.opacity).toBe('');
     const notice = card.querySelector('.flagged-author-notice');
@@ -3710,50 +3676,27 @@ describe('flag feature', () => {
   });
 
   test('reports listener removes author notice when flags drop below 3', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
     const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-b': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 2, authorId: 'uid-alice' },
-        'uid-d': { reportedAt: 3, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 3 });
     expect(card.querySelector('.flagged-author-notice')).not.toBeNull();
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-b': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 2, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 2 });
 
     expect(card.querySelector('.flagged-author-notice')).toBeNull();
   });
 
   // --- Reports listener: flag button active state ---
   test('reports listener marks flag button active when current user has flagged', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
     const user = { uid: 'uid-bob' };
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, user);
+    const ownFlagCb = valueCallbacks[`reports/${baseMsg.id}/${user.uid}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-bob': { reportedAt: 1, authorId: 'uid-alice' },
-      }),
-    });
+    ownFlagCb({ val: () => ({ reportedAt: 1, authorId: 'uid-alice' }), exists: () => true });
 
     const flagBtn = card.querySelector('.btn-flag');
     expect(flagBtn.classList.contains('btn-flag--active')).toBe(true);
@@ -3761,21 +3704,17 @@ describe('flag feature', () => {
   });
 
   test('reports listener clears flag button active state when current user unflagged', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
     const user = { uid: 'uid-bob' };
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, user);
+    const ownFlagCb = valueCallbacks[`reports/${baseMsg.id}/${user.uid}`];
 
     // First: user has flagged
-    reportsValueCallback({ val: () => ({ 'uid-bob': { reportedAt: 1, authorId: 'uid-alice' } }) });
+    ownFlagCb({ val: () => ({ reportedAt: 1, authorId: 'uid-alice' }), exists: () => true });
     expect(card.querySelector('.btn-flag').classList.contains('btn-flag--active')).toBe(true);
 
     // Then: user removed flag
-    reportsValueCallback({ val: () => ({}) });
+    ownFlagCb({ val: () => null, exists: () => false });
     const flagBtn = card.querySelector('.btn-flag');
     expect(flagBtn.classList.contains('btn-flag--active')).toBe(false);
     expect(flagBtn.getAttribute('aria-label')).toBe('Flag as inappropriate');
@@ -3783,22 +3722,12 @@ describe('flag feature', () => {
 
   // --- XSS safety ---
   test('flagged-author-notice uses textContent — no innerHTML injection', () => {
-    let reportsValueCallback;
-    const { createMessageCard } = setupModule((event, cb) => {
-      if (event === 'value') reportsValueCallback = cb;
-      return 'listener-token';
-    });
-
     const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
     const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
 
-    reportsValueCallback({
-      val: () => ({
-        'uid-b': { reportedAt: 1, authorId: 'uid-alice' },
-        'uid-c': { reportedAt: 2, authorId: 'uid-alice' },
-        'uid-d': { reportedAt: 3, authorId: 'uid-alice' },
-      }),
-    });
+    countCb({ val: () => 3 });
 
     const notice = card.querySelector('.flagged-author-notice');
     expect(notice.children.length).toBe(0);

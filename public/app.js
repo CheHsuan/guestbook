@@ -1463,6 +1463,7 @@ function createMessageCard(msg, user) {
       if (flagBtn.classList.contains('btn-flag--active')) {
         try {
           await db.ref(`reports/${msg.id}/${user.uid}`).remove();
+          await db.ref(`reportCounts/${msg.id}`).transaction(n => Math.max(0, (n || 0) - 1));
         } catch (err) {
           console.error('Failed to remove flag:', err);
         }
@@ -1475,6 +1476,7 @@ function createMessageCard(msg, user) {
           };
           updates[`/users/${user.uid}/lastFlagTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
+          await db.ref(`reportCounts/${msg.id}`).transaction(n => (n || 0) + 1);
         } catch (err) {
           console.error('Failed to flag message:', err);
           if (err.code === 'PERMISSION_DENIED') {
@@ -1575,26 +1577,13 @@ function createMessageCard(msg, user) {
 
   replyListenerMap.set(msg.id, repliesRef);
 
-  // Listen to /reports/{msgId} to update flag-button state and apply dimming at 3+ flags
-  const reportsRef = db.ref(`reports/${msg.id}`);
+  // Listen to /reportCounts/{msgId} for the public aggregate count (dimming / author notice)
+  const reportCountRef = db.ref(`reportCounts/${msg.id}`);
   const isOwnMessage = user && msg.authorId === user.uid;
   let flaggedAuthorNotice = null;
 
-  reportsRef.on('value', (snap) => {
-    const reports = snap.val() || {};
-    const flagCount = Object.keys(reports).length;
-    const userFlagged = user && !!reports[user.uid];
-
-    const flagBtnEl = card.querySelector('.btn-flag');
-    if (flagBtnEl) {
-      if (userFlagged) {
-        flagBtnEl.classList.add('btn-flag--active');
-        flagBtnEl.setAttribute('aria-label', 'Remove flag');
-      } else {
-        flagBtnEl.classList.remove('btn-flag--active');
-        flagBtnEl.setAttribute('aria-label', 'Flag as inappropriate');
-      }
-    }
+  reportCountRef.on('value', (snap) => {
+    const flagCount = snap.val() || 0;
 
     if (flagCount >= 3) {
       if (isOwnMessage) {
@@ -1623,7 +1612,31 @@ function createMessageCard(msg, user) {
     }
   });
 
-  reportListenerMap.set(msg.id, reportsRef);
+  // Listen to /reports/{msgId}/{myUid} for own toggle state — readable only by the reporter
+  let ownReportRef = null;
+  if (user && msg.authorId !== user.uid) {
+    ownReportRef = db.ref(`reports/${msg.id}/${user.uid}`);
+    ownReportRef.on('value', (snap) => {
+      const userFlagged = snap.exists();
+      const flagBtnEl = card.querySelector('.btn-flag');
+      if (flagBtnEl) {
+        if (userFlagged) {
+          flagBtnEl.classList.add('btn-flag--active');
+          flagBtnEl.setAttribute('aria-label', 'Remove flag');
+        } else {
+          flagBtnEl.classList.remove('btn-flag--active');
+          flagBtnEl.setAttribute('aria-label', 'Flag as inappropriate');
+        }
+      }
+    });
+  }
+
+  reportListenerMap.set(msg.id, {
+    off() {
+      reportCountRef.off();
+      if (ownReportRef) ownReportRef.off();
+    },
+  });
 
   return card;
 }

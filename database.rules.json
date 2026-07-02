@@ -82,19 +82,25 @@
           ".validate": false
         }
       }
-    }
     },
-    "reports": {
+    "reportCounts": {
       ".read": true,
       "$message_id": {
+        ".write": "auth != null",
+        ".validate": "newData.isNumber() && newData.val() >= 0"
+      }
+    },
+    "reports": {
+      "$message_id": {
         "$reporter_uid": {
+          ".read": "auth != null && (auth.uid == $reporter_uid || auth.uid == root.child('messages').child($message_id).child('authorId').val())",
           ".write": "auth != null && auth.uid == $reporter_uid",
           ".validate": "!newData.exists() || newData.hasChildren(['reportedAt', 'authorId'])",
           "reportedAt": {
             ".validate": "newData.isNumber()"
           },
           "authorId": {
-            ".validate": "newData.isString()"
+            ".validate": "newData.isString() && newData.val() == root.child('messages').child($message_id).child('authorId').val()"
           },
           "$other": {
             ".validate": false
