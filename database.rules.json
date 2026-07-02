@@ -7,6 +7,9 @@
         "lastPostTimestamp": {
           ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val() + 5000)"
         },
+        "lastFlagTimestamp": {
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val() + 6000)"
+        },
         "$other": {
           ".validate": false
         }
@@ -77,6 +80,31 @@
         },
         "$other": {
           ".validate": false
+        }
+      }
+    },
+    "reportCounts": {
+      ".read": true,
+      "$message_id": {
+        ".write": "auth != null && (newData.val() > data.val() ? root.child('reports').child($message_id).child(auth.uid).exists() : !root.child('reports').child($message_id).child(auth.uid).exists())",
+        ".validate": "newData.isNumber() && newData.val() >= 0 && (data.exists() ? (newData.val() == data.val() + 1 || newData.val() == data.val() - 1) : newData.val() == 1)"
+      }
+    },
+    "reports": {
+      "$message_id": {
+        "$reporter_uid": {
+          ".read": "auth != null && (auth.uid == $reporter_uid || auth.uid == root.child('messages').child($message_id).child('authorId').val())",
+          ".write": "auth != null && auth.uid == $reporter_uid",
+          ".validate": "!newData.exists() || newData.hasChildren(['reportedAt', 'authorId'])",
+          "reportedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "authorId": {
+            ".validate": "newData.isString() && newData.val() == root.child('messages').child($message_id).child('authorId').val()"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     }

@@ -60,6 +60,7 @@ function makeFirebaseMock() {
       numChildren: () => 0,
     }),
     remove: jest.fn().mockResolvedValue(undefined),
+    transaction: jest.fn().mockResolvedValue(undefined),
     orderByChild: jest.fn().mockReturnThis(),
     startAt: jest.fn().mockReturnThis(),
     startAfter: jest.fn().mockReturnThis(),
@@ -3455,5 +3456,281 @@ describe('tickExpiryLabels', () => {
     tickExpiryLabels();
 
     expect(document.getElementById('msg-tick-keep')).not.toBeNull();
+  });
+});
+
+// --- flag feature ---
+describe('flag feature', () => {
+  const baseMsg = {
+    id: 'flag-msg-1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const { firebase, authInstance, dbInstance, dbRef } = makeFirebaseMock();
+
+    const valueCallbacks = {};
+    let lastRefPath = '';
+    dbInstance.ref.mockImplementation((path) => {
+      lastRefPath = path || '';
+      return dbRef;
+    });
+    dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'value') valueCallbacks[lastRefPath] = cb;
+      return 'listener-token';
+    });
+
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const mod = require('../public/app.js');
+    return { ...mod, firebase, dbRef, valueCallbacks };
+  }
+
+  // --- Button visibility ---
+  test('flag button is not rendered for unauthenticated visitor', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-flag')).toBeNull();
+  });
+
+  test('flag button is not rendered for the message\'s own author', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-flag')).toBeNull();
+  });
+
+  test('flag button is rendered for an authenticated non-author', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-flag')).not.toBeNull();
+  });
+
+  test('flag button has aria-label "Flag as inappropriate" initially', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-flag').getAttribute('aria-label')).toBe('Flag as inappropriate');
+  });
+
+  test('flag button has title "Flag as inappropriate"', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-flag').title).toBe('Flag as inappropriate');
+  });
+
+  test('flag button shows 🚩 emoji', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-flag').textContent).toBe('🚩');
+  });
+
+  test('flag button appears in card footer between reply and bookmark buttons', () => {
+    const { createMessageCard } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const replyIdx = children.findIndex(el => el.classList.contains('btn-reply'));
+    const flagIdx = children.findIndex(el => el.classList.contains('btn-flag'));
+    const bookmarkIdx = children.findIndex(el => el.classList.contains('btn-bookmark'));
+    expect(flagIdx).toBeGreaterThan(replyIdx);
+    expect(flagIdx).toBeLessThan(bookmarkIdx);
+  });
+
+  // --- Click behavior: add flag ---
+  test('clicking flag button (not active) calls db.ref().update() with correct paths', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    const { createMessageCard } = require('../public/app.js');
+
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(baseMsg, user);
+    card.querySelector('.btn-flag').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dr.update).toHaveBeenCalledTimes(1);
+    const updateArg = dr.update.mock.calls[0][0];
+    const reportKey = `/reports/${baseMsg.id}/${user.uid}`;
+    expect(updateArg[reportKey]).toBeDefined();
+    expect(updateArg[reportKey].authorId).toBe(baseMsg.authorId);
+    expect(updateArg[reportKey].reportedAt).toBe('SERVER_TIMESTAMP');
+    const rateLimitKey = `/users/${user.uid}/lastFlagTimestamp`;
+    expect(updateArg[rateLimitKey]).toBe('SERVER_TIMESTAMP');
+  });
+
+  // --- Click behavior: remove flag ---
+  test('clicking flag button when active calls db.ref().remove()', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    const { createMessageCard } = require('../public/app.js');
+
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(baseMsg, user);
+    const flagBtn = card.querySelector('.btn-flag');
+
+    // Manually put button in active state (as if listener fired)
+    flagBtn.classList.add('btn-flag--active');
+    flagBtn.click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(dr.remove).toHaveBeenCalledTimes(1);
+    expect(dr.update).not.toHaveBeenCalled();
+  });
+
+  // --- Reports listener: dimming ---
+  test('reports listener dims card and replaces text when 3+ flags', () => {
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    countCb({ val: () => 3 });
+
+    expect(card.style.opacity).toBe('0.4');
+    expect(card.querySelector('.message-text').textContent)
+      .toBe('⚠️ This message has been flagged by the community.');
+  });
+
+  test('reports listener does not dim card when fewer than 3 flags', () => {
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    countCb({ val: () => 2 });
+
+    expect(card.style.opacity).not.toBe('0.4');
+    expect(card.querySelector('.message-text').textContent).toBe(baseMsg.text);
+  });
+
+  test('reports listener restores text and opacity when flags drop below 3', () => {
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    // Apply dimming
+    countCb({ val: () => 3 });
+    expect(card.style.opacity).toBe('0.4');
+
+    // Remove one flag (drop to 2)
+    countCb({ val: () => 2 });
+
+    expect(card.style.opacity).toBe('');
+    expect(card.querySelector('.message-text').textContent).toBe(baseMsg.text);
+  });
+
+  // --- Reports listener: author notice ---
+  test('reports listener shows author notice (not dimming) when own message has 3+ flags', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    countCb({ val: () => 3 });
+
+    expect(card.style.opacity).toBe('');
+    const notice = card.querySelector('.flagged-author-notice');
+    expect(notice).not.toBeNull();
+    expect(notice.textContent).toBe('Your message has been flagged');
+  });
+
+  test('reports listener removes author notice when flags drop below 3', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    countCb({ val: () => 3 });
+    expect(card.querySelector('.flagged-author-notice')).not.toBeNull();
+
+    countCb({ val: () => 2 });
+
+    expect(card.querySelector('.flagged-author-notice')).toBeNull();
+  });
+
+  // --- Reports listener: flag button active state ---
+  test('reports listener marks flag button active when current user has flagged', () => {
+    const user = { uid: 'uid-bob' };
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, user);
+    const ownFlagCb = valueCallbacks[`reports/${baseMsg.id}/${user.uid}`];
+
+    ownFlagCb({ val: () => ({ reportedAt: 1, authorId: 'uid-alice' }), exists: () => true });
+
+    const flagBtn = card.querySelector('.btn-flag');
+    expect(flagBtn.classList.contains('btn-flag--active')).toBe(true);
+    expect(flagBtn.getAttribute('aria-label')).toBe('Remove flag');
+  });
+
+  test('reports listener clears flag button active state when current user unflagged', () => {
+    const user = { uid: 'uid-bob' };
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, user);
+    const ownFlagCb = valueCallbacks[`reports/${baseMsg.id}/${user.uid}`];
+
+    // First: user has flagged
+    ownFlagCb({ val: () => ({ reportedAt: 1, authorId: 'uid-alice' }), exists: () => true });
+    expect(card.querySelector('.btn-flag').classList.contains('btn-flag--active')).toBe(true);
+
+    // Then: user removed flag
+    ownFlagCb({ val: () => null, exists: () => false });
+    const flagBtn = card.querySelector('.btn-flag');
+    expect(flagBtn.classList.contains('btn-flag--active')).toBe(false);
+    expect(flagBtn.getAttribute('aria-label')).toBe('Flag as inappropriate');
+  });
+
+  // --- XSS safety ---
+  test('flagged-author-notice uses textContent — no innerHTML injection', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const { createMessageCard, valueCallbacks } = setupModule();
+    const card = createMessageCard(baseMsg, ownUser);
+    const countCb = valueCallbacks[`reportCounts/${baseMsg.id}`];
+
+    countCb({ val: () => 3 });
+
+    const notice = card.querySelector('.flagged-author-notice');
+    expect(notice.children.length).toBe(0);
+    expect(notice.innerHTML).not.toContain('<');
   });
 });
