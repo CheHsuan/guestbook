@@ -7,6 +7,9 @@
         "lastPostTimestamp": {
           ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val() + 5000)"
         },
+        "lastFlagTimestamp": {
+          ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val() + 6000)"
+        },
         "$other": {
           ".validate": false
         }
@@ -77,6 +80,25 @@
         },
         "$other": {
           ".validate": false
+        }
+      }
+    }
+    },
+    "reports": {
+      ".read": true,
+      "$message_id": {
+        "$reporter_uid": {
+          ".write": "auth != null && auth.uid == $reporter_uid",
+          ".validate": "!newData.exists() || newData.hasChildren(['reportedAt', 'authorId'])",
+          "reportedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "authorId": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     }

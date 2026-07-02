@@ -109,6 +109,7 @@ let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+const reportListenerMap = new Map(); // msgId -> db ref (for cleanup)
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
@@ -597,6 +598,11 @@ async function startListeningMessages() {
           replyListenerMap.delete(msgId);
         }
         replyCountMap.delete(msgId);
+        const reportRef = reportListenerMap.get(msgId);
+        if (reportRef) {
+          reportRef.off();
+          reportListenerMap.delete(msgId);
+        }
         cardToRemove.remove();
 
         // Hide empty state if there are elements besides loading/empty states
@@ -740,6 +746,8 @@ function stopListeningMessages() {
   replyListenerMap.forEach(ref => ref.off());
   replyListenerMap.clear();
   replyCountMap.clear();
+  reportListenerMap.forEach(ref => ref.off());
+  reportListenerMap.clear();
 
   window.removeEventListener('scroll', handleScroll);
 
@@ -805,6 +813,11 @@ function tickExpiryLabels() {
           replyListenerMap.delete(msgId);
         }
         replyCountMap.delete(msgId);
+        const reportRef = reportListenerMap.get(msgId);
+        if (reportRef) {
+          reportRef.off();
+          reportListenerMap.delete(msgId);
+        }
         card.remove();
       }
     } else {
@@ -1438,6 +1451,42 @@ function createMessageCard(msg, user) {
     cardFooter.appendChild(replyBtn);
   }
 
+  // Flag button — visible to authenticated non-authors only
+  if (user && msg.authorId !== user.uid) {
+    const flagBtn = document.createElement('button');
+    flagBtn.className = 'btn-flag';
+    flagBtn.textContent = '🚩';
+    flagBtn.title = 'Flag as inappropriate';
+    flagBtn.setAttribute('aria-label', 'Flag as inappropriate');
+
+    flagBtn.addEventListener('click', async () => {
+      if (flagBtn.classList.contains('btn-flag--active')) {
+        try {
+          await db.ref(`reports/${msg.id}/${user.uid}`).remove();
+        } catch (err) {
+          console.error('Failed to remove flag:', err);
+        }
+      } else {
+        try {
+          const updates = {};
+          updates[`/reports/${msg.id}/${user.uid}`] = {
+            reportedAt: firebase.database.ServerValue.TIMESTAMP,
+            authorId: msg.authorId,
+          };
+          updates[`/users/${user.uid}/lastFlagTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+          await db.ref().update(updates);
+        } catch (err) {
+          console.error('Failed to flag message:', err);
+          if (err.code === 'PERMISSION_DENIED') {
+            showToast('You\'ve flagged too many messages recently. Please wait before flagging again.');
+          }
+        }
+      }
+    });
+
+    cardFooter.appendChild(flagBtn);
+  }
+
   // Bookmark button — visible to all visitors (not gated on auth)
   const bookmarked = isBookmarked(msg.id);
   const bookmarkBtn = document.createElement('button');
@@ -1525,6 +1574,56 @@ function createMessageCard(msg, user) {
   });
 
   replyListenerMap.set(msg.id, repliesRef);
+
+  // Listen to /reports/{msgId} to update flag-button state and apply dimming at 3+ flags
+  const reportsRef = db.ref(`reports/${msg.id}`);
+  const isOwnMessage = user && msg.authorId === user.uid;
+  let flaggedAuthorNotice = null;
+
+  reportsRef.on('value', (snap) => {
+    const reports = snap.val() || {};
+    const flagCount = Object.keys(reports).length;
+    const userFlagged = user && !!reports[user.uid];
+
+    const flagBtnEl = card.querySelector('.btn-flag');
+    if (flagBtnEl) {
+      if (userFlagged) {
+        flagBtnEl.classList.add('btn-flag--active');
+        flagBtnEl.setAttribute('aria-label', 'Remove flag');
+      } else {
+        flagBtnEl.classList.remove('btn-flag--active');
+        flagBtnEl.setAttribute('aria-label', 'Flag as inappropriate');
+      }
+    }
+
+    if (flagCount >= 3) {
+      if (isOwnMessage) {
+        card.style.opacity = '';
+        if (!flaggedAuthorNotice) {
+          flaggedAuthorNotice = document.createElement('p');
+          flaggedAuthorNotice.className = 'flagged-author-notice';
+          flaggedAuthorNotice.textContent = 'Your message has been flagged';
+          card.insertBefore(flaggedAuthorNotice, textEl);
+        }
+      } else {
+        card.style.opacity = '0.4';
+        card.dataset.communityFlagged = '1';
+        textEl.textContent = '⚠️ This message has been flagged by the community.';
+      }
+    } else {
+      card.style.opacity = '';
+      if (flaggedAuthorNotice) {
+        flaggedAuthorNotice.remove();
+        flaggedAuthorNotice = null;
+      }
+      if (card.dataset.communityFlagged) {
+        delete card.dataset.communityFlagged;
+        renderMessageText(textEl, msg.text);
+      }
+    }
+  });
+
+  reportListenerMap.set(msg.id, reportsRef);
 
   return card;
 }

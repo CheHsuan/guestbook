@@ -1117,6 +1117,63 @@ body {
 }
 
 /* ========================================
+   Flag Button
+   ======================================== */
+.btn-flag {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition), background var(--transition);
+  flex-shrink: 0;
+}
+
+.message-card:hover .btn-flag {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-flag--active {
+  opacity: 1;
+  pointer-events: auto;
+  color: #e53e3e;
+}
+
+.btn-flag:hover {
+  background: var(--danger-bg);
+}
+
+.btn-flag:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .btn-flag {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ========================================
+   Flagged message author notice
+   ======================================== */
+.flagged-author-notice {
+  font-size: 0.78rem;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+
+/* ========================================
    Saved Badge (header)
    ======================================== */
 .saved-badge {
