@@ -86,7 +86,7 @@
     "reportCounts": {
       ".read": true,
       "$message_id": {
-        ".write": "auth != null",
+        ".write": "auth != null && (newData.val() > data.val() ? root.child('reports').child($message_id).child(auth.uid).exists() : !root.child('reports').child($message_id).child(auth.uid).exists())",
         ".validate": "newData.isNumber() && newData.val() >= 0 && (data.exists() ? (newData.val() == data.val() + 1 || newData.val() == data.val() - 1) : newData.val() == 1)"
       }
     },

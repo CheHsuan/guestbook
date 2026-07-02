@@ -1466,6 +1466,7 @@ function createMessageCard(msg, user) {
           await db.ref(`reportCounts/${msg.id}`).transaction(n => Math.max(0, (n || 0) - 1));
         } catch (err) {
           console.error('Failed to remove flag:', err);
+          showToast('Failed to remove flag. Please try again.');
         }
       } else {
         try {
