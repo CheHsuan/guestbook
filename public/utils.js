@@ -99,7 +99,171 @@ function getEmulatorConfig(hostname) {
     return null;
 }
 
+/**
+ * Resolve the initial theme from persisted storage and OS preference.
+ * @param {Storage|null} storage - localStorage or a test stub (may throw).
+ * @param {boolean} matchesDark  - result of matchMedia('prefers-color-scheme: dark').matches.
+ * @returns {'dark'|'light'}
+ */
+function getInitialTheme(storage, matchesDark) {
+    try {
+        var saved = storage ? storage.getItem('theme') : null;
+        if (saved === 'dark' || saved === 'light') return saved;
+    } catch (e) { /* localStorage unavailable — fall through */ }
+    return matchesDark ? 'dark' : 'light';
+}
+
+/**
+ * Split rawText into segments for rendering with clickable links.
+ * Each segment is { type: 'text'|'url', value: string, display?: string }.
+ * Only http/https URLs are linked; trailing punctuation (.,)) is stripped from
+ * the URL and emitted as a separate text segment.
+ */
+function parseTextSegments(rawText) {
+    if (!rawText) return [];
+
+    const URL_REGEX = /(https?:\/\/[^\s<>"]+)/g;
+    const TRAILING_PUNCT = /[.,)]+$/;
+    const parts = rawText.split(URL_REGEX);
+    const segments = [];
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) continue;
+
+        if (i % 2 === 1) {
+            // Odd indices are URL captures from the split regex
+            const trailingMatch = TRAILING_PUNCT.exec(part);
+            const url = trailingMatch ? part.slice(0, trailingMatch.index) : part;
+            const punct = trailingMatch ? trailingMatch[0] : '';
+
+            let isValid = false;
+            try {
+                const parsed = new URL(url);
+                isValid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch (_) {
+                isValid = false;
+            }
+
+            if (isValid) {
+                const display = url.length > 50 ? url.slice(0, 50) + '…' : url;
+                segments.push({ type: 'url', value: url, display });
+                if (punct) segments.push({ type: 'text', value: punct });
+            } else {
+                segments.push({ type: 'text', value: part });
+            }
+        } else {
+            segments.push({ type: 'text', value: part });
+        }
+    }
+
+    return segments;
+}
+
+/**
+ * Render rawText into container element, converting http/https URLs into
+ * clickable anchors (target="_blank", rel="noopener noreferrer").
+ * Non-URL text is appended as safe Text nodes; href is only set on
+ * validated http/https URLs so there is no XSS vector via the URL.
+ */
+function renderTextWithLinks(container, rawText) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    for (const seg of parseTextSegments(rawText)) {
+        if (seg.type === 'url') {
+            const a = document.createElement('a');
+            a.href = seg.value;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = seg.display;
+            container.appendChild(a);
+        } else {
+            container.appendChild(document.createTextNode(seg.value));
+        }
+    }
+}
+
+/**
+ * Parse rawText into segments for rendering with links AND @mentions.
+ * Segment types: 'text' | 'url' | 'mention'
+ * @mention tokens match /\B@(\w+)/ — one contiguous word after @, not at word boundary start.
+ */
+function parseMessageSegments(rawText) {
+    if (!rawText) return [];
+
+    const COMBINED_REGEX = /(https?:\/\/[^\s<>"]+)|(\B@\w+)/g;
+    const TRAILING_PUNCT = /[.,)]+$/;
+    const segments = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = COMBINED_REGEX.exec(rawText)) !== null) {
+        if (match.index > lastIndex) {
+            segments.push({ type: 'text', value: rawText.slice(lastIndex, match.index) });
+        }
+
+        if (match[1]) {
+            // URL match
+            const raw = match[1];
+            const trailingMatch = TRAILING_PUNCT.exec(raw);
+            const url = trailingMatch ? raw.slice(0, trailingMatch.index) : raw;
+            const punct = trailingMatch ? trailingMatch[0] : '';
+
+            let isValid = false;
+            try {
+                const parsed = new URL(url);
+                isValid = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch (_) {}
+
+            if (isValid) {
+                const display = url.length > 50 ? url.slice(0, 50) + '…' : url;
+                segments.push({ type: 'url', value: url, display });
+                if (punct) segments.push({ type: 'text', value: punct });
+                // Adjust lastIndex to account for stripped trailing punctuation
+                COMBINED_REGEX.lastIndex = match.index + url.length + punct.length;
+            } else {
+                segments.push({ type: 'text', value: raw });
+            }
+        } else if (match[2]) {
+            // @mention match — value is the word without @
+            segments.push({ type: 'mention', value: match[2].slice(1) });
+        }
+
+        lastIndex = COMBINED_REGEX.lastIndex;
+    }
+
+    if (lastIndex < rawText.length) {
+        segments.push({ type: 'text', value: rawText.slice(lastIndex) });
+    }
+
+    return segments;
+}
+
+/**
+ * Render rawText into container, converting URLs to clickable anchors and
+ * @Word tokens to <span class="mention">. XSS-safe — no innerHTML on user data.
+ */
+function renderMessageText(container, rawText) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    for (const seg of parseMessageSegments(rawText)) {
+        if (seg.type === 'url') {
+            const a = document.createElement('a');
+            a.href = seg.value;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = seg.display;
+            container.appendChild(a);
+        } else if (seg.type === 'mention') {
+            const span = document.createElement('span');
+            span.className = 'mention';
+            span.textContent = '@' + seg.value;
+            container.appendChild(span);
+        } else {
+            container.appendChild(document.createTextNode(seg.value));
+        }
+    }
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, renderMessageText };
 }

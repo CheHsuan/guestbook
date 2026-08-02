@@ -17,3 +17,7 @@ node_modules/
 ehthumbs.db
 Thumbs.db
 *-debug.log
+
+# Firebase Agent Skills
+.agents/
+skills-lock.json

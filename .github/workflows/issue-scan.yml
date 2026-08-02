@@ -32,7 +32,7 @@ jobs:
           git config user.email "claude-code@auto-agent.com"
 
       - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
+        run: npm install -g @anthropic-ai/claude-code@2.1.187
 
       - name: Fetch highest priority issue
         id: get-issue

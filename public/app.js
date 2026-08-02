@@ -21,6 +21,59 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 }
 
 // ========================================
+// Keyboard Shortcut: Cmd/Ctrl+Enter
+// ========================================
+const SUBMIT_HINT_TEXT = (function () {
+  try {
+    if (/Mac|iPhone|iPad|iPod/.test(navigator.platform || '')) return 'or press ⌘↵';
+  } catch (_) {}
+  return 'or press Ctrl+↵';
+}());
+
+// ========================================
+// Theme Toggle
+// ========================================
+const MOON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const SUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  if (theme === 'dark') {
+    btn.innerHTML = SUN_ICON;
+    btn.setAttribute('aria-label', 'Switch to light mode');
+  } else {
+    btn.innerHTML = MOON_ICON;
+    btn.setAttribute('aria-label', 'Switch to dark mode');
+  }
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('theme', next); } catch (e) {}
+}
+
+// Initialize toggle button to reflect the theme already set by the anti-FOUC inline script
+(function () {
+  const theme = document.documentElement.getAttribute('data-theme') ||
+    getInitialTheme(
+      typeof localStorage !== 'undefined' ? localStorage : null,
+      typeof window !== 'undefined' && window.matchMedia
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : false
+    );
+  applyTheme(theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.addEventListener('click', toggleTheme);
+})();
+
+// ========================================
 // DOM Elements
 // ========================================
 const loginBtnMain = document.getElementById('login-btn-main');
@@ -36,6 +89,7 @@ const postForm = document.getElementById('post-form');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
 const submitBtn = document.getElementById('submit-btn');
+const submitHint = document.getElementById('submit-hint');
 const rateLimitMsg = document.getElementById('rate-limit-msg');
 const messagesContainer = document.getElementById('messages-container');
 const emptyState = document.getElementById('empty-state');
@@ -45,6 +99,7 @@ const messageCount = document.getElementById('message-count');
 const searchInput = document.getElementById('search-input');
 const searchClearBtn = document.getElementById('search-clear-btn');
 const searchResultsCount = document.getElementById('search-results-count');
+const newMessagesBanner = document.getElementById('new-messages-banner');
 
 // ========================================
 // State
@@ -54,6 +109,230 @@ let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+let newMessageCount = 0;
+let bannerHideTimer = null;
+const ORIGINAL_TITLE = document.title;
+let notificationPermissionRequested = false;
+
+// ========================================
+// Author Pool (for @mention autocomplete)
+// ========================================
+const authorPool = new Map(); // authorName -> most-recent timestamp
+
+function trackAuthor(name, timestamp) {
+  if (!name) return;
+  const existing = authorPool.get(name);
+  if (!existing || timestamp > existing) {
+    authorPool.set(name, timestamp || 0);
+  }
+}
+
+function getAuthorSuggestions(prefix) {
+  if (!prefix) return [];
+  const lower = prefix.toLowerCase();
+  const matches = [];
+  for (const [name, ts] of authorPool.entries()) {
+    if (name.toLowerCase().startsWith(lower)) {
+      matches.push({ name, ts });
+    }
+  }
+  matches.sort((a, b) => b.ts - a.ts);
+  return matches.slice(0, 5).map(m => m.name);
+}
+
+// ========================================
+// Typing Indicator
+// ========================================
+const typingMap = new Map(); // uid -> { name, timestamp }
+let typingRef = null;        // db ref for current user's typing record
+let typingDebounceTimer = null;
+let typingListener = null;
+let typingHideTimer = null;
+
+function renderTypingLabel(map, currentUid) {
+  const thirtySecondsAgo = Date.now() - 30000;
+  const typers = [];
+
+  for (const [uid, data] of map.entries()) {
+    if (uid === currentUid) continue;
+    if (data.timestamp < thirtySecondsAgo) continue;
+    const name = data.name || '';
+    typers.push(name.length > 25 ? name.slice(0, 25) + '…' : name);
+  }
+
+  const el = document.getElementById('typing-indicator');
+  if (!el) return;
+
+  if (typers.length === 0) {
+    clearTimeout(typingHideTimer);
+    el.classList.remove('typing-indicator--visible');
+    typingHideTimer = setTimeout(() => {
+      if (!el.classList.contains('typing-indicator--visible')) {
+        el.style.display = 'none';
+        el.textContent = '';
+      }
+    }, 200);
+    return;
+  }
+
+  let text;
+  if (typers.length === 1) {
+    text = `${typers[0]} is typing`;
+  } else if (typers.length === 2) {
+    text = `${typers[0]} and ${typers[1]} are typing`;
+  } else {
+    text = 'Several people are typing';
+  }
+
+  el.textContent = text;
+
+  if (!el.classList.contains('typing-indicator--visible')) {
+    clearTimeout(typingHideTimer);
+    el.style.display = '';
+    void el.offsetWidth; // force reflow to enable the CSS transition
+    el.classList.add('typing-indicator--visible');
+  }
+}
+
+function startTyping() {
+  if (!currentUser) return;
+
+  if (!typingRef) {
+    typingRef = db.ref(`typing/${currentUser.uid}`);
+    typingRef.onDisconnect().remove();
+  }
+
+  typingRef.set({
+    name: currentUser.displayName || 'Anonymous',
+    timestamp: firebase.database.ServerValue.TIMESTAMP,
+  });
+
+  clearTimeout(typingDebounceTimer);
+  typingDebounceTimer = setTimeout(stopTyping, 5000);
+}
+
+function stopTyping() {
+  clearTimeout(typingDebounceTimer);
+  if (typingRef) {
+    typingRef.remove();
+  }
+}
+
+function setupTypingInputListeners() {
+  const isMobile = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: none) and (pointer: coarse)').matches
+    : false;
+
+  messageInput.addEventListener('input', () => {
+    if (!currentUser) return;
+    if (isMobile && messageInput.value.length === 0) return;
+    if (messageInput.value.length > 0) {
+      startTyping();
+    }
+  });
+
+  messageInput.addEventListener('blur', () => {
+    if (!messageInput.value.trim()) {
+      stopTyping();
+    }
+  });
+}
+
+// ========================================
+// New Messages Banner
+// ========================================
+function updateNewMessagesBanner() {
+  const label = newMessageCount === 1 ? 'new message' : 'new messages';
+  newMessagesBanner.textContent = `↑ ${newMessageCount} ${label}`;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.style.display = '';
+  void newMessagesBanner.offsetWidth; // force reflow for CSS transition
+  newMessagesBanner.classList.add('new-messages-banner--visible');
+}
+
+function hideNewMessagesBanner() {
+  newMessageCount = 0;
+  document.title = ORIGINAL_TITLE;
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  clearTimeout(bannerHideTimer);
+  bannerHideTimer = setTimeout(() => {
+    if (!newMessagesBanner.classList.contains('new-messages-banner--visible')) {
+      newMessagesBanner.style.display = 'none';
+    }
+  }, 220);
+}
+
+newMessagesBanner.addEventListener('click', () => {
+  if (searchInput.value) {
+    searchInput.value = '';
+    filterMessages();
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  hideNewMessagesBanner();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && newMessageCount > 0) {
+    hideNewMessagesBanner();
+  }
+});
+
+// ========================================
+// Browser Notifications (reply alerts)
+// ========================================
+function maybeFireReplyNotification(msg, reply) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!currentUser || msg.authorId !== currentUser.uid) return;
+  if (reply.authorId === currentUser.uid) return;
+  if (document.visibilityState === 'visible') return;
+  if (!document.getElementById('msg-' + msg.id)) return;
+
+  const raw = typeof reply.text === 'string' ? reply.text : '';
+  const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
+  const notif = new Notification('New reply on Guestbook', {
+    body: (reply.author || 'Someone') + ' replied: ' + snippet,
+    icon: '/icon.png',
+  });
+  notif.addEventListener('click', () => {
+    window.focus();
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+    notif.close();
+  });
+}
+
+// ========================================
+// Permalink: Toast + Deep-link
+// ========================================
+let deepLinkHandled = false;
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'permalink-toast permalink-toast--visible';
+  toast.textContent = message; // textContent — never user-derived
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.remove('permalink-toast--visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+function handleDeepLink() {
+  if (deepLinkHandled) return;
+  const hash = location.hash;
+  if (!hash.startsWith('#msg-')) return;
+  const targetEl = document.getElementById(hash.slice(1));
+  if (targetEl) {
+    deepLinkHandled = true;
+    targetEl.scrollIntoView({ behavior: 'smooth' });
+    targetEl.classList.add('permalink-highlight');
+    setTimeout(() => targetEl.classList.remove('permalink-highlight'), 2000);
+  } else if (!hasMoreMessages) {
+    deepLinkHandled = true;
+    showToast('Message not found — it may have expired.');
+  }
+}
 
 // ========================================
 // Search / Filter
@@ -135,6 +414,12 @@ logoutBtn.addEventListener('click', signOut);
 // Auth: State Observer
 // ========================================
 auth.onAuthStateChanged((user) => {
+  // Clean up typing indicator when signing out
+  if (!user && currentUser) {
+    stopTyping();
+    typingRef = null;
+  }
+
   currentUser = user;
 
   // Message feed is always visible; login prompt is never shown full-screen
@@ -151,6 +436,7 @@ auth.onAuthStateChanged((user) => {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
+    hideNewMessagesBanner();
   }
 
   // Start the listener once; skip if already running to avoid duplicate listeners
@@ -172,6 +458,7 @@ let newestMessageTimestamp = null;
 let isLoadingMore = false;
 let hasMoreMessages = true;
 let totalMessagesListener = null;
+let expiryInterval = null;
 const INITIAL_LOAD_LIMIT = 20;
 
 // ========================================
@@ -179,6 +466,10 @@ const INITIAL_LOAD_LIMIT = 20;
 // ========================================
 
 async function startListeningMessages() {
+  if (!expiryInterval) {
+    expiryInterval = setInterval(tickExpiryLabels, 60000);
+  }
+
   // Show loading
   loadingState.style.display = 'block';
   emptyState.style.display = 'none';
@@ -187,6 +478,11 @@ async function startListeningMessages() {
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
   hasMoreMessages = true;
+  deepLinkHandled = false;
+  newMessageCount = 0;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  newMessagesBanner.style.display = 'none';
 
   // Clear existing message cards
   const existingCards = messagesContainer.querySelectorAll('.message-card');
@@ -206,6 +502,7 @@ async function startListeningMessages() {
 
     if (!snapshot.exists()) {
       emptyState.style.display = 'block';
+      hasMoreMessages = false;
     } else {
       emptyState.style.display = 'none';
       const messages = [];
@@ -226,10 +523,13 @@ async function startListeningMessages() {
       }
 
       messages.forEach(msg => {
+        trackAuthor(msg.author, msg.timestamp);
         const card = createMessageCard(msg, currentUser);
         messagesContainer.appendChild(card);
       });
     }
+
+    handleDeepLink();
 
     // Start listening for true total count for the badge
     if (!totalMessagesListener) {
@@ -269,10 +569,20 @@ async function startListeningMessages() {
         newestMessageTimestamp = msg.timestamp;
         emptyState.style.display = 'none';
 
+        trackAuthor(msg.author, msg.timestamp);
         const card = createMessageCard(msg, currentUser);
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
         filterMessages();
+
+        // Show banner and update tab title when user is scrolled down or tab is hidden
+        if (window.scrollY > 200 || document.hidden) {
+          newMessageCount++;
+          if (window.scrollY > 200) {
+            updateNewMessagesBanner();
+          }
+          document.title = `(${newMessageCount}) ${ORIGINAL_TITLE}`;
+        }
       }
     });
 
@@ -303,6 +613,24 @@ async function startListeningMessages() {
 
     // Assign scroll listener
     window.addEventListener('scroll', handleScroll);
+
+    // 4. Listen for typing indicators
+    if (!typingListener) {
+      const typingDbRef = db.ref('typing');
+      typingDbRef.on('child_added', (snap) => {
+        typingMap.set(snap.key, snap.val());
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingDbRef.on('child_changed', (snap) => {
+        typingMap.set(snap.key, snap.val());
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingDbRef.on('child_removed', (snap) => {
+        typingMap.delete(snap.key);
+        renderTypingLabel(typingMap, currentUser ? currentUser.uid : null);
+      });
+      typingListener = typingDbRef;
+    }
 
   } catch (error) {
     console.error('Error loading initial messages:', error);
@@ -357,12 +685,14 @@ async function loadMoreMessages() {
     }
 
     messages.forEach(msg => {
+      trackAuthor(msg.author, msg.timestamp);
       const card = createMessageCard(msg, currentUser);
       // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
     });
 
     filterMessages();
+    handleDeepLink();
 
   } catch (error) {
     console.error('Error loading more messages:', error);
@@ -378,9 +708,17 @@ function handleScroll() {
   if (isNearBottom(scrollPosition, bodyHeight)) {
     loadMoreMessages();
   }
+  if (window.scrollY <= 200 && newMessageCount > 0) {
+    hideNewMessagesBanner();
+  }
 }
 
 function stopListeningMessages() {
+  if (expiryInterval) {
+    clearInterval(expiryInterval);
+    expiryInterval = null;
+  }
+
   if (realtimeAddedListener) {
     db.ref('messages').off('child_added', realtimeAddedListener);
     realtimeAddedListener = null;
@@ -393,6 +731,11 @@ function stopListeningMessages() {
     db.ref('messages').off('value', totalMessagesListener);
     totalMessagesListener = null;
   }
+  if (typingListener) {
+    typingListener.off();
+    typingListener = null;
+    typingMap.clear();
+  }
 
   replyListenerMap.forEach(ref => ref.off());
   replyListenerMap.clear();
@@ -404,6 +747,271 @@ function stopListeningMessages() {
   const existingCards = messagesContainer.querySelectorAll('.message-card');
   existingCards.forEach((card) => card.remove());
   messageCount.textContent = '0';
+
+  newMessageCount = 0;
+  document.title = ORIGINAL_TITLE;
+  clearTimeout(bannerHideTimer);
+  newMessagesBanner.classList.remove('new-messages-banner--visible');
+  newMessagesBanner.style.display = 'none';
+}
+
+// ========================================
+// Expiry Countdown
+// ========================================
+const MESSAGE_LIFETIME_MS = 86400000; // 24 hours
+
+function formatExpiryLabel(msRemaining) {
+  if (msRemaining >= 3600000) {
+    const hours = Math.floor(msRemaining / 3600000);
+    const minutes = Math.floor((msRemaining % 3600000) / 60000);
+    return { text: `expires in ${hours}h ${minutes}m`, cls: '' };
+  }
+  if (msRemaining >= 600000) {
+    const minutes = Math.ceil(msRemaining / 60000);
+    return { text: `expires in ${minutes}m`, cls: 'expiry--warning' };
+  }
+  return { text: 'expiring soon', cls: 'expiry--danger' };
+}
+
+function createExpiryLabel(timestamp) {
+  const expiry = timestamp + MESSAGE_LIFETIME_MS;
+  const msRemaining = expiry - Date.now();
+  const { text, cls } = msRemaining > 0 ? formatExpiryLabel(msRemaining) : { text: 'expiring soon', cls: 'expiry--danger' };
+
+  const el = document.createElement('span');
+  el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+  el.dataset.expiry = String(expiry);
+  el.textContent = ' \xB7 ' + text;
+
+  const expiryTimeStr = new Date(expiry).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  el.setAttribute('aria-label', 'Expires at ' + expiryTimeStr);
+
+  return el;
+}
+
+function tickExpiryLabels() {
+  const now = Date.now();
+
+  document.querySelectorAll('.message-card .expiry-label[data-expiry]').forEach(el => {
+    const expiry = Number(el.dataset.expiry);
+    const msRemaining = expiry - now;
+    if (msRemaining <= 0) {
+      const card = el.closest('.message-card');
+      if (card) {
+        const msgId = card.id.replace(/^msg-/, '');
+        const replyRef = replyListenerMap.get(msgId);
+        if (replyRef) {
+          replyRef.off();
+          replyListenerMap.delete(msgId);
+        }
+        replyCountMap.delete(msgId);
+        card.remove();
+      }
+    } else {
+      const { text, cls } = formatExpiryLabel(msRemaining);
+      el.textContent = ' \xB7 ' + text;
+      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+    }
+  });
+
+  let savedPanelNeedsRefresh = false;
+  document.querySelectorAll('.saved-message .expiry-label[data-expiry]').forEach(el => {
+    const expiry = Number(el.dataset.expiry);
+    const msRemaining = expiry - now;
+    if (msRemaining <= 0) {
+      savedPanelNeedsRefresh = true;
+    } else {
+      const { text, cls } = formatExpiryLabel(msRemaining);
+      el.textContent = ' \xB7 ' + text;
+      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+    }
+  });
+
+  if (savedPanelNeedsRefresh) {
+    refreshSavedPanel();
+  }
+}
+
+// ========================================
+// Bookmarks (localStorage)
+// ========================================
+const BOOKMARK_KEY = 'guestbook_bookmarks';
+const BOOKMARK_LIMIT = 100;
+
+function loadBookmarks() {
+  try {
+    const raw = localStorage.getItem(BOOKMARK_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveBookmarksToStorage(list) {
+  try {
+    localStorage.setItem(BOOKMARK_KEY, JSON.stringify(list));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isBookmarked(msgId) {
+  return loadBookmarks().some(b => b.id === msgId);
+}
+
+function addBookmark(msg) {
+  try {
+    localStorage.setItem('__bm_probe__', '1');
+    localStorage.removeItem('__bm_probe__');
+  } catch (e) {
+    showToast('Bookmarks unavailable in this browser mode.');
+    return false;
+  }
+
+  const list = loadBookmarks();
+  if (list.length >= BOOKMARK_LIMIT) {
+    showToast('Bookmark limit reached (100). Remove some bookmarks to save more.');
+    return false;
+  }
+
+  list.unshift({
+    id: msg.id,
+    author: msg.author,
+    authorId: msg.authorId,
+    photoURL: msg.photoURL || null,
+    text: msg.text,
+    timestamp: msg.timestamp,
+    savedAt: Date.now(),
+  });
+
+  saveBookmarksToStorage(list);
+  updateSavedBadge();
+  refreshSavedPanel();
+  return true;
+}
+
+function removeBookmark(msgId) {
+  const list = loadBookmarks().filter(b => b.id !== msgId);
+  saveBookmarksToStorage(list);
+  updateSavedBadge();
+  refreshSavedPanel();
+}
+
+function updateSavedBadge() {
+  const badgeEl = document.getElementById('saved-badge');
+  if (!badgeEl) return;
+  const count = loadBookmarks().length;
+  if (count === 0) {
+    badgeEl.style.display = 'none';
+  } else {
+    badgeEl.textContent = '⊟ ' + count;
+    badgeEl.style.display = '';
+  }
+}
+
+function refreshSavedPanel() {
+  const panel = document.getElementById('saved-panel');
+  if (!panel || panel.style.display === 'none') return;
+
+  const listEl = document.getElementById('saved-panel-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  const list = loadBookmarks();
+
+  if (list.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'saved-panel-empty';
+    empty.textContent = 'No saved messages.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
+  list.forEach(bookmark => {
+    const isExpired = now - bookmark.timestamp > TWENTY_FOUR_HOURS;
+
+    let contentChanged = false;
+    const liveCard = document.getElementById('msg-' + bookmark.id);
+    if (liveCard) {
+      const liveTextEl = liveCard.querySelector('.message-text');
+      if (liveTextEl && liveTextEl.textContent !== bookmark.text) {
+        contentChanged = true;
+      }
+    }
+
+    const item = document.createElement('div');
+    item.className = 'saved-message' + (isExpired ? ' saved-message--expired' : '');
+
+    const unsaveBtn = document.createElement('button');
+    unsaveBtn.className = 'btn-unsave';
+    unsaveBtn.setAttribute('aria-label', 'Remove bookmark');
+    unsaveBtn.textContent = '✕';
+    unsaveBtn.addEventListener('click', () => {
+      removeBookmark(bookmark.id);
+      const liveBtn = document.querySelector('#msg-' + bookmark.id + ' .btn-bookmark');
+      if (liveBtn) {
+        liveBtn.innerHTML = BOOKMARK_ICON;
+        liveBtn.setAttribute('aria-label', 'Bookmark this message');
+        liveBtn.classList.remove('btn-bookmark--active');
+      }
+    });
+
+    const msgHeader = document.createElement('div');
+    msgHeader.className = 'saved-message-header';
+
+    const avatarEl = createAvatarElement(bookmark.photoURL, bookmark.author);
+
+    const authorEl = document.createElement('span');
+    authorEl.className = 'saved-message-author';
+    authorEl.textContent = bookmark.author; // textContent — XSS safe
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'saved-message-time';
+    if (isExpired) {
+      const badge = document.createElement('span');
+      badge.className = 'expired-badge';
+      badge.textContent = 'Expired \xB7 ' + formatTimestamp(bookmark.timestamp);
+      timeEl.appendChild(badge);
+    } else {
+      timeEl.textContent = formatTimestamp(bookmark.timestamp);
+      timeEl.appendChild(createExpiryLabel(bookmark.timestamp));
+    }
+
+    msgHeader.appendChild(avatarEl);
+    msgHeader.appendChild(authorEl);
+    msgHeader.appendChild(timeEl);
+
+    const textEl = document.createElement('p');
+    textEl.className = 'saved-message-text';
+    textEl.textContent = bookmark.text; // textContent — XSS safe
+
+    item.appendChild(unsaveBtn);
+    item.appendChild(msgHeader);
+    item.appendChild(textEl);
+
+    if (contentChanged) {
+      const changedNote = document.createElement('p');
+      changedNote.className = 'changed-note';
+      changedNote.textContent = 'Content may have changed';
+      item.appendChild(changedNote);
+    }
+
+    listEl.appendChild(item);
+  });
+}
+
+// ========================================
+// Quote Truncation
+// ========================================
+function truncateQuote(text) {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.length > 100 ? trimmed.slice(0, 100) + '…' : trimmed;
 }
 
 // ========================================
@@ -447,9 +1055,26 @@ function createReplyCard(reply, user, msgId) {
 
   const textEl = document.createElement('p');
   textEl.className = 'reply-text';
-  textEl.textContent = reply.text; // textContent for XSS safety
+  renderMessageText(textEl, reply.text);
 
   card.appendChild(header);
+
+  if (reply.quotedText) {
+    const blockquote = document.createElement('blockquote');
+    blockquote.className = 'reply-quote';
+    if (reply.quotedAuthor) {
+      const quoteAuthorEl = document.createElement('span');
+      quoteAuthorEl.className = 'reply-quote-author';
+      quoteAuthorEl.textContent = reply.quotedAuthor + ': '; // textContent — XSS safe
+      blockquote.appendChild(quoteAuthorEl);
+    }
+    const quoteTextEl = document.createElement('span');
+    quoteTextEl.className = 'reply-quote-text';
+    quoteTextEl.textContent = reply.quotedText; // textContent — XSS safe
+    blockquote.appendChild(quoteTextEl);
+    card.appendChild(blockquote);
+  }
+
   card.appendChild(textEl);
 
   return card;
@@ -510,6 +1135,7 @@ function createMessageCard(msg, user) {
     editedLabel.textContent = ' · edited';
     timeEl.appendChild(editedLabel);
   }
+  timeEl.appendChild(createExpiryLabel(msg.timestamp));
 
   const avatarEl = createAvatarElement(msg.photoURL, msg.author);
   header.appendChild(avatarEl);
@@ -518,7 +1144,7 @@ function createMessageCard(msg, user) {
 
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  textEl.textContent = msg.text; // textContent for XSS safety
+  renderMessageText(textEl, msg.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
@@ -596,6 +1222,10 @@ function createMessageCard(msg, user) {
       cancelBtn.className = 'btn btn-cancel';
       cancelBtn.textContent = 'Cancel';
 
+      const editHint = document.createElement('span');
+      editHint.className = 'submit-hint';
+      editHint.textContent = SUBMIT_HINT_TEXT;
+
       editActions.appendChild(saveBtn);
       editActions.appendChild(cancelBtn);
 
@@ -603,7 +1233,15 @@ function createMessageCard(msg, user) {
       editWrapper.appendChild(editCounter);
       editWrapper.appendChild(editError);
       editWrapper.appendChild(editActions);
+      editWrapper.appendChild(editHint);
       card.insertBefore(editWrapper, editBtn);
+
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          saveBtn.click();
+        }
+      });
 
       textarea.focus();
 
@@ -639,7 +1277,7 @@ function createMessageCard(msg, user) {
           msg.editedAt = Date.now();
 
           // Update card to reflect saved text
-          textEl.textContent = validation.text;
+          renderMessageText(textEl, validation.text);
           if (!timeEl.querySelector('.edited-label')) {
             const editedLabel = document.createElement('span');
             editedLabel.className = 'edited-label';
@@ -674,6 +1312,41 @@ function createMessageCard(msg, user) {
   replyCountEl.style.display = 'none';
   cardFooter.appendChild(replyCountEl);
 
+  // Permalink button — visible to all visitors (not gated on auth)
+  const isMobile = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: none)').matches
+    : false;
+
+  const permalinkBtn = document.createElement('button');
+  permalinkBtn.className = 'btn-permalink';
+  permalinkBtn.setAttribute('aria-label', 'Copy link to this message');
+  permalinkBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+  permalinkBtn.innerHTML = LINK_ICON; // static SVG — no user data
+
+  const permalinkTooltip = document.createElement('span');
+  permalinkTooltip.className = 'permalink-tooltip';
+  permalinkTooltip.textContent = 'Copied!';
+  permalinkBtn.appendChild(permalinkTooltip);
+
+  if (!isMobile) {
+    card.addEventListener('mouseenter', () => permalinkBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => permalinkBtn.setAttribute('tabindex', '-1'));
+  }
+
+  permalinkBtn.addEventListener('click', () => {
+    const url = 'https://guestbook.slashstack.app/app#msg-' + msg.id;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        permalinkTooltip.classList.add('permalink-tooltip--visible');
+        setTimeout(() => permalinkTooltip.classList.remove('permalink-tooltip--visible'), 1500);
+      }).catch(() => {
+        prompt('Copy this link:', url);
+      });
+    } else {
+      prompt('Copy this link:', url);
+    }
+  });
+
   if (user) {
     const replyBtn = document.createElement('button');
     replyBtn.className = 'btn-reply';
@@ -688,8 +1361,25 @@ function createMessageCard(msg, user) {
         return;
       }
 
+      const quotedSnippet = truncateQuote(msg.text);
+
       const formWrapper = document.createElement('div');
       formWrapper.className = 'reply-form-wrapper';
+
+      if (quotedSnippet) {
+        const quotePreview = document.createElement('div');
+        quotePreview.className = 'reply-quote-preview';
+        if (msg.author) {
+          const quotePreviewAuthor = document.createElement('span');
+          quotePreviewAuthor.className = 'reply-quote-preview-author';
+          quotePreviewAuthor.textContent = msg.author + ': '; // textContent — XSS safe
+          quotePreview.appendChild(quotePreviewAuthor);
+        }
+        const quotePreviewText = document.createElement('span');
+        quotePreviewText.textContent = quotedSnippet; // textContent — XSS safe
+        quotePreview.appendChild(quotePreviewText);
+        formWrapper.appendChild(quotePreview);
+      }
 
       const replyTextarea = document.createElement('textarea');
       replyTextarea.className = 'reply-textarea edit-textarea';
@@ -719,6 +1409,10 @@ function createMessageCard(msg, user) {
       replyCancelBtn.className = 'btn btn-cancel btn-reply-cancel';
       replyCancelBtn.textContent = 'Cancel';
 
+      const replyHint = document.createElement('span');
+      replyHint.className = 'submit-hint';
+      replyHint.textContent = SUBMIT_HINT_TEXT;
+
       replyActions.appendChild(replyPostBtn);
       replyActions.appendChild(replyCancelBtn);
 
@@ -726,6 +1420,18 @@ function createMessageCard(msg, user) {
       formWrapper.appendChild(replyCounter);
       formWrapper.appendChild(replyError);
       formWrapper.appendChild(replyActions);
+      formWrapper.appendChild(replyHint);
+
+      replyTextarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          replyPostBtn.click();
+        }
+      });
+
+      // Attach @mention autocomplete to reply textarea
+      formWrapper.style.position = 'relative';
+      attachMentionAutocomplete(replyTextarea, formWrapper);
 
       // Insert form between footer and replies section
       card.insertBefore(formWrapper, repliesSection);
@@ -752,12 +1458,17 @@ function createMessageCard(msg, user) {
         try {
           const newReplyKey = db.ref(`messages/${msg.id}/replies`).push().key;
           const updates = {};
-          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = {
+          const replyPayload = {
             text: validation.text,
             author: user.displayName || 'Anonymous',
             authorId: user.uid,
             timestamp: firebase.database.ServerValue.TIMESTAMP,
           };
+          if (quotedSnippet) {
+            replyPayload.quotedText = quotedSnippet;
+            replyPayload.quotedAuthor = msg.author || '';
+          }
+          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = replyPayload;
           updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
           formWrapper.remove();
@@ -776,6 +1487,44 @@ function createMessageCard(msg, user) {
     cardFooter.appendChild(replyBtn);
   }
 
+  // Bookmark button — visible to all visitors (not gated on auth)
+  const bookmarked = isBookmarked(msg.id);
+  const bookmarkBtn = document.createElement('button');
+  bookmarkBtn.className = 'btn-bookmark' + (bookmarked ? ' btn-bookmark--active' : '');
+  bookmarkBtn.innerHTML = bookmarked ? BOOKMARK_FILLED_ICON : BOOKMARK_ICON; // static SVG — no user data
+  bookmarkBtn.setAttribute('aria-label', bookmarked ? 'Remove bookmark' : 'Bookmark this message');
+  bookmarkBtn.setAttribute('tabindex', isMobile || bookmarked ? '0' : '-1');
+
+  if (!isMobile) {
+    card.addEventListener('mouseenter', () => bookmarkBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => {
+      if (!bookmarkBtn.classList.contains('btn-bookmark--active')) {
+        bookmarkBtn.setAttribute('tabindex', '-1');
+      }
+    });
+  }
+
+  bookmarkBtn.addEventListener('click', () => {
+    if (isBookmarked(msg.id)) {
+      removeBookmark(msg.id);
+      bookmarkBtn.innerHTML = BOOKMARK_ICON;
+      bookmarkBtn.setAttribute('aria-label', 'Bookmark this message');
+      bookmarkBtn.classList.remove('btn-bookmark--active');
+      if (!isMobile) bookmarkBtn.setAttribute('tabindex', '-1');
+    } else {
+      const success = addBookmark(msg);
+      if (success) {
+        bookmarkBtn.innerHTML = BOOKMARK_FILLED_ICON;
+        bookmarkBtn.setAttribute('aria-label', 'Remove bookmark');
+        bookmarkBtn.classList.add('btn-bookmark--active');
+        bookmarkBtn.setAttribute('tabindex', '0');
+      }
+    }
+  });
+
+  cardFooter.appendChild(bookmarkBtn);
+  cardFooter.appendChild(permalinkBtn);
+
   // Replies section (hidden until replies exist)
   const repliesSection = document.createElement('div');
   repliesSection.className = 'replies-section';
@@ -786,7 +1535,11 @@ function createMessageCard(msg, user) {
 
   // Set up real-time listeners for replies
   let localReplyCount = 0;
+  let initialReplyLoadComplete = false;
   const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
+
+  // child_added fires synchronously for pre-existing replies; mark them done after
+  Promise.resolve().then(() => { initialReplyLoadComplete = true; });
 
   repliesRef.on('child_added', (snap) => {
     const reply = { id: snap.key, ...snap.val() };
@@ -800,6 +1553,10 @@ function createMessageCard(msg, user) {
 
     const replyCard = createReplyCard(reply, user, msg.id);
     repliesSection.appendChild(replyCard);
+
+    if (initialReplyLoadComplete) {
+      maybeFireReplyNotification(msg, reply);
+    }
   });
 
   repliesRef.on('child_removed', (snap) => {
@@ -832,6 +1589,201 @@ function updateEditCounter(el, len) {
 }
 
 // formatTimestamp is provided by utils.js
+
+// ========================================
+// @mention Autocomplete
+// ========================================
+
+/**
+ * Get the @-prefix the user is currently typing at the cursor position.
+ * Returns the partial name string (without @), or null if not in a mention.
+ */
+function getMentionPrefix(textarea) {
+  const val = textarea.value;
+  const pos = textarea.selectionStart;
+  // Walk backwards from cursor to find an @ that started a mention token
+  let i = pos - 1;
+  while (i >= 0 && /\w/.test(val[i])) i--;
+  if (i >= 0 && val[i] === '@') {
+    const prefix = val.slice(i + 1, pos);
+    // Require at least one character after @
+    return prefix.length > 0 ? { prefix, atIndex: i } : null;
+  }
+  return null;
+}
+
+/**
+ * Attach autocomplete dropdown behaviour to a textarea.
+ * The dropdown is appended to relativeParent (must have position:relative or absolute).
+ */
+function attachMentionAutocomplete(textarea, relativeParent) {
+  let dropdown = null;
+  let activeIndex = -1;
+  let currentPrefix = null;
+  let currentAtIndex = -1;
+
+  function removeDropdown() {
+    if (dropdown) {
+      dropdown.remove();
+      dropdown = null;
+    }
+    activeIndex = -1;
+    currentPrefix = null;
+    currentAtIndex = -1;
+  }
+
+  function selectItem(name) {
+    const val = textarea.value;
+    const pos = textarea.selectionStart;
+    // Replace @prefix with @name + space
+    const before = val.slice(0, currentAtIndex);
+    const after = val.slice(pos);
+    const inserted = '@' + name + ' ';
+    textarea.value = before + inserted + after;
+    const newCursor = before.length + inserted.length;
+    textarea.setSelectionRange(newCursor, newCursor);
+    removeDropdown();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function renderDropdown(suggestions, atIndex) {
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'mention-dropdown';
+      relativeParent.appendChild(dropdown);
+    }
+
+    // Position below textarea
+    const taRect = textarea.getBoundingClientRect();
+    const parentRect = relativeParent.getBoundingClientRect();
+    dropdown.style.top = (taRect.bottom - parentRect.top + relativeParent.scrollTop) + 'px';
+    dropdown.style.left = (taRect.left - parentRect.left) + 'px';
+    dropdown.style.width = taRect.width + 'px';
+
+    dropdown.innerHTML = '';
+    activeIndex = -1;
+
+    suggestions.forEach((name, idx) => {
+      const item = document.createElement('div');
+      item.className = 'mention-dropdown-item';
+      item.textContent = '@' + name; // textContent — XSS safe
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // prevent textarea blur
+        selectItem(name);
+      });
+      dropdown.appendChild(item);
+    });
+  }
+
+  function setActiveIndex(idx) {
+    const items = dropdown ? dropdown.querySelectorAll('.mention-dropdown-item') : [];
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.remove('active');
+    }
+    activeIndex = idx;
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.add('active');
+      items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  textarea.addEventListener('input', () => {
+    const match = getMentionPrefix(textarea);
+    if (!match) {
+      removeDropdown();
+      return;
+    }
+    const { prefix, atIndex } = match;
+    currentPrefix = prefix;
+    currentAtIndex = atIndex;
+    const suggestions = getAuthorSuggestions(prefix);
+    if (suggestions.length === 0) {
+      removeDropdown();
+      return;
+    }
+    renderDropdown(suggestions, atIndex);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (!dropdown) return;
+    const items = dropdown.querySelectorAll('.mention-dropdown-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(Math.min(activeIndex + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(Math.max(activeIndex - 1, 0));
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      const name = items[activeIndex].textContent.slice(1); // strip leading @
+      selectItem(name);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
+    // Delay so mousedown on item fires first
+    setTimeout(removeDropdown, 150);
+  });
+
+  return { removeDropdown };
+}
+
+// Wire up typing indicator listeners
+setupTypingInputListeners();
+
+// ========================================
+// Bookmark badge + saved panel setup
+// ========================================
+updateSavedBadge();
+
+const savedBadgeEl = document.getElementById('saved-badge');
+if (savedBadgeEl) {
+  savedBadgeEl.addEventListener('click', () => {
+    const panel = document.getElementById('saved-panel');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      savedBadgeEl.setAttribute('aria-expanded', 'false');
+    } else {
+      panel.style.display = '';
+      savedBadgeEl.setAttribute('aria-expanded', 'true');
+      refreshSavedPanel();
+    }
+  });
+}
+
+const savedPanelClearEl = document.getElementById('saved-panel-clear');
+if (savedPanelClearEl) {
+  savedPanelClearEl.addEventListener('click', () => {
+    if (!confirm('Remove all saved messages?')) return;
+    saveBookmarksToStorage([]);
+    updateSavedBadge();
+    refreshSavedPanel();
+    document.querySelectorAll('.btn-bookmark--active').forEach(btn => {
+      btn.innerHTML = BOOKMARK_ICON;
+      btn.setAttribute('aria-label', 'Bookmark this message');
+      btn.classList.remove('btn-bookmark--active');
+    });
+  });
+}
+
+// Attach @mention autocomplete to the main message textarea
+attachMentionAutocomplete(messageInput, messageInput.parentElement);
+
+// Set platform-appropriate keyboard shortcut hint
+if (submitHint) submitHint.textContent = SUBMIT_HINT_TEXT;
+
+// Cmd/Ctrl+Enter on main textarea submits the post form
+messageInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    postForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  }
+});
 
 // ========================================
 // Character Counter
@@ -901,7 +1853,16 @@ postForm.addEventListener('submit', async (e) => {
     // Send the atomic update
     await db.ref().update(updates);
 
-    // Success — clear input
+    // Request notification permission once per session after the user's first post
+    if ('Notification' in window &&
+        Notification.permission === 'default' &&
+        !notificationPermissionRequested) {
+      notificationPermissionRequested = true;
+      Notification.requestPermission();
+    }
+
+    // Success — clear input and stop typing indicator
+    stopTyping();
     messageInput.value = '';
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
@@ -925,5 +1886,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote };
 }

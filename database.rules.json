@@ -12,6 +12,22 @@
         }
       }
     },
+    "typing": {
+      ".read": true,
+      "$uid": {
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['name', 'timestamp'])",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
+        "timestamp": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "messages": {
       ".read": true,
       ".indexOn": [
