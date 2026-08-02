@@ -84,12 +84,6 @@ Production deploys are triggered by publishing a GitHub Release. The deploy work
 
 6. **Live job deploys atomically** — hosting + database rules go live in a single command with no time gap.
 
-### Required GitHub secrets
-
-| Secret | Purpose |
-|---|---|
-| `FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB` | Service account JSON for Firebase deploy (Hosting Admin + Realtime Database Admin roles required) |
-
 ### Required GitHub Environment
 
 A `production` environment must be configured under **Settings → Environments** with at least one **Required reviewer** to gate the live deploy step.
