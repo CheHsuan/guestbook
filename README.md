@@ -59,11 +59,40 @@ npm test
 
 ## Deployment
 
-The project is deployed via Firebase Hosting. The deployment script automatically runs the test suite to ensure code quality before pushing.
+Production deploys are triggered by publishing a GitHub Release. The deploy workflow runs automatically and has two stages:
 
-```bash
-npm run deploy
-```
+### How to deploy
+
+1. **Merge all desired PRs to `main`**
+
+2. **Sync `main` → `production`** — open a PR from `main` into `production` and merge it:
+   ```bash
+   gh pr create --base production --head main --title "chore: sync main to production" --body "Sync latest main into production for release."
+   gh pr merge --squash
+   ```
+
+3. **Create a GitHub Release** — go to **GitHub → Releases → Draft a new release**:
+   - Choose a tag (e.g. `v1.1.0`) pointed at the `production` branch HEAD
+   - Fill in the release title and notes
+   - Click **Publish release**
+
+4. **Preview job runs automatically** — tests pass → hosting deployed to a `preview-{tag}` channel (expires 1 day). Check the preview URL in the Actions log.
+
+5. **Approve the live deploy** — once the preview looks good:
+   - Go to **GitHub → Actions** → find the running workflow
+   - Click **Review deployments** → select `production` → **Approve and deploy**
+
+6. **Live job deploys atomically** — hosting + database rules go live in a single command with no time gap.
+
+### Required GitHub secrets
+
+| Secret | Purpose |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB` | Service account JSON for Firebase deploy (Hosting Admin + Realtime Database Admin roles required) |
+
+### Required GitHub Environment
+
+A `production` environment must be configured under **Settings → Environments** with at least one **Required reviewer** to gate the live deploy step.
 
 ## CI Setup
 
