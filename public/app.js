@@ -767,7 +767,7 @@ function formatExpiryLabel(msRemaining) {
     return { text: `expires in ${hours}h ${minutes}m`, cls: '' };
   }
   if (msRemaining >= 600000) {
-    const minutes = Math.floor(msRemaining / 60000);
+    const minutes = Math.ceil(msRemaining / 60000);
     return { text: `expires in ${minutes}m`, cls: 'expiry--warning' };
   }
   return { text: 'expiring soon', cls: 'expiry--danger' };
