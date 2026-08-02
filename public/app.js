@@ -1005,6 +1005,16 @@ function refreshSavedPanel() {
 }
 
 // ========================================
+// Quote Truncation
+// ========================================
+function truncateQuote(text) {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.length > 100 ? trimmed.slice(0, 100) + '…' : trimmed;
+}
+
+// ========================================
 // Create Reply Card Element
 // ========================================
 function createReplyCard(reply, user, msgId) {
@@ -1048,6 +1058,23 @@ function createReplyCard(reply, user, msgId) {
   renderMessageText(textEl, reply.text);
 
   card.appendChild(header);
+
+  if (reply.quotedText) {
+    const blockquote = document.createElement('blockquote');
+    blockquote.className = 'reply-quote';
+    if (reply.quotedAuthor) {
+      const quoteAuthorEl = document.createElement('span');
+      quoteAuthorEl.className = 'reply-quote-author';
+      quoteAuthorEl.textContent = reply.quotedAuthor + ': '; // textContent — XSS safe
+      blockquote.appendChild(quoteAuthorEl);
+    }
+    const quoteTextEl = document.createElement('span');
+    quoteTextEl.className = 'reply-quote-text';
+    quoteTextEl.textContent = reply.quotedText; // textContent — XSS safe
+    blockquote.appendChild(quoteTextEl);
+    card.appendChild(blockquote);
+  }
+
   card.appendChild(textEl);
 
   return card;
@@ -1334,8 +1361,25 @@ function createMessageCard(msg, user) {
         return;
       }
 
+      const quotedSnippet = truncateQuote(msg.text);
+
       const formWrapper = document.createElement('div');
       formWrapper.className = 'reply-form-wrapper';
+
+      if (quotedSnippet) {
+        const quotePreview = document.createElement('div');
+        quotePreview.className = 'reply-quote-preview';
+        if (msg.author) {
+          const quotePreviewAuthor = document.createElement('span');
+          quotePreviewAuthor.className = 'reply-quote-preview-author';
+          quotePreviewAuthor.textContent = msg.author + ': '; // textContent — XSS safe
+          quotePreview.appendChild(quotePreviewAuthor);
+        }
+        const quotePreviewText = document.createElement('span');
+        quotePreviewText.textContent = quotedSnippet; // textContent — XSS safe
+        quotePreview.appendChild(quotePreviewText);
+        formWrapper.appendChild(quotePreview);
+      }
 
       const replyTextarea = document.createElement('textarea');
       replyTextarea.className = 'reply-textarea edit-textarea';
@@ -1414,12 +1458,17 @@ function createMessageCard(msg, user) {
         try {
           const newReplyKey = db.ref(`messages/${msg.id}/replies`).push().key;
           const updates = {};
-          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = {
+          const replyPayload = {
             text: validation.text,
             author: user.displayName || 'Anonymous',
             authorId: user.uid,
             timestamp: firebase.database.ServerValue.TIMESTAMP,
           };
+          if (quotedSnippet) {
+            replyPayload.quotedText = quotedSnippet;
+            replyPayload.quotedAuthor = msg.author || '';
+          }
+          updates[`/messages/${msg.id}/replies/${newReplyKey}`] = replyPayload;
           updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
           formWrapper.remove();
@@ -1837,5 +1886,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote };
 }

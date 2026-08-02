@@ -3457,3 +3457,403 @@ describe('tickExpiryLabels', () => {
     expect(document.getElementById('msg-tick-keep')).not.toBeNull();
   });
 });
+
+// --- truncateQuote ---
+describe('truncateQuote', () => {
+  let truncateQuote;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ truncateQuote } = require('../public/app.js'));
+  });
+
+  test('returns empty string for null input', () => {
+    expect(truncateQuote(null)).toBe('');
+  });
+
+  test('returns empty string for undefined input', () => {
+    expect(truncateQuote(undefined)).toBe('');
+  });
+
+  test('returns empty string for empty string', () => {
+    expect(truncateQuote('')).toBe('');
+  });
+
+  test('returns empty string for whitespace-only string', () => {
+    expect(truncateQuote('   ')).toBe('');
+  });
+
+  test('returns text as-is when length is less than 100 chars', () => {
+    const text = 'Hello world';
+    expect(truncateQuote(text)).toBe(text);
+  });
+
+  test('returns text as-is when length is exactly 100 chars', () => {
+    const text = 'A'.repeat(100);
+    expect(truncateQuote(text)).toBe(text);
+    expect(truncateQuote(text).endsWith('…')).toBe(false);
+  });
+
+  test('truncates text longer than 100 chars and appends ellipsis', () => {
+    const text = 'A'.repeat(101);
+    const result = truncateQuote(text);
+    expect(result).toBe('A'.repeat(100) + '…');
+  });
+
+  test('truncated result is 101 chars (100 + ellipsis char)', () => {
+    const text = 'B'.repeat(200);
+    const result = truncateQuote(text);
+    expect([...result].length).toBe(101); // 100 chars + 1 ellipsis codepoint
+  });
+
+  test('trims leading/trailing whitespace before checking length', () => {
+    const text = '  Hello  ';
+    expect(truncateQuote(text)).toBe('Hello');
+  });
+
+  test('returns non-string input as empty string', () => {
+    expect(truncateQuote(42)).toBe('');
+    expect(truncateQuote(true)).toBe('');
+  });
+});
+
+// --- quote reply: createReplyCard ---
+describe('quote reply — createReplyCard', () => {
+  let createReplyCard;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createReplyCard } = require('../public/app.js'));
+  });
+
+  const baseReply = {
+    id: 'r-quote-1',
+    author: 'Bob',
+    text: 'Great point!',
+    timestamp: Date.now(),
+    authorId: 'uid-bob',
+  };
+
+  test('renders blockquote.reply-quote when quotedText is present', () => {
+    const reply = { ...baseReply, quotedText: 'Hello world', quotedAuthor: 'Alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('blockquote.reply-quote')).not.toBeNull();
+  });
+
+  test('does NOT render blockquote.reply-quote when quotedText is absent (graceful degradation)', () => {
+    const card = createReplyCard(baseReply, null, 'msg1');
+    expect(card.querySelector('blockquote.reply-quote')).toBeNull();
+  });
+
+  test('does NOT render blockquote.reply-quote when quotedText is empty string', () => {
+    const reply = { ...baseReply, quotedText: '' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('blockquote.reply-quote')).toBeNull();
+  });
+
+  test('shows quoted text content inside blockquote', () => {
+    const reply = { ...baseReply, quotedText: 'Original message text', quotedAuthor: 'Alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    const qt = card.querySelector('.reply-quote-text');
+    expect(qt).not.toBeNull();
+    expect(qt.textContent).toBe('Original message text');
+  });
+
+  test('shows author prefix when quotedAuthor is present', () => {
+    const reply = { ...baseReply, quotedText: 'Hello', quotedAuthor: 'Alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    const authorEl = card.querySelector('.reply-quote-author');
+    expect(authorEl).not.toBeNull();
+    expect(authorEl.textContent).toBe('Alice: ');
+  });
+
+  test('omits author prefix when quotedAuthor is empty string', () => {
+    const reply = { ...baseReply, quotedText: 'Hello', quotedAuthor: '' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('.reply-quote-author')).toBeNull();
+  });
+
+  test('omits author prefix when quotedAuthor is absent', () => {
+    const reply = { ...baseReply, quotedText: 'Hello' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('.reply-quote-author')).toBeNull();
+  });
+
+  test('blockquote appears before reply body text', () => {
+    const reply = { ...baseReply, quotedText: 'Parent text', quotedAuthor: 'Alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    const children = Array.from(card.children);
+    const quoteIdx = children.findIndex(el => el.tagName === 'BLOCKQUOTE');
+    const textIdx = children.findIndex(el => el.classList.contains('reply-text'));
+    expect(quoteIdx).toBeGreaterThanOrEqual(0);
+    expect(quoteIdx).toBeLessThan(textIdx);
+  });
+
+  test('quotedText rendered via textContent — XSS safe', () => {
+    const xssReply = { ...baseReply, quotedText: '<script>alert(1)</script>', quotedAuthor: 'Alice' };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-quote-text').textContent).toBe('<script>alert(1)</script>');
+    expect(card.innerHTML).not.toContain('<script>');
+  });
+
+  test('quotedAuthor rendered via textContent — XSS safe', () => {
+    const xssReply = { ...baseReply, quotedText: 'Hi', quotedAuthor: '<img src=x onerror=evil()>' };
+    const card = createReplyCard(xssReply, null, 'msg1');
+    expect(card.querySelector('.reply-quote-author').textContent).toBe('<img src=x onerror=evil()>: ');
+    expect(card.innerHTML).not.toContain('<img');
+  });
+});
+
+// --- quote reply: composer quote preview ---
+describe('quote reply — composer quote preview', () => {
+  let createMessageCard;
+
+  const baseMsg = {
+    id: 'msg-quote-composer',
+    author: 'Alice',
+    text: 'Hello everyone, happy to be here!',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('reply form shows .reply-quote-preview when parent message has text', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-quote-preview')).not.toBeNull();
+  });
+
+  test('reply form shows parent author in .reply-quote-preview-author', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const authorEl = card.querySelector('.reply-quote-preview-author');
+    expect(authorEl).not.toBeNull();
+    expect(authorEl.textContent).toBe('Alice: ');
+  });
+
+  test('reply form shows parent text (truncated) in quote preview', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const preview = card.querySelector('.reply-quote-preview');
+    expect(preview.textContent).toContain('Hello everyone');
+  });
+
+  test('reply form does NOT show .reply-quote-preview when parent text is empty', () => {
+    const emptyMsg = { ...baseMsg, id: 'msg-empty-text', text: '' };
+    const card = createMessageCard(emptyMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-quote-preview')).toBeNull();
+  });
+
+  test('reply form does NOT show .reply-quote-preview when parent text is whitespace only', () => {
+    const wsMsg = { ...baseMsg, id: 'msg-ws-text', text: '   ' };
+    const card = createMessageCard(wsMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-quote-preview')).toBeNull();
+  });
+
+  test('quote preview truncates parent text longer than 100 chars', () => {
+    const longMsg = { ...baseMsg, id: 'msg-long-text', text: 'X'.repeat(150) };
+    const card = createMessageCard(longMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const preview = card.querySelector('.reply-quote-preview');
+    expect(preview.textContent).toContain('X'.repeat(100) + '…');
+  });
+
+  test('quote preview author rendered via textContent — XSS safe', () => {
+    const xssMsg = { ...baseMsg, id: 'msg-xss-author', author: '<script>evil()</script>' };
+    const card = createMessageCard(xssMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const preview = card.querySelector('.reply-quote-preview');
+    expect(preview.innerHTML).not.toContain('<script>');
+  });
+
+  test('quote preview text rendered via textContent — XSS safe', () => {
+    const xssMsg = { ...baseMsg, id: 'msg-xss-text', text: '<img src=x onerror=evil()>' };
+    const card = createMessageCard(xssMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const preview = card.querySelector('.reply-quote-preview');
+    expect(preview.innerHTML).not.toContain('<img');
+  });
+
+  test('quote preview appears before the reply textarea in the form', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const form = card.querySelector('.reply-form-wrapper');
+    const children = Array.from(form.children);
+    const previewIdx = children.findIndex(el => el.classList.contains('reply-quote-preview'));
+    const textareaIdx = children.findIndex(el => el.tagName === 'TEXTAREA');
+    expect(previewIdx).toBeGreaterThanOrEqual(0);
+    expect(previewIdx).toBeLessThan(textareaIdx);
+  });
+});
+
+// --- quote reply: Firebase payload ---
+describe('quote reply — Firebase payload on submission', () => {
+  const baseMsg = {
+    id: 'msg-payload-1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function setupForSubmission() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance, dbRef } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const { createMessageCard } = require('../public/app.js');
+    return { createMessageCard, dbRef };
+  }
+
+  test('reply payload includes quotedText when parent has text', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(baseMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Great post!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${baseMsg.id}/replies/`));
+    expect(replyKey).toBeTruthy();
+    expect(updateArg[replyKey].quotedText).toBe('Hello world');
+  });
+
+  test('reply payload includes quotedAuthor when parent has text', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(baseMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Great post!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${baseMsg.id}/replies/`));
+    expect(updateArg[replyKey].quotedAuthor).toBe('Alice');
+  });
+
+  test('reply payload does NOT include quotedText when parent text is empty', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const emptyMsg = { ...baseMsg, id: 'msg-empty', text: '' };
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(emptyMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'A reply';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${emptyMsg.id}/replies/`));
+    expect(updateArg[replyKey].quotedText).toBeUndefined();
+    expect(updateArg[replyKey].quotedAuthor).toBeUndefined();
+  });
+
+  test('reply payload does NOT include quotedText when parent text is whitespace only', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const wsMsg = { ...baseMsg, id: 'msg-ws', text: '   ' };
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(wsMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'A reply';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${wsMsg.id}/replies/`));
+    expect(updateArg[replyKey].quotedText).toBeUndefined();
+  });
+
+  test('quotedText is truncated to 100 chars in the Firebase payload', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const longMsg = { ...baseMsg, id: 'msg-long', text: 'Z'.repeat(150) };
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(longMsg, user);
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Short reply';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${longMsg.id}/replies/`));
+    expect(updateArg[replyKey].quotedText).toBe('Z'.repeat(100) + '…');
+  });
+});

@@ -964,6 +964,47 @@ body {
   overflow-wrap: break-word;
 }
 
+/* ========================================
+   Reply Quote Block
+   ======================================== */
+.reply-quote {
+  border-left: 2px solid var(--link);
+  padding: 4px 8px;
+  margin: 4px 0 6px;
+  background: var(--bg-subtle);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.reply-quote-author {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ========================================
+   Reply Composer Quote Preview
+   ======================================== */
+.reply-quote-preview {
+  border-left: 2px solid var(--link);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-subtle);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  word-break: break-word;
+  overflow-wrap: break-word;
+  user-select: none;
+}
+
+.reply-quote-preview-author {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .btn-reply-delete {
   background: none;
   border: none;
