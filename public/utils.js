@@ -239,8 +239,61 @@ function parseMessageSegments(rawText) {
 }
 
 /**
+ * Parse a plain-text string into inline-markdown sub-segments.
+ * Recognises **bold**, *italic*, and `code` markers.
+ * Content between markers must contain at least one non-whitespace character;
+ * otherwise the markers are emitted as plain text. Nested formatting is not
+ * supported — markers inside captured content are treated as literal text.
+ * Returns an array of { type: 'text'|'bold'|'italic'|'code', value: string }.
+ */
+function parseInlineMarkdown(text) {
+    if (!text) return [{ type: 'text', value: text || '' }];
+
+    // Order matters: code first (backtick), then bold (**), then italic (*).
+    // [^`]+ / [^*]+ prevents markers from appearing inside captured content,
+    // which both avoids nesting and keeps the regex unambiguous.
+    const INLINE_RE = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+    const segments = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = INLINE_RE.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            segments.push({ type: 'text', value: text.slice(lastIndex, match.index) });
+        }
+
+        const codeContent = match[1];
+        const boldContent = match[2];
+        const italicContent = match[3];
+        const content = codeContent !== undefined ? codeContent
+            : boldContent !== undefined ? boldContent
+            : italicContent;
+        const hasNonWhitespace = /\S/.test(content);
+
+        if (!hasNonWhitespace) {
+            segments.push({ type: 'text', value: match[0] });
+        } else if (codeContent !== undefined) {
+            segments.push({ type: 'code', value: codeContent });
+        } else if (boldContent !== undefined) {
+            segments.push({ type: 'bold', value: boldContent });
+        } else {
+            segments.push({ type: 'italic', value: italicContent });
+        }
+
+        lastIndex = INLINE_RE.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+        segments.push({ type: 'text', value: text.slice(lastIndex) });
+    }
+
+    return segments.length > 0 ? segments : [{ type: 'text', value: text }];
+}
+
+/**
  * Render rawText into container, converting URLs to clickable anchors and
  * @Word tokens to <span class="mention">. XSS-safe — no innerHTML on user data.
+ * Inline Markdown (**bold**, *italic*, `code`) is applied to plain-text segments.
  */
 function renderMessageText(container, rawText) {
     while (container.firstChild) container.removeChild(container.firstChild);
@@ -258,12 +311,28 @@ function renderMessageText(container, rawText) {
             span.textContent = '@' + seg.value;
             container.appendChild(span);
         } else {
-            container.appendChild(document.createTextNode(seg.value));
+            for (const md of parseInlineMarkdown(seg.value)) {
+                if (md.type === 'bold') {
+                    const el = document.createElement('strong');
+                    el.textContent = md.value;
+                    container.appendChild(el);
+                } else if (md.type === 'italic') {
+                    const el = document.createElement('em');
+                    el.textContent = md.value;
+                    container.appendChild(el);
+                } else if (md.type === 'code') {
+                    const el = document.createElement('code');
+                    el.textContent = md.value;
+                    container.appendChild(el);
+                } else {
+                    container.appendChild(document.createTextNode(md.value));
+                }
+            }
         }
     }
 }
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, renderMessageText };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText };
 }
