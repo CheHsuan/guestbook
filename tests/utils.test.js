@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -376,6 +376,154 @@ describe('isNearBottom', () => {
 
     test('returns false when far from bottom', () => {
         expect(isNearBottom(100, 10000, 200)).toBe(false);
+    });
+});
+
+// ========================================
+// parseInlineMarkdown
+// ========================================
+describe('parseInlineMarkdown', () => {
+    test('plain text returns single text segment', () => {
+        const segs = parseInlineMarkdown('hello world');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: 'hello world' });
+    });
+
+    test('**bold** returns bold segment', () => {
+        const segs = parseInlineMarkdown('**bold**');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'bold', value: 'bold' });
+    });
+
+    test('*italic* returns italic segment', () => {
+        const segs = parseInlineMarkdown('*italic*');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'italic', value: 'italic' });
+    });
+
+    test('`code` returns code segment', () => {
+        const segs = parseInlineMarkdown('`code`');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'code', value: 'code' });
+    });
+
+    test('bold mid-sentence splits correctly', () => {
+        const segs = parseInlineMarkdown('Hello **world** today');
+        expect(segs).toHaveLength(3);
+        expect(segs[0]).toEqual({ type: 'text', value: 'Hello ' });
+        expect(segs[1]).toEqual({ type: 'bold', value: 'world' });
+        expect(segs[2]).toEqual({ type: 'text', value: ' today' });
+    });
+
+    test('italic mid-sentence splits correctly', () => {
+        const segs = parseInlineMarkdown('Hello *world* today');
+        expect(segs).toHaveLength(3);
+        expect(segs[0]).toEqual({ type: 'text', value: 'Hello ' });
+        expect(segs[1]).toEqual({ type: 'italic', value: 'world' });
+        expect(segs[2]).toEqual({ type: 'text', value: ' today' });
+    });
+
+    test('code mid-sentence splits correctly', () => {
+        const segs = parseInlineMarkdown('run `npm test` now');
+        expect(segs).toHaveLength(3);
+        expect(segs[0]).toEqual({ type: 'text', value: 'run ' });
+        expect(segs[1]).toEqual({ type: 'code', value: 'npm test' });
+        expect(segs[2]).toEqual({ type: 'text', value: ' now' });
+    });
+
+    test('multiple formatting tokens in one string', () => {
+        const segs = parseInlineMarkdown('**a** and *b* and `c`');
+        const types = segs.map(s => s.type);
+        expect(types).toEqual(['bold', 'text', 'italic', 'text', 'code']);
+        expect(segs[0].value).toBe('a');
+        expect(segs[2].value).toBe('b');
+        expect(segs[4].value).toBe('c');
+    });
+
+    test('empty bold **** renders as plain text', () => {
+        const segs = parseInlineMarkdown('****');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+        expect(segs.map(s => s.value).join('')).toBe('****');
+    });
+
+    test('bold with only whitespace inside renders as plain text', () => {
+        const segs = parseInlineMarkdown('**   **');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('italic with only whitespace inside renders as plain text', () => {
+        const segs = parseInlineMarkdown('*   *');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('code with only whitespace inside renders as plain text', () => {
+        const segs = parseInlineMarkdown('`   `');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('unmatched opening ** renders as plain text', () => {
+        const segs = parseInlineMarkdown('**no closing');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: '**no closing' });
+    });
+
+    test('unmatched single * in natural prose renders as plain text', () => {
+        const segs = parseInlineMarkdown('it costs $5*');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('single lone * with no opening renders as plain text', () => {
+        const segs = parseInlineMarkdown('just a star *');
+        expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+
+    test('bold takes priority over italic when ** present', () => {
+        const segs = parseInlineMarkdown('**bold**');
+        expect(segs[0].type).toBe('bold');
+        expect(segs[0].value).toBe('bold');
+    });
+
+    test('bold content with spaces is supported', () => {
+        const segs = parseInlineMarkdown('**hello world**');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'bold', value: 'hello world' });
+    });
+
+    test('code content with spaces is supported', () => {
+        const segs = parseInlineMarkdown('`foo bar`');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'code', value: 'foo bar' });
+    });
+
+    test('empty string returns single empty text segment', () => {
+        const segs = parseInlineMarkdown('');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: '' });
+    });
+
+    test('null returns single empty text segment', () => {
+        const segs = parseInlineMarkdown(null);
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'text', value: '' });
+    });
+
+    test('bold with single non-whitespace char works', () => {
+        const segs = parseInlineMarkdown('**x**');
+        expect(segs[0]).toEqual({ type: 'bold', value: 'x' });
+    });
+
+    test('markers inside code are treated as literal text', () => {
+        const segs = parseInlineMarkdown('`**not bold**`');
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toEqual({ type: 'code', value: '**not bold**' });
+    });
+
+    test('no formatting in plain natural text with asterisks', () => {
+        const segs = parseInlineMarkdown('price is 5*3=15');
+        // lone * without a matching * around word-like content
+        // "5*3=15" — `*` followed by "3=15" followed by no closing `*`...
+        // Actually the regex would try: at pos 7 `*` matches, then [^*]+ matches `3=15`, no closing `*` — no match
+        expect(segs.every(s => s.type === 'text')).toBe(true);
     });
 });
 
