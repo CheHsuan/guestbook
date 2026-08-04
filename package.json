@@ -12,11 +12,33 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase": "^12.17.0",
     "firebase-admin": "^14.0.0",
+    "firebase-tools": "^15.25.1",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0"
   },
   "overrides": {
     "uuid": "^11.1.1"
+  },
+  "jest": {
+    "projects": [
+      {
+        "displayName": "unit",
+        "testMatch": [
+          "<rootDir>/tests/app.test.js",
+          "<rootDir>/tests/utils.test.js"
+        ]
+      },
+      {
+        "displayName": "rules",
+        "testMatch": [
+          "<rootDir>/tests/database.rules.test.js"
+        ],
+        "globalSetup": "<rootDir>/tests/setup/rulesGlobalSetup.js",
+        "globalTeardown": "<rootDir>/tests/setup/rulesGlobalTeardown.js"
+      }
+    ]
   }
 }
