@@ -1005,6 +1005,37 @@ function refreshSavedPanel() {
 }
 
 // ========================================
+// Formatting Toolbar
+// ========================================
+function createFormattingToolbar(textarea) {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'formatting-toolbar';
+  toolbar.setAttribute('role', 'toolbar');
+  toolbar.setAttribute('aria-label', 'Formatting options');
+
+  [
+    { label: 'Bold',   before: '**', after: '**', text: 'B', cls: 'btn-format-bold' },
+    { label: 'Italic', before: '*',  after: '*',  text: 'I', cls: 'btn-format-italic' },
+    { label: 'Code',   before: '`',  after: '`',  text: '<>', cls: 'btn-format-code' },
+  ].forEach(({ label, before, after, text, cls }) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-format ' + cls;
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+    btn.textContent = text;
+    btn.addEventListener('click', () => {
+      wrapSelection(textarea, before, after);
+      textarea.focus();
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    toolbar.appendChild(btn);
+  });
+
+  return toolbar;
+}
+
+// ========================================
 // Quote Truncation
 // ========================================
 function truncateQuote(text) {
@@ -1229,6 +1260,7 @@ function createMessageCard(msg, user) {
       editActions.appendChild(saveBtn);
       editActions.appendChild(cancelBtn);
 
+      editWrapper.appendChild(createFormattingToolbar(textarea));
       editWrapper.appendChild(textarea);
       editWrapper.appendChild(editCounter);
       editWrapper.appendChild(editError);
@@ -1416,6 +1448,7 @@ function createMessageCard(msg, user) {
       replyActions.appendChild(replyPostBtn);
       replyActions.appendChild(replyCancelBtn);
 
+      formWrapper.appendChild(createFormattingToolbar(replyTextarea));
       formWrapper.appendChild(replyTextarea);
       formWrapper.appendChild(replyCounter);
       formWrapper.appendChild(replyError);
@@ -1770,6 +1803,9 @@ if (savedPanelClearEl) {
     });
   });
 }
+
+// Add formatting toolbar above the main message textarea
+messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
 // Attach @mention autocomplete to the main message textarea
 attachMentionAutocomplete(messageInput, messageInput.parentElement);
