@@ -65,6 +65,10 @@ The project is deployed via Firebase Hosting. The deployment script automaticall
 npm run deploy
 ```
 
+## CI / Label State Diagram
+
+![Label State Diagram](docs/label-state-diagram.svg)
+
 ## CI Setup
 
 The CI workflows require two GitHub repository secrets. Configure them under **Settings → Secrets and variables → Actions** in your repository.
