@@ -65,6 +65,20 @@ The project is deployed via Firebase Hosting. The deployment script automaticall
 npm run deploy
 ```
 
+## Automated Agents
+
+Five GitHub Actions workflows run automatically to maintain the repo:
+
+| Workflow | Trigger | Agent Role |
+|---|---|---|
+| `health-check.yml` | Weekdays 9:17am & 2:17pm (Taipei) | Audits codebase for bugs, security issues, and tech debt — opens GitHub Issues for anything found |
+| `issue-scan.yml` | Weekdays 9:47am & 2:47pm (Taipei) | Picks up a `ready-for-dev` issue, analyses it (Phase 1), then writes code and opens a PR (Phase 2) |
+| `feature-research.yml` | Daily 10:00am (Taipei) | Acts as a product manager — researches one new feature idea and writes a `feature-spec` GitHub Issue |
+| `ci.yml` | PR opened / push to `main` | Runs Jest tests; on failure runs Claude Code auto-fix (up to 3 attempts); on success runs Claude Code review → auto-merge |
+| `deploy.yml` | GitHub Release published | Deploys hosting to a preview channel, then waits for manual approval before atomic live deploy (hosting + database rules) |
+
+> PRs created during human–Claude interaction carry the `needs-human-approval` label, which skips `claude-review` and `auto-merge` so the human decides when to merge.
+
 ## CI / Label State Diagram
 
 ![Label State Diagram](docs/label-state-diagram.svg)
