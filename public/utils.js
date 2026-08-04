@@ -332,7 +332,28 @@ function renderMessageText(container, rawText) {
     }
 }
 
+/**
+ * Wrap the textarea's selected text with before/after markers.
+ * If no text is selected, inserts before+after and places cursor between them.
+ * Updates textarea.value and selection in place.
+ */
+function wrapSelection(textarea, before, after) {
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const value = textarea.value;
+    const selected = value.slice(start, end);
+
+    textarea.value = value.slice(0, start) + before + selected + after + value.slice(end);
+
+    if (selected.length > 0) {
+        textarea.setSelectionRange(start + before.length, end + before.length);
+    } else {
+        const cursor = start + before.length;
+        textarea.setSelectionRange(cursor, cursor);
+    }
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText };
+    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection };
 }

@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown } = require('../public/utils');
+const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -524,6 +524,109 @@ describe('parseInlineMarkdown', () => {
         // "5*3=15" — `*` followed by "3=15" followed by no closing `*`...
         // Actually the regex would try: at pos 7 `*` matches, then [^*]+ matches `3=15`, no closing `*` — no match
         expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+});
+
+// ========================================
+// wrapSelection
+// ========================================
+describe('wrapSelection', () => {
+    function makeTextarea(value, selectionStart, selectionEnd) {
+        return {
+            value,
+            selectionStart,
+            selectionEnd,
+            setSelectionRange(s, e) {
+                this.selectionStart = s;
+                this.selectionEnd = e;
+            },
+        };
+    }
+
+    test('wraps selected text with bold markers', () => {
+        const ta = makeTextarea('hello world', 6, 11);
+        wrapSelection(ta, '**', '**');
+        expect(ta.value).toBe('hello **world**');
+        expect(ta.selectionStart).toBe(8);
+        expect(ta.selectionEnd).toBe(13);
+    });
+
+    test('inserts bold markers with cursor between when no selection', () => {
+        const ta = makeTextarea('hello ', 6, 6);
+        wrapSelection(ta, '**', '**');
+        expect(ta.value).toBe('hello ****');
+        expect(ta.selectionStart).toBe(8);
+        expect(ta.selectionEnd).toBe(8);
+    });
+
+    test('wraps selected text with italic markers', () => {
+        const ta = makeTextarea('italic word', 7, 11);
+        wrapSelection(ta, '*', '*');
+        expect(ta.value).toBe('italic *word*');
+        expect(ta.selectionStart).toBe(8);
+        expect(ta.selectionEnd).toBe(12);
+    });
+
+    test('inserts italic markers with cursor between when no selection', () => {
+        const ta = makeTextarea('', 0, 0);
+        wrapSelection(ta, '*', '*');
+        expect(ta.value).toBe('**');
+        expect(ta.selectionStart).toBe(1);
+        expect(ta.selectionEnd).toBe(1);
+    });
+
+    test('wraps selected text with code markers', () => {
+        const ta = makeTextarea('run test now', 4, 8);
+        wrapSelection(ta, '`', '`');
+        expect(ta.value).toBe('run `test` now');
+        expect(ta.selectionStart).toBe(5);
+        expect(ta.selectionEnd).toBe(9);
+    });
+
+    test('inserts code markers with cursor between when no selection', () => {
+        const ta = makeTextarea('run ', 4, 4);
+        wrapSelection(ta, '`', '`');
+        expect(ta.value).toBe('run ``');
+        expect(ta.selectionStart).toBe(5);
+        expect(ta.selectionEnd).toBe(5);
+    });
+
+    test('wraps text mid-string preserving surrounding content', () => {
+        const ta = makeTextarea('say hello world', 4, 9);
+        wrapSelection(ta, '**', '**');
+        expect(ta.value).toBe('say **hello** world');
+    });
+
+    test('handles full-string selection', () => {
+        const ta = makeTextarea('all of it', 0, 9);
+        wrapSelection(ta, '**', '**');
+        expect(ta.value).toBe('**all of it**');
+        expect(ta.selectionStart).toBe(2);
+        expect(ta.selectionEnd).toBe(11);
+    });
+
+    test('cursor at position 0 with no selection inserts markers at start', () => {
+        const ta = makeTextarea('hello', 0, 0);
+        wrapSelection(ta, '*', '*');
+        expect(ta.value).toBe('**hello');
+        expect(ta.selectionStart).toBe(1);
+        expect(ta.selectionEnd).toBe(1);
+    });
+
+    test('multi-word selection is wrapped as-is (no per-line wrapping)', () => {
+        const ta = makeTextarea('one two three', 4, 13);
+        wrapSelection(ta, '**', '**');
+        expect(ta.value).toBe('one **two three**');
+        expect(ta.selectionStart).toBe(6);
+        expect(ta.selectionEnd).toBe(15);
+    });
+
+    test('selection at end of string places closing marker at end', () => {
+        const ta = makeTextarea('foo bar', 4, 7);
+        wrapSelection(ta, '`', '`');
+        expect(ta.value).toBe('foo `bar`');
+        expect(ta.selectionStart).toBe(5);
+        expect(ta.selectionEnd).toBe(8);
     });
 });
 

@@ -402,6 +402,82 @@ body {
 }
 
 /* ========================================
+   Formatting Toolbar
+   ======================================== */
+.formatting-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.btn-format {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 28px;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  transition: color var(--transition), background var(--transition);
+  line-height: 1;
+}
+
+.btn-format:hover {
+  color: var(--text-primary);
+  background: var(--border);
+}
+
+.btn-format:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.btn-format:active {
+  transform: scale(0.95);
+}
+
+.btn-format-bold {
+  font-weight: 800;
+}
+
+.btn-format-italic {
+  font-style: italic;
+  font-weight: 600;
+}
+
+.btn-format-code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+/* Remove top border-radius from textarea that immediately follows a toolbar */
+.formatting-toolbar + #message-input,
+.formatting-toolbar + .edit-textarea {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Mobile: ensure minimum 36×36 tap target */
+@media (hover: none) and (pointer: coarse) {
+  .btn-format {
+    height: 36px;
+    min-width: 36px;
+  }
+}
+
+/* ========================================
    Search / Filter
    ======================================== */
 .search-wrapper {
