@@ -432,11 +432,13 @@ auth.onAuthStateChanged((user) => {
     userName.textContent = user.displayName || 'User';
     postSection.style.display = 'block';
     loginBtnHeader.style.display = 'none';
+    restoreDraft();
   } else {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     hideNewMessagesBanner();
+    clearDraft();
   }
 
   // Start the listener once; skip if already running to avoid duplicate listeners
@@ -1002,6 +1004,72 @@ function refreshSavedPanel() {
 
     listEl.appendChild(item);
   });
+}
+
+// ========================================
+// Draft Auto-save (localStorage)
+// ========================================
+const DRAFT_KEY = 'guestbook_draft';
+const MAX_DRAFT_LENGTH = 250;
+let draftDebounceTimer = null;
+
+function saveDraft(text) {
+  try {
+    localStorage.setItem('__draft_probe__', '1');
+    localStorage.removeItem('__draft_probe__');
+  } catch (e) {
+    return false;
+  }
+  try {
+    localStorage.setItem(DRAFT_KEY, text);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function loadDraft() {
+  try {
+    return localStorage.getItem(DRAFT_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch (e) {}
+}
+
+function showDraftLabel(text) {
+  const draftLabel = document.getElementById('draft-label');
+  if (!draftLabel) return;
+  draftLabel.textContent = text;
+  draftLabel.style.display = '';
+  void draftLabel.offsetWidth; // force reflow for CSS transition
+  draftLabel.classList.add('draft-label--visible');
+  setTimeout(() => {
+    draftLabel.classList.remove('draft-label--visible');
+    setTimeout(() => { draftLabel.style.display = 'none'; }, 300);
+  }, 3000);
+}
+
+function restoreDraft() {
+  const draft = loadDraft();
+  if (!draft) return;
+
+  let text = draft.length > MAX_DRAFT_LENGTH ? draft.slice(0, MAX_DRAFT_LENGTH) : draft;
+
+  messageInput.value = text;
+  const len = text.length;
+  charCounter.textContent = `${len} / 250`;
+  charCounter.classList.remove('warning', 'danger');
+  if (len >= 230) charCounter.classList.add('danger');
+  else if (len >= 200) charCounter.classList.add('warning');
+
+  showDraftLabel('Draft restored');
+  messageInput.focus();
 }
 
 // ========================================
@@ -1841,6 +1909,21 @@ messageInput.addEventListener('input', () => {
     const emptyErrorMsg = document.getElementById('empty-error-msg');
     if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
   }
+
+  // Auto-save draft with debounce
+  clearTimeout(draftDebounceTimer);
+  draftDebounceTimer = setTimeout(() => {
+    if (messageInput.value) {
+      saveDraft(messageInput.value);
+    }
+  }, 1000);
+});
+
+// Clear draft when user empties the textarea and blurs it
+messageInput.addEventListener('blur', () => {
+  if (!messageInput.value.trim()) {
+    clearDraft();
+  }
 });
 
 // ========================================
@@ -1897,8 +1980,9 @@ postForm.addEventListener('submit', async (e) => {
       Notification.requestPermission();
     }
 
-    // Success — clear input and stop typing indicator
+    // Success — clear input, draft, and stop typing indicator
     stopTyping();
+    clearDraft();
     messageInput.value = '';
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
@@ -1922,5 +2006,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft };
 }
