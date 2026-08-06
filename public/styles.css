@@ -359,6 +359,20 @@ body {
   transition: color 0.2s;
 }
 
+.draft-label {
+  position: absolute;
+  bottom: 10px;
+  left: 14px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.draft-label--visible {
+  opacity: 1;
+}
+
 .char-counter.warning {
   color: var(--warning);
 }

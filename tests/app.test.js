@@ -18,6 +18,7 @@ const APP_HTML = `
     <form id="post-form">
       <input id="message-input" type="text" />
       <span id="char-counter">0 / 250</span>
+      <span id="draft-label" class="draft-label" style="display:none;"></span>
       <button id="submit-btn" type="submit">
         <span class="btn-text" style="display:inline"></span>
         <span class="btn-loading" style="display:none"></span>
@@ -3855,5 +3856,219 @@ describe('quote reply — Firebase payload on submission', () => {
     const updateArg = dbRef.update.mock.calls[0][0];
     const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${longMsg.id}/replies/`));
     expect(updateArg[replyKey].quotedText).toBe('Z'.repeat(100) + '…');
+  });
+});
+
+// --- draft auto-save ---
+describe('draft auto-save', () => {
+  let saveDraft;
+  let loadDraft;
+  let clearDraft;
+  let restoreDraft;
+  let mocks;
+  let authStateCallback;
+
+  function setupApp() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.firebase = mocks.firebase;
+
+    ({ saveDraft, loadDraft, clearDraft, restoreDraft } = require('../public/app.js'));
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    setupApp();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    localStorage.clear();
+  });
+
+  test('saveDraft stores text in localStorage under guestbook_draft key', () => {
+    saveDraft('Hello world');
+    expect(localStorage.getItem('guestbook_draft')).toBe('Hello world');
+  });
+
+  test('saveDraft returns true on success', () => {
+    expect(saveDraft('Hello')).toBe(true);
+  });
+
+  test('loadDraft returns stored text', () => {
+    localStorage.setItem('guestbook_draft', 'My draft');
+    expect(loadDraft()).toBe('My draft');
+  });
+
+  test('loadDraft returns null when no draft stored', () => {
+    expect(loadDraft()).toBeNull();
+  });
+
+  test('clearDraft removes the key from localStorage', () => {
+    localStorage.setItem('guestbook_draft', 'My draft');
+    clearDraft();
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+  });
+
+  test('save-on-input: typing in textarea saves draft after 1 second debounce', () => {
+    const input = document.getElementById('message-input');
+    input.value = 'Draft message';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+
+    jest.advanceTimersByTime(1000);
+    expect(localStorage.getItem('guestbook_draft')).toBe('Draft message');
+  });
+
+  test('save-on-input: debounce resets on rapid typing — only final value is saved', () => {
+    const input = document.getElementById('message-input');
+
+    input.value = 'First';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    jest.advanceTimersByTime(500);
+
+    input.value = 'Second';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    jest.advanceTimersByTime(1000);
+
+    expect(localStorage.getItem('guestbook_draft')).toBe('Second');
+  });
+
+  test('save-on-input: empty value does not write to localStorage', () => {
+    const input = document.getElementById('message-input');
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    jest.advanceTimersByTime(1000);
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+  });
+
+  test('restore-on-init: draft is restored into textarea on sign-in', () => {
+    localStorage.setItem('guestbook_draft', 'My saved draft');
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    expect(document.getElementById('message-input').value).toBe('My saved draft');
+  });
+
+  test('restore-on-init: char counter is updated to match restored draft length', () => {
+    localStorage.setItem('guestbook_draft', 'Hello');
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    expect(document.getElementById('char-counter').textContent).toBe('5 / 250');
+  });
+
+  test('restore-on-init: draft over 250 chars is truncated to 250 before restoring', () => {
+    localStorage.setItem('guestbook_draft', 'A'.repeat(300));
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    const input = document.getElementById('message-input');
+    expect(input.value.length).toBe(250);
+    expect(input.value).toBe('A'.repeat(250));
+  });
+
+  test('restore-on-init: shows draft-label when draft is restored', () => {
+    localStorage.setItem('guestbook_draft', 'My saved draft');
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    const draftLabel = document.getElementById('draft-label');
+    expect(draftLabel.style.display).not.toBe('none');
+    expect(draftLabel.classList.contains('draft-label--visible')).toBe(true);
+    expect(draftLabel.textContent).toBe('Draft restored');
+  });
+
+  test('restore-on-init: does not restore or show label when no draft is saved', () => {
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+
+    expect(document.getElementById('message-input').value).toBe('');
+    expect(document.getElementById('draft-label').style.display).toBe('none');
+  });
+
+  test('clear-on-submit: draft is removed from localStorage after successful post', async () => {
+    localStorage.setItem('guestbook_draft', 'Draft to be cleared');
+    authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const input = document.getElementById('message-input');
+    input.value = 'Hello!';
+    document.getElementById('post-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+  });
+
+  test('clear-on-sign-out: draft is removed from localStorage when user signs out', () => {
+    localStorage.setItem('guestbook_draft', 'My draft');
+    authStateCallback(null);
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+  });
+
+  test('blur with empty textarea clears draft', () => {
+    localStorage.setItem('guestbook_draft', 'Some draft');
+    const input = document.getElementById('message-input');
+    input.value = '';
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    expect(localStorage.getItem('guestbook_draft')).toBeNull();
+  });
+
+  test('blur with non-empty textarea does not clear draft', () => {
+    localStorage.setItem('guestbook_draft', 'Some draft');
+    const input = document.getElementById('message-input');
+    input.value = 'Still typing';
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    expect(localStorage.getItem('guestbook_draft')).toBe('Some draft');
+  });
+
+  test('graceful degradation: saveDraft returns false without throwing when localStorage probe throws', () => {
+    const setItemSpy = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
+    });
+
+    expect(() => saveDraft('Hello')).not.toThrow();
+    expect(saveDraft('Hello')).toBe(false);
+
+    setItemSpy.mockRestore();
+  });
+
+  test('graceful degradation: loadDraft returns null without throwing when localStorage throws', () => {
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+
+    expect(() => loadDraft()).not.toThrow();
+    expect(loadDraft()).toBeNull();
+
+    getItemSpy.mockRestore();
+  });
+
+  test('graceful degradation: clearDraft does not throw when localStorage throws', () => {
+    const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+
+    expect(() => clearDraft()).not.toThrow();
+
+    removeItemSpy.mockRestore();
   });
 });
