@@ -46,6 +46,18 @@ const APP_HTML = `
     </div>
     <div id="saved-panel-list"></div>
   </section>
+  <div id="author-panel-backdrop" style="display:none;"></div>
+  <aside id="author-panel" style="display:none;">
+    <div class="author-panel-header">
+      <div id="author-panel-avatar"></div>
+      <div class="author-panel-meta">
+        <div id="author-panel-name"></div>
+        <div id="author-panel-subtitle"></div>
+      </div>
+      <button id="author-panel-close"></button>
+    </div>
+    <div id="author-panel-body"></div>
+  </aside>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -66,6 +78,7 @@ function makeFirebaseMock() {
     startAfter: jest.fn().mockReturnThis(),
     endBefore: jest.fn().mockReturnThis(),
     limitToLast: jest.fn().mockReturnThis(),
+    equalTo: jest.fn().mockReturnThis(),
   };
 
   const dbInstance = {
@@ -4284,5 +4297,349 @@ describe('@mention notification', () => {
     mod.maybeFireMentionNotification(makeMsg({ text: '@Bob hello', authorId: 'uid-alice' }));
 
     expect(global.Notification).not.toHaveBeenCalled();
+  });
+});
+
+// --- author profile panel ---
+describe('author profile panel', () => {
+  let createMessageCard;
+  let openAuthorPanel;
+  let closeAuthorPanel;
+
+  const baseMsg = {
+    id: 'ap-msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+    photoURL: null,
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    createMessageCard = mod.createMessageCard;
+    openAuthorPanel = mod.openAuthorPanel;
+    closeAuthorPanel = mod.closeAuthorPanel;
+    return mod;
+  }
+
+  beforeEach(setupModule);
+
+  // --- clickable author elements ---
+  test('message-author element has author-name-btn class for cursor/hover styling', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.message-author').classList.contains('author-name-btn')).toBe(true);
+  });
+
+  test('avatar element has author-avatar-btn class for cursor styling', () => {
+    const msgWithPhoto = { ...baseMsg, id: 'ap-photo', photoURL: 'https://example.com/a.jpg' };
+    const card = createMessageCard(msgWithPhoto, null);
+    expect(card.querySelector('.message-avatar').classList.contains('author-avatar-btn')).toBe(true);
+  });
+
+  test('avatar fallback element has author-avatar-btn class', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.avatar-fallback').classList.contains('author-avatar-btn')).toBe(true);
+  });
+
+  test('reply card author does NOT have author-name-btn class', () => {
+    const { createReplyCard } = require('../public/app.js');
+    const reply = { id: 'r1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, null, 'msg1');
+    expect(card.querySelector('.reply-author').classList.contains('author-name-btn')).toBe(false);
+  });
+
+  // --- openAuthorPanel / closeAuthorPanel ---
+  test('openAuthorPanel shows the backdrop and panel', async () => {
+    const { dbRef } = makeFirebaseMock();
+    // The global firebase mock's dbRef.once already returns empty snapshot
+    await openAuthorPanel('uid-alice', 'Alice', null);
+
+    expect(document.getElementById('author-panel-backdrop').style.display).not.toBe('none');
+    expect(document.getElementById('author-panel').style.display).not.toBe('none');
+  });
+
+  test('openAuthorPanel sets author name via textContent (XSS safe)', async () => {
+    await openAuthorPanel('uid-alice', '<script>alert(1)</script>', null);
+
+    const nameEl = document.getElementById('author-panel-name');
+    expect(nameEl.textContent).toBe('<script>alert(1)</script>');
+    expect(nameEl.innerHTML).not.toContain('<script>');
+  });
+
+  test('openAuthorPanel adds author-panel--open class to panel', async () => {
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(true);
+  });
+
+  test('openAuthorPanel adds author-panel-backdrop--visible class to backdrop', async () => {
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    expect(document.getElementById('author-panel-backdrop').classList.contains('author-panel-backdrop--visible')).toBe(true);
+  });
+
+  test('closeAuthorPanel removes open classes', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    closeAuthorPanel();
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    expect(document.getElementById('author-panel-backdrop').classList.contains('author-panel-backdrop--visible')).toBe(false);
+    jest.useRealTimers();
+  });
+
+  test('closeAuthorPanel hides elements after animation timeout', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    closeAuthorPanel();
+    jest.advanceTimersByTime(300);
+
+    expect(document.getElementById('author-panel').style.display).toBe('none');
+    expect(document.getElementById('author-panel-backdrop').style.display).toBe('none');
+    jest.useRealTimers();
+  });
+
+  test('close button click closes the panel', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    document.getElementById('author-panel-close').click();
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    jest.useRealTimers();
+  });
+
+  test('backdrop click closes the panel', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    document.getElementById('author-panel-backdrop').click();
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    jest.useRealTimers();
+  });
+
+  test('Escape keydown closes the panel', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    jest.useRealTimers();
+  });
+
+  test('non-Escape keydown does not close the panel', async () => {
+    jest.useFakeTimers();
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(true);
+    jest.useRealTimers();
+  });
+
+  // --- message list rendering ---
+  test('openAuthorPanel shows empty state when author has no messages in 24h window', async () => {
+    // The default firebase mock returns an empty snapshot via once()
+    await openAuthorPanel('uid-alice', 'Alice', null);
+
+    const body = document.getElementById('author-panel-body');
+    expect(body.querySelector('.author-panel-empty')).not.toBeNull();
+    expect(body.querySelector('.author-panel-empty').textContent)
+      .toBe('No messages from this author in the last 24 hours.');
+  });
+
+  test('openAuthorPanel shows "0 messages today" subtitle when no messages', async () => {
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    expect(document.getElementById('author-panel-subtitle').textContent).toBe('0 messages today');
+  });
+
+  test('openAuthorPanel renders message previews for messages in 24h window', async () => {
+    const now = Date.now();
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    dr.once.mockResolvedValue({
+      exists: () => true,
+      forEach: fn => {
+        fn({ key: 'msg-a', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'Hello', timestamp: now - 1000 }) });
+        fn({ key: 'msg-b', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'World', timestamp: now - 2000 }) });
+      },
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', 'Alice', null);
+
+    const previews = document.getElementById('author-panel-body').querySelectorAll('.author-msg-preview');
+    expect(previews.length).toBe(2);
+  });
+
+  test('openAuthorPanel shows "1 message today" subtitle (singular)', async () => {
+    const now = Date.now();
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    dr.once.mockResolvedValue({
+      exists: () => true,
+      forEach: fn => {
+        fn({ key: 'msg-a', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'Hi', timestamp: now - 1000 }) });
+      },
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', 'Alice', null);
+
+    expect(document.getElementById('author-panel-subtitle').textContent).toBe('1 message today');
+  });
+
+  test('message preview text is truncated at 80 chars and uses textContent (XSS safe)', async () => {
+    const now = Date.now();
+    const longText = '<script>evil()</script>' + 'x'.repeat(100);
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    dr.once.mockResolvedValue({
+      exists: () => true,
+      forEach: fn => {
+        fn({ key: 'msg-xss', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: longText, timestamp: now - 1000 }) });
+      },
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', 'Alice', null);
+
+    const textEl = document.querySelector('.author-msg-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.innerHTML).not.toContain('<script>');
+    expect(textEl.textContent.length).toBeLessThanOrEqual(81); // 80 chars + ellipsis
+  });
+
+  test('messages outside 24h window are filtered out', async () => {
+    const now = Date.now();
+    const old = now - 25 * 60 * 60 * 1000; // 25 hours ago
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    dr.once.mockResolvedValue({
+      exists: () => true,
+      forEach: fn => {
+        fn({ key: 'msg-old', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'Old', timestamp: old }) });
+        fn({ key: 'msg-new', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'New', timestamp: now - 1000 }) });
+      },
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', 'Alice', null);
+
+    const previews = document.getElementById('author-panel-body').querySelectorAll('.author-msg-preview');
+    expect(previews.length).toBe(1);
+    expect(document.querySelector('.author-msg-text').textContent).toBe('New');
+  });
+
+  test('clicking message preview closes panel and highlights matching card', async () => {
+    jest.useFakeTimers();
+    const now = Date.now();
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    dr.once.mockResolvedValue({
+      exists: () => true,
+      forEach: fn => {
+        fn({ key: 'ap-msg1', val: () => ({ author: 'Alice', authorId: 'uid-alice', text: 'Hello', timestamp: now - 1000 }) });
+      },
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+
+    // Add the target card to DOM
+    const targetCard = document.createElement('div');
+    targetCard.id = 'msg-ap-msg1';
+    targetCard.scrollIntoView = jest.fn();
+    document.getElementById('messages-container').appendChild(targetCard);
+
+    await oap('uid-alice', 'Alice', null);
+
+    const preview = document.querySelector('.author-msg-preview');
+    expect(preview).not.toBeNull();
+    preview.click();
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    expect(targetCard.classList.contains('permalink-highlight')).toBe(true);
+    expect(targetCard.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+
+    jest.useRealTimers();
   });
 });

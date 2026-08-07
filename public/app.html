@@ -186,6 +186,20 @@
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-database-compat.js"></script>
   <!-- Auto-initializes Firebase with project config via Firebase Hosting reserved URL -->
   <script src="/__/firebase/init.js"></script>
+  <!-- Author Profile Panel -->
+  <div id="author-panel-backdrop" class="author-panel-backdrop" style="display:none;" aria-hidden="true"></div>
+  <aside id="author-panel" class="author-panel" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="author-panel-name">
+    <div class="author-panel-header">
+      <div id="author-panel-avatar" class="author-panel-avatar-wrap"></div>
+      <div class="author-panel-meta">
+        <div id="author-panel-name" class="author-panel-name"></div>
+        <div id="author-panel-subtitle" class="author-panel-subtitle"></div>
+      </div>
+      <button id="author-panel-close" class="btn-author-panel-close" aria-label="Close profile panel">✕</button>
+    </div>
+    <div id="author-panel-body" class="author-panel-body"></div>
+  </aside>
+
   <script src="utils.js?v=4"></script>
   <script src="app.js?v=5"></script>
 </body>
