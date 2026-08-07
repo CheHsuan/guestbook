@@ -115,6 +115,152 @@ const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
 
 // ========================================
+// Author Profile Panel
+// ========================================
+const authorPanelBackdropEl = document.getElementById('author-panel-backdrop');
+const authorPanelEl = document.getElementById('author-panel');
+const authorPanelNameEl = document.getElementById('author-panel-name');
+const authorPanelSubtitleEl = document.getElementById('author-panel-subtitle');
+const authorPanelAvatarEl = document.getElementById('author-panel-avatar');
+const authorPanelBodyEl = document.getElementById('author-panel-body');
+const authorPanelCloseBtn = document.getElementById('author-panel-close');
+
+let authorPanelOpen = false;
+
+function closeAuthorPanel() {
+  if (!authorPanelOpen) return;
+  authorPanelOpen = false;
+  authorPanelBackdropEl.classList.remove('author-panel-backdrop--visible');
+  authorPanelEl.classList.remove('author-panel--open');
+  setTimeout(() => {
+    if (!authorPanelOpen) {
+      authorPanelBackdropEl.style.display = 'none';
+      authorPanelEl.style.display = 'none';
+    }
+  }, 260);
+}
+
+async function openAuthorPanel(authorId, authorName, photoURL) {
+  // Populate header immediately
+  authorPanelAvatarEl.innerHTML = '';
+  const panelAvatar = createAvatarElement(photoURL, authorName);
+  authorPanelAvatarEl.appendChild(panelAvatar);
+  authorPanelNameEl.textContent = authorName; // textContent — XSS safe
+  authorPanelSubtitleEl.textContent = 'Loading…';
+
+  // Show loading state in body
+  authorPanelBodyEl.innerHTML = '';
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'author-panel-loading';
+  const spinnerEl = document.createElement('div');
+  spinnerEl.className = 'spinner';
+  loadingDiv.appendChild(spinnerEl);
+  authorPanelBodyEl.appendChild(loadingDiv);
+
+  // Animate panel open
+  authorPanelBackdropEl.style.display = '';
+  authorPanelEl.style.display = '';
+  void authorPanelEl.offsetWidth; // force reflow to enable CSS transition
+  authorPanelBackdropEl.classList.add('author-panel-backdrop--visible');
+  authorPanelEl.classList.add('author-panel--open');
+  authorPanelOpen = true;
+
+  const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  try {
+    const snapshot = await db.ref('messages')
+      .orderByChild('authorId')
+      .equalTo(authorId)
+      .once('value');
+
+    const messages = [];
+    snapshot.forEach(child => {
+      const data = child.val();
+      if (data.timestamp >= twentyFourHoursAgo) {
+        messages.push({ id: child.key, ...data });
+      }
+    });
+
+    messages.sort((a, b) => b.timestamp - a.timestamp);
+
+    const count = messages.length;
+    authorPanelSubtitleEl.textContent = count === 1 ? '1 message today' : `${count} messages today`;
+
+    authorPanelBodyEl.innerHTML = '';
+
+    if (count === 0) {
+      const emptyEl = document.createElement('p');
+      emptyEl.className = 'author-panel-empty';
+      emptyEl.textContent = 'No messages from this author in the last 24 hours.';
+      authorPanelBodyEl.appendChild(emptyEl);
+    } else {
+      messages.forEach(msg => {
+        const preview = document.createElement('div');
+        preview.className = 'author-msg-preview';
+        preview.setAttribute('role', 'button');
+        preview.setAttribute('tabindex', '0');
+
+        const timeEl = document.createElement('div');
+        timeEl.className = 'author-msg-time';
+        timeEl.textContent = formatTimestamp(msg.timestamp);
+
+        const textEl = document.createElement('p');
+        textEl.className = 'author-msg-text';
+        const snippet = typeof msg.text === 'string' && msg.text.length > 80
+          ? msg.text.slice(0, 80) + '…'
+          : (msg.text || '');
+        textEl.textContent = snippet; // textContent — XSS safe
+
+        preview.appendChild(timeEl);
+        preview.appendChild(textEl);
+
+        const scrollToMessage = () => {
+          closeAuthorPanel();
+          const card = document.getElementById('msg-' + msg.id);
+          if (card) {
+            card.scrollIntoView({ behavior: 'smooth' });
+            card.classList.add('permalink-highlight');
+            setTimeout(() => card.classList.remove('permalink-highlight'), 2000);
+          }
+        };
+
+        preview.addEventListener('click', scrollToMessage);
+        preview.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            scrollToMessage();
+          }
+        });
+
+        authorPanelBodyEl.appendChild(preview);
+      });
+    }
+  } catch (err) {
+    console.error('Failed to load author messages:', err);
+    authorPanelBodyEl.innerHTML = '';
+    const errEl = document.createElement('p');
+    errEl.className = 'author-panel-empty';
+    errEl.textContent = 'Failed to load messages. Please try again.';
+    authorPanelBodyEl.appendChild(errEl);
+    authorPanelSubtitleEl.textContent = '';
+  }
+}
+
+if (authorPanelCloseBtn) {
+  authorPanelCloseBtn.addEventListener('click', closeAuthorPanel);
+}
+
+if (authorPanelBackdropEl) {
+  authorPanelBackdropEl.addEventListener('click', closeAuthorPanel);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && authorPanelOpen) {
+    closeAuthorPanel();
+  }
+});
+
+// ========================================
 // Author Pool (for @mention autocomplete)
 // ========================================
 const authorPool = new Map(); // authorName -> most-recent timestamp
@@ -1269,6 +1415,18 @@ function createMessageCard(msg, user) {
   timeEl.appendChild(createExpiryLabel(msg.timestamp));
 
   const avatarEl = createAvatarElement(msg.photoURL, msg.author);
+  avatarEl.classList.add('author-avatar-btn');
+  avatarEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
+  });
+
+  authorEl.classList.add('author-name-btn');
+  authorEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
+  });
+
   header.appendChild(avatarEl);
   header.appendChild(authorEl);
   header.appendChild(timeEl);
@@ -2038,5 +2196,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel };
 }

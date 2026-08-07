@@ -31,7 +31,8 @@
     "messages": {
       ".read": true,
       ".indexOn": [
-        "timestamp"
+        "timestamp",
+        "authorId"
       ],
       "$message_id": {
         ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
