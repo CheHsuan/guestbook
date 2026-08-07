@@ -278,8 +278,39 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ========================================
-// Browser Notifications (reply alerts)
+// Browser Notifications (reply alerts + @mention alerts)
 // ========================================
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function maybeFireMentionNotification(msg) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!currentUser) return;
+  if (msg.authorId === currentUser.uid) return;
+  if (document.visibilityState === 'visible') return;
+
+  const displayName = currentUser.displayName;
+  if (!displayName) return;
+
+  const text = typeof msg.text === 'string' ? msg.text : '';
+  const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
+  if (!mentionRegex.test(text)) return;
+
+  const snippet = text.length > 80 ? text.slice(0, 80) + '…' : text;
+  const notif = new Notification('You were mentioned on Guestbook', {
+    body: (msg.author || 'Someone') + ': ' + snippet,
+    icon: '/icon.png',
+  });
+  notif.addEventListener('click', () => {
+    window.focus();
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+    notif.close();
+  });
+}
+
 function maybeFireReplyNotification(msg, reply) {
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
@@ -576,6 +607,7 @@ async function startListeningMessages() {
         // Prepend new messages to the top (right after the empty/loading states)
         messagesContainer.insertBefore(card, loadingState.nextSibling);
         filterMessages();
+        maybeFireMentionNotification(msg);
 
         // Show banner and update tab title when user is scrolled down or tab is hidden
         if (window.scrollY > 200 || document.hidden) {
@@ -2006,5 +2038,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft };
 }

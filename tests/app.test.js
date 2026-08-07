@@ -4072,3 +4072,217 @@ describe('draft auto-save', () => {
     removeItemSpy.mockRestore();
   });
 });
+
+// --- @mention notification ---
+describe('@mention notification', () => {
+  let maybeFireMentionNotification;
+  let escapeRegex;
+
+  function setupGlobals() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+  }
+
+  function setVisibility(state) {
+    Object.defineProperty(document, 'visibilityState', {
+      value: state,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    setVisibility('hidden');
+
+    setupGlobals();
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    global.Notification = jest.fn().mockImplementation(() => ({
+      addEventListener: jest.fn(),
+      close: jest.fn(),
+    }));
+    global.Notification.permission = 'granted';
+
+    ({ maybeFireMentionNotification, escapeRegex } = require('../public/app.js'));
+
+    // Set currentUser via the exported module's closure by simulating auth state
+    // We expose currentUser indirectly through the function's behaviour
+  });
+
+  afterEach(() => {
+    setVisibility('visible');
+    delete global.Notification;
+  });
+
+  function makeMsg(overrides = {}) {
+    return {
+      id: 'msg-mention-test',
+      author: 'Alice',
+      authorId: 'uid-alice',
+      text: '@Bob hello there',
+      timestamp: Date.now(),
+      ...overrides,
+    };
+  }
+
+  // Helper: simulate signed-in user by re-requiring with currentUser set via auth callback
+  function buildWithUser(user) {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    setupGlobals();
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+
+    let authCb;
+    authInstance.onAuthStateChanged.mockImplementation(cb => { authCb = cb; });
+
+    global.Notification = jest.fn().mockImplementation(() => ({
+      addEventListener: jest.fn(),
+      close: jest.fn(),
+    }));
+    global.Notification.permission = 'granted';
+
+    const mod = require('../public/app.js');
+    if (user) authCb(user);
+    return mod;
+  }
+
+  test('fires notification when conditions are met (granted, hidden, not self, name matches)', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Bob hello!', authorId: 'uid-alice' }));
+
+    expect(global.Notification).toHaveBeenCalledTimes(1);
+    expect(global.Notification).toHaveBeenCalledWith('You were mentioned on Guestbook', expect.objectContaining({
+      body: expect.stringContaining('@Bob hello!'),
+      icon: '/icon.png',
+    }));
+  });
+
+  test('does not fire when Notification permission is not granted', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'default';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Bob hello!', authorId: 'uid-alice' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when tab is visible', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('visible');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Bob hello!', authorId: 'uid-alice' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+
+  test('does not fire for self-mention (author is the current user)', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Bob you sent this', authorId: 'uid-bob' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+
+  test('does not fire when current user display name is not mentioned', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Alice hello!', authorId: 'uid-alice' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+
+  test('match is case-insensitive (@alice matches display name Alice)', () => {
+    const mod = buildWithUser({ uid: 'uid-alice', displayName: 'Alice', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@alice hey!', authorId: 'uid-other' }));
+
+    expect(global.Notification).toHaveBeenCalledTimes(1);
+  });
+
+  test('word boundary: @Alice does not match for display name Alice when followed by more word chars', () => {
+    const mod = buildWithUser({ uid: 'uid-alice', displayName: 'Alice', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@AliceSmith hello', authorId: 'uid-other' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+
+  test('word boundary: @Alice matches when followed by a space', () => {
+    const mod = buildWithUser({ uid: 'uid-alice', displayName: 'Alice', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Alice hello', authorId: 'uid-other' }));
+
+    expect(global.Notification).toHaveBeenCalledTimes(1);
+  });
+
+  test('notification body shows author and text snippet up to 80 chars', () => {
+    const mod = buildWithUser({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+    const longText = '@Bob ' + 'x'.repeat(100);
+
+    mod.maybeFireMentionNotification(makeMsg({ text: longText, author: 'Alice', authorId: 'uid-alice' }));
+
+    expect(global.Notification).toHaveBeenCalledTimes(1);
+    const args = global.Notification.mock.calls[0];
+    expect(args[1].body).toMatch(/^Alice: /);
+    expect(args[1].body.length).toBeLessThanOrEqual('Alice: '.length + 80 + 1); // +1 for ellipsis char
+  });
+
+  test('escapeRegex escapes regex special characters', () => {
+    const mod = buildWithUser(null);
+    expect(mod.escapeRegex('C++')).toBe('C\\+\\+');
+    expect(mod.escapeRegex('user.name')).toBe('user\\.name');
+    expect(mod.escapeRegex('(test)')).toBe('\\(test\\)');
+    expect(mod.escapeRegex('no-special')).toBe('no-special');
+  });
+
+  test('display name with special chars (e.g. C++) is matched correctly', () => {
+    const mod = buildWithUser({ uid: 'uid-cpp', displayName: 'C++', photoURL: '' });
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: 'Hello @C++ world', authorId: 'uid-other' }));
+
+    expect(global.Notification).toHaveBeenCalledTimes(1);
+  });
+
+  test('notification is not fired when currentUser is null', () => {
+    const mod = buildWithUser(null);
+    setVisibility('hidden');
+    global.Notification.permission = 'granted';
+
+    mod.maybeFireMentionNotification(makeMsg({ text: '@Bob hello', authorId: 'uid-alice' }));
+
+    expect(global.Notification).not.toHaveBeenCalled();
+  });
+});
