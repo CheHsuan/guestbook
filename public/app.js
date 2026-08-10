@@ -82,6 +82,7 @@ const logoutBtn = document.getElementById('logout-btn');
 const userInfo = document.getElementById('user-info');
 const userAvatar = document.getElementById('user-avatar');
 const userName = document.getElementById('user-name');
+const editDisplayNameBtn = document.getElementById('edit-display-name-btn');
 const mainContent = document.getElementById('main-content');
 const loginPrompt = document.getElementById('login-prompt');
 const postSection = document.getElementById('post-section');
@@ -105,6 +106,7 @@ const newMessagesBanner = document.getElementById('new-messages-banner');
 // State
 // ========================================
 let currentUser = null;
+let userAlias = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
@@ -349,7 +351,7 @@ function startTyping() {
   }
 
   typingRef.set({
-    name: currentUser.displayName || 'Anonymous',
+    name: userAlias || currentUser.displayName || 'Anonymous',
     timestamp: firebase.database.ServerValue.TIMESTAMP,
   });
 
@@ -569,6 +571,113 @@ searchClearBtn.addEventListener('click', () => {
 });
 
 // ========================================
+// Display Name (alias)
+// ========================================
+async function loadUserAlias(user) {
+  try {
+    const snap = await db.ref(`users/${user.uid}/profile/displayName`).once('value');
+    userAlias = snap.exists() ? snap.val() : null;
+  } catch (e) {
+    userAlias = null;
+  }
+}
+
+function openDisplayNameEditor() {
+  if (!currentUser) return;
+  const currentName = userAlias || currentUser.displayName || '';
+
+  userName.style.display = 'none';
+  if (editDisplayNameBtn) editDisplayNameBtn.style.display = 'none';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'display-name-edit-wrapper';
+
+  const row = document.createElement('div');
+  row.className = 'display-name-edit-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'display-name-input';
+  input.value = currentName;
+  input.maxLength = 40;
+  input.placeholder = 'Your name';
+  input.setAttribute('aria-label', 'Display name');
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-save btn-display-name-save';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-cancel btn-display-name-cancel';
+  cancelBtn.textContent = 'Cancel';
+
+  row.appendChild(input);
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+
+  const errorEl = document.createElement('span');
+  errorEl.className = 'display-name-error';
+
+  wrapper.appendChild(row);
+  wrapper.appendChild(errorEl);
+
+  userInfo.insertBefore(wrapper, logoutBtn);
+  input.focus();
+  input.select();
+
+  function closeEditor() {
+    wrapper.remove();
+    userName.style.display = '';
+    if (editDisplayNameBtn) editDisplayNameBtn.style.display = '';
+  }
+
+  cancelBtn.addEventListener('click', closeEditor);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeEditor(); }
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const raw = input.value;
+    const trimmed = raw.trim();
+    errorEl.textContent = '';
+
+    if (trimmed.length > 0) {
+      const validation = validateDisplayName(raw);
+      if (!validation.valid) {
+        errorEl.textContent = validation.error;
+        return;
+      }
+    }
+
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    const googleName = currentUser.displayName || null;
+    const newAlias = (trimmed.length > 0 && trimmed !== googleName) ? trimmed : null;
+
+    try {
+      if (newAlias) {
+        await db.ref(`users/${currentUser.uid}/profile`).update({ displayName: newAlias });
+      } else {
+        await db.ref(`users/${currentUser.uid}/profile/displayName`).remove();
+      }
+      userAlias = newAlias;
+      userName.textContent = userAlias || googleName || 'User';
+      closeEditor();
+      showToast('Display name updated');
+    } catch (err) {
+      console.error('Failed to save display name:', err);
+      errorEl.textContent = 'Failed to save. Please try again.';
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
+  });
+}
+
+// ========================================
 // Auth: Sign In / Sign Out
 // ========================================
 function signIn() {
@@ -586,15 +695,17 @@ function signOut() {
 loginBtnMain.addEventListener('click', signIn);
 loginBtnHeader.addEventListener('click', signIn);
 logoutBtn.addEventListener('click', signOut);
+if (editDisplayNameBtn) editDisplayNameBtn.addEventListener('click', openDisplayNameEditor);
 
 // ========================================
 // Auth: State Observer
 // ========================================
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
   // Clean up typing indicator when signing out
   if (!user && currentUser) {
     stopTyping();
     typingRef = null;
+    userAlias = null;
   }
 
   currentUser = user;
@@ -604,6 +715,7 @@ auth.onAuthStateChanged((user) => {
   loginPrompt.style.display = 'none';
 
   if (user) {
+    // Show UI synchronously with Google name; alias will update it once loaded
     userInfo.style.display = 'flex';
     userAvatar.src = user.photoURL || '';
     userName.textContent = user.displayName || 'User';
@@ -621,6 +733,12 @@ auth.onAuthStateChanged((user) => {
   // Start the listener once; skip if already running to avoid duplicate listeners
   if (!realtimeAddedListener) {
     startListeningMessages();
+  }
+
+  // Load alias after listener is started so tests see correct listener timing
+  if (user) {
+    await loadUserAlias(user);
+    userName.textContent = userAlias || user.displayName || 'User';
   }
 });
 
@@ -1751,7 +1869,7 @@ function createMessageCard(msg, user) {
           const updates = {};
           const replyPayload = {
             text: validation.text,
-            author: user.displayName || 'Anonymous',
+            author: userAlias || user.displayName || 'Anonymous',
             authorId: user.uid,
             timestamp: firebase.database.ServerValue.TIMESTAMP,
           };
@@ -2152,7 +2270,7 @@ postForm.addEventListener('submit', async (e) => {
     const updates = {};
     updates[`/messages/${newMessageKey}`] = {
       text: text,
-      author: currentUser.displayName || 'Anonymous',
+      author: userAlias || currentUser.displayName || 'Anonymous',
       authorId: currentUser.uid,
       timestamp: firebase.database.ServerValue.TIMESTAMP,
       photoURL: currentUser.photoURL || ''
@@ -2196,5 +2314,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor };
 }
