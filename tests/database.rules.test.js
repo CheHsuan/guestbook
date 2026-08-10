@@ -173,3 +173,58 @@ describe('rate limiting: users/$uid/lastPostTimestamp', () => {
     await assertFails(set(ref(aliceDb(), 'users/uid-alice/extraField'), 'not allowed'));
   });
 });
+
+// ============================================================
+// Display name alias — users/$uid/profile/displayName
+// ============================================================
+describe('display name alias: users/$uid/profile/displayName', () => {
+  test('user can set their own display name alias', async () => {
+    await assertSucceeds(set(ref(aliceDb(), 'users/uid-alice/profile/displayName'), 'CoolAlice'));
+  });
+
+  test('user cannot set another user\'s display name alias', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-bob/profile/displayName'), 'Impersonator'));
+  });
+
+  test('unauthenticated user cannot set display name alias', async () => {
+    await assertFails(set(ref(anonDb(), 'users/uid-alice/profile/displayName'), 'Hacker'));
+  });
+
+  test('accepts display name at exactly 40 characters', async () => {
+    await assertSucceeds(set(ref(aliceDb(), 'users/uid-alice/profile/displayName'), 'A'.repeat(40)));
+  });
+
+  test('rejects display name over 40 characters', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/profile/displayName'), 'A'.repeat(41)));
+  });
+
+  test('rejects empty display name', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/profile/displayName'), ''));
+  });
+
+  test('rejects unknown fields under profile ($other)', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/profile/unknownField'), 'not allowed'));
+  });
+
+  test('user can delete their own display name alias', async () => {
+    await seedMessage('users/uid-alice/profile/displayName', 'CoolAlice');
+    await assertSucceeds(remove(ref(aliceDb(), 'users/uid-alice/profile/displayName')));
+  });
+});
+
+// ============================================================
+// Messages author — allows alias as author
+// ============================================================
+describe('messages: author field accepts stored alias', () => {
+  test('accepts author matching stored alias', async () => {
+    await seedMessage('users/uid-alice/profile/displayName', 'CoolAlias');
+    const msg = { ...validMessage(), author: 'CoolAlias' };
+    await assertSucceeds(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+
+  test('rejects author that matches neither Google name nor alias', async () => {
+    await seedMessage('users/uid-alice/profile/displayName', 'CoolAlias');
+    const msg = { ...validMessage(), author: 'SomeRandomName' };
+    await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+});

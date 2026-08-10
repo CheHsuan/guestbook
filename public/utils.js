@@ -3,6 +3,24 @@
 // ========================================
 
 /**
+ * Validate a custom display name / alias.
+ * Returns { valid: boolean, error?: string, text?: string }
+ */
+function validateDisplayName(text) {
+    if (typeof text !== 'string') {
+        return { valid: false, error: 'Display name must be a string.' };
+    }
+    const trimmed = text.trim();
+    if (trimmed.length < 1) {
+        return { valid: false, error: 'Display name cannot be empty.' };
+    }
+    if (trimmed.length > 40) {
+        return { valid: false, error: 'Display name must be 40 characters or less.' };
+    }
+    return { valid: true, text: trimmed };
+}
+
+/**
  * Validate a message before posting.
  * Returns { valid: boolean, error?: string }
  */
@@ -355,5 +373,5 @@ function wrapSelection(textarea, before, after) {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection };
+    module.exports = { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection };
 }

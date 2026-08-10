@@ -1,4 +1,4 @@
-const { validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection } = require('../public/utils');
+const { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -695,6 +695,71 @@ describe('parseMessageSegments', () => {
         const segs = parseMessageSegments('email me @ later');
         const mentions = segs.filter(s => s.type === 'mention');
         expect(mentions).toHaveLength(0);
+    });
+});
+
+// ========================================
+// validateDisplayName
+// ========================================
+describe('validateDisplayName', () => {
+    test('accepts a normal display name', () => {
+        const result = validateDisplayName('Alice');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('Alice');
+    });
+
+    test('accepts a name at exactly 40 characters', () => {
+        const name = 'A'.repeat(40);
+        const result = validateDisplayName(name);
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe(name);
+    });
+
+    test('rejects a name over 40 characters', () => {
+        const result = validateDisplayName('A'.repeat(41));
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('Display name must be 40 characters or less.');
+    });
+
+    test('rejects an empty string', () => {
+        const result = validateDisplayName('');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('Display name cannot be empty.');
+    });
+
+    test('rejects whitespace-only string', () => {
+        const result = validateDisplayName('   ');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('Display name cannot be empty.');
+    });
+
+    test('rejects non-string input', () => {
+        const result = validateDisplayName(null);
+        expect(result.valid).toBe(false);
+        expect(result.error).toBe('Display name must be a string.');
+    });
+
+    test('trims leading and trailing whitespace', () => {
+        const result = validateDisplayName('  CoolDude  ');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('CoolDude');
+    });
+
+    test('accepts a single character name', () => {
+        const result = validateDisplayName('X');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('X');
+    });
+
+    test('accepts names with spaces in the middle', () => {
+        const result = validateDisplayName('Alice Smith');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('Alice Smith');
+    });
+
+    test('accepts names with emoji', () => {
+        const result = validateDisplayName('Cool 🎉');
+        expect(result.valid).toBe(true);
     });
 });
 
