@@ -1609,6 +1609,19 @@ body {
 }
 
 /* ========================================
+   #hashtag highlight
+   ======================================== */
+.hashtag {
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.hashtag:hover {
+  text-decoration: underline;
+}
+
+/* ========================================
    Mention autocomplete dropdown
    ======================================== */
 .mention-dropdown {
