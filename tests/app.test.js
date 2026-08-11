@@ -2258,6 +2258,172 @@ describe('renderMessageText (DOM)', () => {
     expect(el.querySelector('a')).not.toBeNull();
     expect(el.textContent).toContain('Hey ');
   });
+
+  test('renders single #hashtag as <span class="hashtag">', () => {
+    const el = makeContainer();
+    renderMessageText(el, 'Hello #coding');
+    const span = el.querySelector('.hashtag');
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('#coding');
+  });
+
+  test('renders multiple #hashtags as separate spans', () => {
+    const el = makeContainer();
+    renderMessageText(el, '#music and #coding are fun');
+    const spans = el.querySelectorAll('.hashtag');
+    expect(spans.length).toBe(2);
+    expect(spans[0].textContent).toBe('#music');
+    expect(spans[1].textContent).toBe('#coding');
+  });
+
+  test('does not treat word-embedded # as hashtag (foo#bar)', () => {
+    const el = makeContainer();
+    renderMessageText(el, 'foo#bar');
+    expect(el.querySelector('.hashtag')).toBeNull();
+    expect(el.textContent).toBe('foo#bar');
+  });
+
+  test('does not treat digit-leading # as hashtag (#2026)', () => {
+    const el = makeContainer();
+    renderMessageText(el, '#2026');
+    expect(el.querySelector('.hashtag')).toBeNull();
+  });
+
+  test('hashtag span uses textContent — no innerHTML injection', () => {
+    const el = makeContainer();
+    renderMessageText(el, '#<script>alert(1)</script>');
+    expect(el.innerHTML).not.toContain('<script>');
+  });
+});
+
+// --- #hashtag regex detection ---
+describe('#hashtag regex detection via parseMessageSegments', () => {
+  let parseMessageSegments;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    parseMessageSegments = utils.parseMessageSegments;
+  });
+
+  test('detects a single hashtag', () => {
+    const segs = parseMessageSegments('hello #world');
+    const tag = segs.find(s => s.type === 'hashtag');
+    expect(tag).toBeDefined();
+    expect(tag.value).toBe('#world');
+  });
+
+  test('detects hashtag starting with letter only (not digit)', () => {
+    const segs = parseMessageSegments('#2026');
+    expect(segs.every(s => s.type !== 'hashtag')).toBe(true);
+  });
+
+  test('detects hashtag with underscores', () => {
+    const segs = parseMessageSegments('#coding_tips');
+    const tag = segs.find(s => s.type === 'hashtag');
+    expect(tag).toBeDefined();
+    expect(tag.value).toBe('#coding_tips');
+  });
+
+  test('does not detect word-embedded # (foo#bar)', () => {
+    const segs = parseMessageSegments('foo#bar');
+    expect(segs.every(s => s.type !== 'hashtag')).toBe(true);
+  });
+
+  test('detects multiple hashtags', () => {
+    const segs = parseMessageSegments('#music and #coding');
+    const tags = segs.filter(s => s.type === 'hashtag');
+    expect(tags.length).toBe(2);
+    expect(tags[0].value).toBe('#music');
+    expect(tags[1].value).toBe('#coding');
+  });
+
+  test('single-char hashtag body is not valid (minimum 2 chars after #)', () => {
+    // #a = 2 chars total — regex requires [a-zA-Z] + {1,29} more, so #a is NOT a match
+    const segs = parseMessageSegments('#a');
+    expect(segs.every(s => s.type !== 'hashtag')).toBe(true);
+  });
+
+  test('detects hashtag at minimum length (2 chars after #)', () => {
+    const segs = parseMessageSegments('#ab');
+    const tag = segs.find(s => s.type === 'hashtag');
+    expect(tag).toBeDefined();
+    expect(tag.value).toBe('#ab');
+  });
+});
+
+// --- #hashtag click-to-filter wiring ---
+describe('#hashtag click-to-filter wiring', () => {
+  let createMessageCard;
+
+  const hashtagMsg = {
+    id: 'msg-hashtag-1',
+    author: 'Alice',
+    text: 'Check out #coding today',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('clicking a #hashtag sets searchInput value to the tag', () => {
+    const card = createMessageCard(hashtagMsg, null);
+    document.getElementById('messages-container').appendChild(card);
+
+    const span = card.querySelector('.hashtag');
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('#coding');
+
+    span.click();
+
+    expect(document.getElementById('search-input').value).toBe('#coding');
+  });
+
+  test('clicking a #hashtag triggers filter (shows matching count)', () => {
+    const card = createMessageCard(hashtagMsg, null);
+    document.getElementById('messages-container').appendChild(card);
+
+    const span = card.querySelector('.hashtag');
+    span.click();
+
+    const countEl = document.getElementById('search-results-count');
+    expect(countEl.style.display).not.toBe('none');
+  });
+
+  test('renders #hashtag in reply card', () => {
+    const replyMsg = {
+      id: 'r-hashtag-1',
+      author: 'Bob',
+      text: 'Loving #music today',
+      timestamp: Date.now(),
+      authorId: 'uid-bob',
+    };
+
+    const { createReplyCard } = require('../public/app.js');
+    const card = createReplyCard(replyMsg, null, 'msg1');
+    const span = card.querySelector('.hashtag');
+    expect(span).not.toBeNull();
+    expect(span.textContent).toBe('#music');
+  });
 });
 
 // --- @mention rendering ---

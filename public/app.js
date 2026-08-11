@@ -570,6 +570,14 @@ searchClearBtn.addEventListener('click', () => {
   filterMessages();
 });
 
+messagesContainer.addEventListener('click', (e) => {
+  const hashtag = e.target.closest('.hashtag');
+  if (!hashtag) return;
+  searchInput.value = hashtag.textContent;
+  filterMessages();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
 // ========================================
 // Display Name (alias)
 // ========================================

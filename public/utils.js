@@ -201,14 +201,15 @@ function renderTextWithLinks(container, rawText) {
 }
 
 /**
- * Parse rawText into segments for rendering with links AND @mentions.
- * Segment types: 'text' | 'url' | 'mention'
+ * Parse rawText into segments for rendering with links, @mentions, and #hashtags.
+ * Segment types: 'text' | 'url' | 'mention' | 'hashtag'
  * @mention tokens match /\B@(\w+)/ — one contiguous word after @, not at word boundary start.
+ * #hashtag tokens match /\B#[a-zA-Z][a-zA-Z0-9_]{1,29}/ — starts with letter, 2–30 chars, not word-embedded.
  */
 function parseMessageSegments(rawText) {
     if (!rawText) return [];
 
-    const COMBINED_REGEX = /(https?:\/\/[^\s<>"]+)|(\B@\w+)/g;
+    const COMBINED_REGEX = /(https?:\/\/[^\s<>"]+)|(\B@\w+)|(\B#[a-zA-Z][a-zA-Z0-9_]{1,29})/g;
     const TRAILING_PUNCT = /[.,)]+$/;
     const segments = [];
     let lastIndex = 0;
@@ -244,6 +245,9 @@ function parseMessageSegments(rawText) {
         } else if (match[2]) {
             // @mention match — value is the word without @
             segments.push({ type: 'mention', value: match[2].slice(1) });
+        } else if (match[3]) {
+            // #hashtag match — value includes the # prefix
+            segments.push({ type: 'hashtag', value: match[3] });
         }
 
         lastIndex = COMBINED_REGEX.lastIndex;
@@ -327,6 +331,11 @@ function renderMessageText(container, rawText) {
             const span = document.createElement('span');
             span.className = 'mention';
             span.textContent = '@' + seg.value;
+            container.appendChild(span);
+        } else if (seg.type === 'hashtag') {
+            const span = document.createElement('span');
+            span.className = 'hashtag';
+            span.textContent = seg.value;
             container.appendChild(span);
         } else {
             for (const md of parseInlineMarkdown(seg.value)) {
