@@ -360,6 +360,16 @@ function renderMessageText(container, rawText) {
 }
 
 /**
+ * Returns true when timestamp is strictly newer than lastVisitTimestamp.
+ * Returns false on first visit (null/undefined lastVisitTimestamp) or when
+ * localStorage is unavailable.
+ */
+function isNewSinceLastVisit(timestamp, lastVisitTimestamp) {
+    if (!lastVisitTimestamp) return false;
+    return timestamp > lastVisitTimestamp;
+}
+
+/**
  * Wrap the textarea's selected text with before/after markers.
  * If no text is selected, inserts before+after and places cursor between them.
  * Updates textarea.value and selection in place.
@@ -382,5 +392,5 @@ function wrapSelection(textarea, before, after) {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection };
+    module.exports = { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
 }
