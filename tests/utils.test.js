@@ -1,4 +1,4 @@
-const { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection } = require('../public/utils');
+const { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -760,6 +760,47 @@ describe('validateDisplayName', () => {
     test('accepts names with emoji', () => {
         const result = validateDisplayName('Cool 🎉');
         expect(result.valid).toBe(true);
+    });
+});
+
+// ========================================
+// isNewSinceLastVisit
+// ========================================
+describe('isNewSinceLastVisit', () => {
+    const LAST_VISIT = 1_000_000;
+
+    test('returns false when lastVisitTimestamp is null (first visit)', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT + 1000, null)).toBe(false);
+    });
+
+    test('returns false when lastVisitTimestamp is undefined', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT + 1000, undefined)).toBe(false);
+    });
+
+    test('returns false when lastVisitTimestamp is 0', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT + 1000, 0)).toBe(false);
+    });
+
+    test('returns true when timestamp is strictly after lastVisitTimestamp', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT + 1, LAST_VISIT)).toBe(true);
+    });
+
+    test('returns false when timestamp equals lastVisitTimestamp', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT, LAST_VISIT)).toBe(false);
+    });
+
+    test('returns false when timestamp is before lastVisitTimestamp', () => {
+        expect(isNewSinceLastVisit(LAST_VISIT - 1, LAST_VISIT)).toBe(false);
+    });
+
+    test('returns true for a message posted well after last visit', () => {
+        const oneHourLater = LAST_VISIT + 3_600_000;
+        expect(isNewSinceLastVisit(oneHourLater, LAST_VISIT)).toBe(true);
+    });
+
+    test('returns false for a message posted well before last visit', () => {
+        const oneHourBefore = LAST_VISIT - 3_600_000;
+        expect(isNewSinceLastVisit(oneHourBefore, LAST_VISIT)).toBe(false);
     });
 });
 

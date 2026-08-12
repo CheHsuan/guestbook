@@ -778,6 +778,36 @@ body {
   font-size: 0.8rem;
 }
 
+.new-since-visit-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background-color: var(--link);
+  color: #fff;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.new-since-visit-summary {
+  margin: -8px 4px 12px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.new-since-visit-summary:hover {
+  text-decoration: underline;
+}
+
+.new-since-visit-summary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 /* Icon action buttons (edit / delete) */
 .btn-edit,
 .btn-delete {

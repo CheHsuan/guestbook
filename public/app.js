@@ -117,6 +117,40 @@ const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
 
 // ========================================
+// Last-visit tracking (localStorage)
+// ========================================
+const LAST_VISIT_KEY = 'guestbook_last_visit';
+
+// Read once at page load — used for the entire session
+let lastVisitTs = null;
+try {
+  const _raw = localStorage.getItem(LAST_VISIT_KEY);
+  const _parsed = _raw ? Number(_raw) : null;
+  if (_parsed && !isNaN(_parsed)) lastVisitTs = _parsed;
+} catch (_) {}
+
+let lastVisitSaved = false;
+
+function saveLastVisitTimestamp() {
+  try {
+    localStorage.setItem(LAST_VISIT_KEY, String(Date.now()));
+  } catch (_) {}
+}
+
+function maybeSaveLastVisit() {
+  if (lastVisitSaved) return;
+  lastVisitSaved = true;
+  saveLastVisitTimestamp();
+}
+
+setTimeout(maybeSaveLastVisit, 5000);
+
+// allNewMode: true when every message in the initial load is new (badges become noise)
+let allNewMode = false;
+// ID of the oldest new-since-last-visit message for scroll-to on summary click
+let oldestNewMsgId = null;
+
+// ========================================
 // Author Profile Panel
 // ========================================
 const authorPanelBackdropEl = document.getElementById('author-panel-backdrop');
@@ -410,6 +444,34 @@ function hideNewMessagesBanner() {
   }, 220);
 }
 
+// ========================================
+// New-since-last-visit summary
+// ========================================
+function updateNewSinceSummary(count) {
+  const el = document.getElementById('new-since-visit-summary');
+  if (!el) return;
+  if (count <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+  const label = count === 1 ? '1 new since your last visit' : `${count} new since your last visit`;
+  el.textContent = label;
+  el.style.display = '';
+
+  el.onclick = null;
+  el.onkeydown = null;
+
+  const scrollToOldest = () => {
+    if (!oldestNewMsgId) return;
+    const card = document.getElementById('msg-' + oldestNewMsgId);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+  };
+  el.onclick = scrollToOldest;
+  el.onkeydown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); scrollToOldest(); }
+  };
+}
+
 newMessagesBanner.addEventListener('click', () => {
   if (searchInput.value) {
     searchInput.value = '';
@@ -420,6 +482,9 @@ newMessagesBanner.addEventListener('click', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    maybeSaveLastVisit();
+  }
   if (document.visibilityState === 'visible' && newMessageCount > 0) {
     hideNewMessagesBanner();
   }
@@ -827,11 +892,26 @@ async function startListeningMessages() {
         hasMoreMessages = false;
       }
 
+      // Compute new-since-last-visit state before rendering cards
+      let newCount = 0;
+      let _oldestNewMsgId = null;
+      messages.forEach(msg => {
+        if (isNewSinceLastVisit(msg.timestamp, lastVisitTs)) {
+          newCount++;
+          _oldestNewMsgId = msg.id; // sorted newest→oldest; last match = oldest new
+        }
+      });
+      allNewMode = newCount > 0 && newCount === messages.length;
+      oldestNewMsgId = _oldestNewMsgId;
+
       messages.forEach(msg => {
         trackAuthor(msg.author, msg.timestamp);
-        const card = createMessageCard(msg, currentUser);
+        const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
+        const card = createMessageCard(msg, currentUser, showBadge);
         messagesContainer.appendChild(card);
       });
+
+      updateNewSinceSummary(newCount);
     }
 
     handleDeepLink();
@@ -992,7 +1072,8 @@ async function loadMoreMessages() {
 
     messages.forEach(msg => {
       trackAuthor(msg.author, msg.timestamp);
-      const card = createMessageCard(msg, currentUser);
+      const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
+      const card = createMessageCard(msg, currentUser, showBadge);
       // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
     });
@@ -1517,7 +1598,7 @@ function createAvatarElement(photoURL, author) {
 // ========================================
 // Create Message Card Element
 // ========================================
-function createMessageCard(msg, user) {
+function createMessageCard(msg, user, isNew) {
   const card = document.createElement('div');
   card.className = 'message-card';
   card.id = `msg-${msg.id}`;
@@ -1539,6 +1620,14 @@ function createMessageCard(msg, user) {
     timeEl.appendChild(editedLabel);
   }
   timeEl.appendChild(createExpiryLabel(msg.timestamp));
+
+  if (isNew) {
+    const newBadge = document.createElement('span');
+    newBadge.className = 'new-since-visit-badge';
+    newBadge.textContent = 'NEW';
+    newBadge.setAttribute('aria-label', 'New since your last visit');
+    timeEl.appendChild(newBadge);
+  }
 
   const avatarEl = createAvatarElement(msg.photoURL, msg.author);
   avatarEl.classList.add('author-avatar-btn');
@@ -2322,5 +2411,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp };
 }

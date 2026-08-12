@@ -132,6 +132,7 @@ describe('createMessageCard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -384,6 +385,7 @@ describe('post form submit handler', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -506,6 +508,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -603,6 +606,7 @@ describe('sign-out behaviour', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -720,6 +724,7 @@ describe('infinite scroll / loadMoreMessages', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.isNearBottom = jest.fn().mockReturnValue(false);
     global.firebase = mocks.firebase;
 
@@ -867,6 +872,7 @@ describe('search / filter', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -1035,6 +1041,7 @@ describe('unauthenticated visitor', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1124,6 +1131,7 @@ describe('reply feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1316,6 +1324,7 @@ describe('permalink button', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1455,6 +1464,7 @@ describe('handleDeepLink', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     ({ handleDeepLink } = require('../public/app.js'));
@@ -1545,6 +1555,7 @@ describe('renderTypingLabel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -1687,6 +1698,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1806,6 +1818,7 @@ describe('new messages banner', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -2060,6 +2073,7 @@ describe('browser tab unread count', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -2376,6 +2390,7 @@ describe('#hashtag click-to-filter wiring', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -2452,6 +2467,7 @@ describe('@mention rendering in message cards', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -2529,6 +2545,7 @@ describe('@mention author pool', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -2604,6 +2621,7 @@ describe('getMentionPrefix', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -2680,6 +2698,7 @@ describe('bookmark feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -3066,6 +3085,7 @@ describe('browser notifications — maybeFireReplyNotification', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     ({ maybeFireReplyNotification } = require('../public/app.js'));
@@ -3235,6 +3255,7 @@ describe('browser notifications — permission request on post', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3332,6 +3353,7 @@ describe('browser notifications — initial load gate in createMessageCard', () 
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     ({ createMessageCard } = require('../public/app.js'));
@@ -3396,6 +3418,7 @@ describe('formatExpiryLabel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3524,6 +3547,7 @@ describe('createMessageCard expiry label', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3593,6 +3617,7 @@ describe('tickExpiryLabels', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3680,6 +3705,7 @@ describe('truncateQuote', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3756,6 +3782,7 @@ describe('quote reply — createReplyCard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3868,6 +3895,7 @@ describe('quote reply — composer quote preview', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3971,6 +3999,7 @@ describe('quote reply — Firebase payload on submission', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4097,6 +4126,7 @@ describe('draft auto-save', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
     ({ saveDraft, loadDraft, clearDraft, restoreDraft } = require('../public/app.js'));
@@ -4297,6 +4327,7 @@ describe('@mention notification', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
   }
 
   function setVisibility(state) {
@@ -4525,6 +4556,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -4689,6 +4721,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -4721,6 +4754,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -4753,6 +4787,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -4789,6 +4824,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -4823,6 +4859,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
 
