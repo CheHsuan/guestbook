@@ -107,6 +107,7 @@ const newMessagesBanner = document.getElementById('new-messages-banner');
 // ========================================
 let currentUser = null;
 let userAlias = null;
+let userBio = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
@@ -156,6 +157,7 @@ let oldestNewMsgId = null;
 const authorPanelBackdropEl = document.getElementById('author-panel-backdrop');
 const authorPanelEl = document.getElementById('author-panel');
 const authorPanelNameEl = document.getElementById('author-panel-name');
+const authorPanelBioEl = document.getElementById('author-panel-bio');
 const authorPanelSubtitleEl = document.getElementById('author-panel-subtitle');
 const authorPanelAvatarEl = document.getElementById('author-panel-avatar');
 const authorPanelBodyEl = document.getElementById('author-panel-body');
@@ -182,6 +184,8 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
   const panelAvatar = createAvatarElement(photoURL, authorName);
   authorPanelAvatarEl.appendChild(panelAvatar);
   authorPanelNameEl.textContent = authorName; // textContent — XSS safe
+  authorPanelBioEl.textContent = '';
+  authorPanelBioEl.style.display = 'none';
   authorPanelSubtitleEl.textContent = 'Loading…';
 
   // Show loading state in body
@@ -204,10 +208,33 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
   const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
 
   try {
-    const snapshot = await db.ref('messages')
-      .orderByChild('authorId')
-      .equalTo(authorId)
-      .once('value');
+    const [snapshot, profileSnap] = await Promise.all([
+      db.ref('messages').orderByChild('authorId').equalTo(authorId).once('value'),
+      db.ref(`users/${authorId}/profile`).once('value'),
+    ]);
+
+    // Display bio if set
+    const profileData = (profileSnap.exists() && typeof profileSnap.val === 'function') ? profileSnap.val() : null;
+    const bio = profileData && profileData.bio ? profileData.bio : null;
+    if (bio) {
+      authorPanelBioEl.textContent = bio; // textContent — XSS safe
+      authorPanelBioEl.style.display = '';
+    } else {
+      authorPanelBioEl.textContent = '';
+      authorPanelBioEl.style.display = 'none';
+    }
+
+    // Show "Edit bio" button when viewing own profile
+    const existingEditBioBtn = authorPanelEl.querySelector('.author-panel-edit-bio-btn');
+    if (existingEditBioBtn) existingEditBioBtn.remove();
+    if (currentUser && authorId === currentUser.uid) {
+      const editBioBtn = document.createElement('button');
+      editBioBtn.className = 'author-panel-edit-bio-btn';
+      editBioBtn.setAttribute('aria-label', bio ? 'Edit bio' : 'Add bio');
+      editBioBtn.textContent = bio ? 'Edit bio' : '+ Add bio';
+      editBioBtn.addEventListener('click', () => openBioEditor());
+      authorPanelBioEl.insertAdjacentElement('afterend', editBioBtn);
+    }
 
     const messages = [];
     snapshot.forEach(child => {
@@ -648,10 +675,18 @@ messagesContainer.addEventListener('click', (e) => {
 // ========================================
 async function loadUserAlias(user) {
   try {
-    const snap = await db.ref(`users/${user.uid}/profile/displayName`).once('value');
-    userAlias = snap.exists() ? snap.val() : null;
+    const snap = await db.ref(`users/${user.uid}/profile`).once('value');
+    if (snap.exists()) {
+      const profile = snap.val();
+      userAlias = profile.displayName || null;
+      userBio = profile.bio || null;
+    } else {
+      userAlias = null;
+      userBio = null;
+    }
   } catch (e) {
     userAlias = null;
+    userBio = null;
   }
 }
 
@@ -751,6 +786,112 @@ function openDisplayNameEditor() {
 }
 
 // ========================================
+// Bio Editor
+// ========================================
+const editBioBtn = document.getElementById('edit-bio-btn');
+
+function openBioEditor() {
+  if (!currentUser) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'bio-edit-wrapper';
+
+  const row = document.createElement('div');
+  row.className = 'bio-edit-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'bio-input';
+  input.value = userBio || '';
+  input.maxLength = 150;
+  input.placeholder = 'Tell people about yourself…';
+  input.setAttribute('aria-label', 'Bio');
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-save btn-bio-save';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-cancel btn-bio-cancel';
+  cancelBtn.textContent = 'Cancel';
+
+  row.appendChild(input);
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+
+  const errorEl = document.createElement('span');
+  errorEl.className = 'bio-error';
+
+  wrapper.appendChild(row);
+  wrapper.appendChild(errorEl);
+
+  const targetEl = editBioBtn || logoutBtn;
+  userInfo.insertBefore(wrapper, targetEl);
+  if (editBioBtn) editBioBtn.style.display = 'none';
+  input.focus();
+  input.select();
+
+  function closeEditor() {
+    wrapper.remove();
+    if (editBioBtn) editBioBtn.style.display = '';
+  }
+
+  cancelBtn.addEventListener('click', closeEditor);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeEditor(); }
+    if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const raw = input.value;
+    const trimmed = raw.trim();
+    errorEl.textContent = '';
+
+    if (trimmed.length === 0) {
+      // Clear bio
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        await db.ref(`users/${currentUser.uid}/profile/bio`).remove();
+        userBio = null;
+        closeEditor();
+        showToast('Bio removed');
+      } catch (err) {
+        console.error('Failed to remove bio:', err);
+        errorEl.textContent = 'Failed to save. Please try again.';
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+      return;
+    }
+
+    const validation = validateBio(raw);
+    if (!validation.valid) {
+      errorEl.textContent = validation.error;
+      return;
+    }
+
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    try {
+      await db.ref(`users/${currentUser.uid}/profile`).update({ bio: validation.text });
+      userBio = validation.text;
+      closeEditor();
+      showToast('Bio saved');
+    } catch (err) {
+      console.error('Failed to save bio:', err);
+      errorEl.textContent = 'Failed to save. Please try again.';
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
+  });
+}
+
+// ========================================
 // Auth: Sign In / Sign Out
 // ========================================
 function signIn() {
@@ -769,6 +910,7 @@ loginBtnMain.addEventListener('click', signIn);
 loginBtnHeader.addEventListener('click', signIn);
 logoutBtn.addEventListener('click', signOut);
 if (editDisplayNameBtn) editDisplayNameBtn.addEventListener('click', openDisplayNameEditor);
+if (editBioBtn) editBioBtn.addEventListener('click', openBioEditor);
 
 // ========================================
 // Auth: State Observer
@@ -779,6 +921,7 @@ auth.onAuthStateChanged(async (user) => {
     stopTyping();
     typingRef = null;
     userAlias = null;
+    userBio = null;
   }
 
   currentUser = user;
@@ -2411,5 +2554,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp };
 }

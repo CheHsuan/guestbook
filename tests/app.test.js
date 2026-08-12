@@ -9,7 +9,9 @@ const APP_HTML = `
   <button id="login-btn-header" style="display:none"></button>
   <button id="login-btn-main"></button>
   <button id="logout-btn"></button>
-  <div id="user-info" style="display:none"></div>
+  <div id="user-info" style="display:none">
+    <button id="edit-bio-btn"></button>
+  </div>
   <img id="user-avatar" />
   <span id="user-name"></span>
   <div id="main-content" style="display:none"></div>
@@ -52,6 +54,7 @@ const APP_HTML = `
       <div id="author-panel-avatar"></div>
       <div class="author-panel-meta">
         <div id="author-panel-name"></div>
+        <div id="author-panel-bio" style="display:none;"></div>
         <div id="author-panel-subtitle"></div>
       </div>
       <button id="author-panel-close"></button>
@@ -4880,5 +4883,252 @@ describe('author profile panel', () => {
     expect(targetCard.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
 
     jest.useRealTimers();
+  });
+});
+
+// --- bio feature ---
+describe('bio feature', () => {
+  let authStateCallback;
+  let mocks;
+
+  function setupBioGlobals(fbMocks) {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.firebase = fbMocks.firebase;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
+      authStateCallback = cb;
+    });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    setupBioGlobals(mocks);
+    require('../public/app.js');
+  });
+
+  function signIn(user = { uid: 'uid-me', displayName: 'Me', photoURL: '' }) {
+    authStateCallback(user);
+  }
+
+  // --- bio render path in author panel ---
+  test('bio is hidden when author has no bio set', async () => {
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', 'Alice', null);
+
+    const bioEl = document.getElementById('author-panel-bio');
+    expect(bioEl.style.display).toBe('none');
+  });
+
+  test('bio is displayed when author has a bio', async () => {
+    let callCount = 0;
+    mocks.dbRef.once.mockImplementation(() => {
+      callCount++;
+      if (callCount % 2 === 1) {
+        // messages snapshot — no messages
+        return Promise.resolve({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      }
+      // profile snapshot with bio
+      return Promise.resolve({
+        exists: () => true,
+        val: () => ({ bio: 'Developer from NYC' }),
+        forEach: jest.fn(),
+      });
+    });
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    const mocks2 = makeFirebaseMock();
+    mocks2.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    mocks2.dbRef.once.mockImplementation(() => {
+      callCount++;
+      if (callCount % 2 === 1) {
+        return Promise.resolve({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      }
+      return Promise.resolve({ exists: () => true, val: () => ({ bio: 'Developer from NYC' }), forEach: jest.fn() });
+    });
+    setupBioGlobals(mocks2);
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    callCount = 0;
+
+    await oap('uid-alice', 'Alice', null);
+
+    const bioEl = document.getElementById('author-panel-bio');
+    expect(bioEl.style.display).not.toBe('none');
+    expect(bioEl.textContent).toBe('Developer from NYC');
+  });
+
+  test('bio uses textContent (XSS safe)', async () => {
+    let callCount = 0;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    const mocks3 = makeFirebaseMock();
+    mocks3.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    mocks3.dbRef.once.mockImplementation(() => {
+      callCount++;
+      if (callCount % 2 === 1) {
+        return Promise.resolve({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      }
+      return Promise.resolve({
+        exists: () => true,
+        val: () => ({ bio: '<script>evil()</script>' }),
+        forEach: jest.fn(),
+      });
+    });
+    setupBioGlobals(mocks3);
+    const { openAuthorPanel: oap } = require('../public/app.js');
+
+    await oap('uid-alice', 'Alice', null);
+
+    const bioEl = document.getElementById('author-panel-bio');
+    expect(bioEl.innerHTML).not.toContain('<script>');
+    expect(bioEl.textContent).toBe('<script>evil()</script>');
+  });
+
+  test('bio area is hidden when bio is empty string in profile', async () => {
+    let callCount = 0;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    const mocks4 = makeFirebaseMock();
+    mocks4.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    mocks4.dbRef.once.mockImplementation(() => {
+      callCount++;
+      if (callCount % 2 === 1) {
+        return Promise.resolve({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      }
+      return Promise.resolve({ exists: () => true, val: () => ({ bio: '' }), forEach: jest.fn() });
+    });
+    setupBioGlobals(mocks4);
+    const { openAuthorPanel: oap } = require('../public/app.js');
+
+    await oap('uid-alice', 'Alice', null);
+
+    const bioEl = document.getElementById('author-panel-bio');
+    expect(bioEl.style.display).toBe('none');
+  });
+
+  // --- openBioEditor: save success ---
+  test('saving a valid bio calls db.ref().update() and shows toast', async () => {
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+
+    const input = document.querySelector('.bio-input');
+    expect(input).not.toBeNull();
+    input.value = 'Hello world bio';
+    document.querySelector('.btn-bio-save').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledWith(
+      expect.objectContaining({ bio: 'Hello world bio' })
+    );
+    expect(document.querySelector('.bio-edit-wrapper')).toBeNull();
+    expect(document.querySelector('.permalink-toast')).not.toBeNull();
+    expect(document.querySelector('.permalink-toast').textContent).toBe('Bio saved');
+  });
+
+  // --- openBioEditor: validation error ---
+  test('saving a bio over 150 characters shows error without Firebase write', async () => {
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+    document.querySelector('.bio-input').value = 'A'.repeat(151);
+    document.querySelector('.btn-bio-save').click();
+
+    expect(document.querySelector('.bio-error').textContent).toBeTruthy();
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  // --- openBioEditor: Firebase write error ---
+  test('Firebase write error on bio save shows inline error', async () => {
+    mocks.dbRef.update.mockRejectedValue(new Error('Firebase error'));
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+    document.querySelector('.bio-input').value = 'Valid bio text';
+    document.querySelector('.btn-bio-save').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector('.bio-error').textContent).toBeTruthy();
+    expect(document.querySelector('.bio-edit-wrapper')).not.toBeNull();
+  });
+
+  // --- openBioEditor: clear bio ---
+  test('clearing bio (empty input) calls db.ref().remove()', async () => {
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+    document.querySelector('.bio-input').value = '';
+    document.querySelector('.btn-bio-save').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.remove).toHaveBeenCalled();
+  });
+
+  // --- openBioEditor: Escape key dismisses editor ---
+  test('Escape key dismisses bio editor', async () => {
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+    expect(document.querySelector('.bio-edit-wrapper')).not.toBeNull();
+
+    document.querySelector('.bio-input').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    );
+
+    expect(document.querySelector('.bio-edit-wrapper')).toBeNull();
+  });
+
+  // --- openBioEditor: Cancel button dismisses editor ---
+  test('Cancel button dismisses bio editor without Firebase write', async () => {
+    signIn();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { openBioEditor } = require('../public/app.js');
+    openBioEditor();
+    document.querySelector('.btn-bio-cancel').click();
+
+    expect(document.querySelector('.bio-edit-wrapper')).toBeNull();
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
   });
 });

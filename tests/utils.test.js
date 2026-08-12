@@ -1,4 +1,4 @@
-const { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
+const { validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
 
 // ========================================
 // validateMessage
@@ -760,6 +760,58 @@ describe('validateDisplayName', () => {
     test('accepts names with emoji', () => {
         const result = validateDisplayName('Cool 🎉');
         expect(result.valid).toBe(true);
+    });
+});
+
+// ========================================
+// validateBio
+// ========================================
+describe('validateBio', () => {
+    test('accepts a valid bio', () => {
+        const result = validateBio('Developer from NYC');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('Developer from NYC');
+    });
+
+    test('trims leading and trailing whitespace', () => {
+        const result = validateBio('  Hello there  ');
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('Hello there');
+    });
+
+    test('rejects empty string', () => {
+        const result = validateBio('');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects whitespace-only string', () => {
+        const result = validateBio('   ');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects bio over 150 characters', () => {
+        const result = validateBio('A'.repeat(151));
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('150');
+    });
+
+    test('accepts bio of exactly 150 characters', () => {
+        const result = validateBio('A'.repeat(150));
+        expect(result.valid).toBe(true);
+        expect(result.text).toBe('A'.repeat(150));
+    });
+
+    test('rejects non-string input', () => {
+        const result = validateBio(null);
+        expect(result.valid).toBe(false);
+    });
+
+    test('returns error message for non-string input', () => {
+        const result = validateBio(42);
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
     });
 });
 
