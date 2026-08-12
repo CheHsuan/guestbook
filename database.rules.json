@@ -11,6 +11,9 @@
           "displayName": {
             ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40"
           },
+          "bio": {
+            ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 150"
+          },
           "$other": {
             ".validate": false
           }

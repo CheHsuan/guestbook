@@ -3,6 +3,24 @@
 // ========================================
 
 /**
+ * Validate a profile bio.
+ * Returns { valid: boolean, error?: string, text?: string }
+ */
+function validateBio(text) {
+    if (typeof text !== 'string') {
+        return { valid: false, error: 'Bio must be a string.' };
+    }
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+        return { valid: false, error: 'Bio cannot be empty.' };
+    }
+    if (trimmed.length > 150) {
+        return { valid: false, error: 'Bio must be 150 characters or less.' };
+    }
+    return { valid: true, text: trimmed };
+}
+
+/**
  * Validate a custom display name / alias.
  * Returns { valid: boolean, error?: string, text?: string }
  */
@@ -392,5 +410,5 @@ function wrapSelection(textarea, before, after) {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
+    module.exports = { validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
 }
