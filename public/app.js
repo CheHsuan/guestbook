@@ -118,6 +118,40 @@ const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
 
 // ========================================
+// Sort Order (localStorage)
+// ========================================
+const SORT_KEY = 'guestbook_sort';
+const SORT_NEWEST = 'newest';
+const SORT_OLDEST = 'oldest';
+const SORT_ACTIVE = 'active';
+
+let currentSort = SORT_NEWEST;
+try {
+  const _savedSort = localStorage.getItem(SORT_KEY);
+  if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE) currentSort = _savedSort;
+} catch (_) {}
+
+function getSortComparator(sort) {
+  if (sort === SORT_OLDEST) {
+    return (a, b) => Number(a.dataset.timestamp) - Number(b.dataset.timestamp);
+  }
+  if (sort === SORT_ACTIVE) {
+    return (a, b) => {
+      const rc = Number(b.dataset.replyCount) - Number(a.dataset.replyCount);
+      return rc !== 0 ? rc : Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
+    };
+  }
+  return (a, b) => Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
+}
+
+function applySortOrder() {
+  const cards = Array.from(messagesContainer.querySelectorAll('.message-card'));
+  if (cards.length === 0) return;
+  cards.sort(getSortComparator(currentSort));
+  cards.forEach(card => messagesContainer.insertBefore(card, loadingState));
+}
+
+// ========================================
 // Last-visit tracking (localStorage)
 // ========================================
 const LAST_VISIT_KEY = 'guestbook_last_visit';
@@ -1051,9 +1085,10 @@ async function startListeningMessages() {
         trackAuthor(msg.author, msg.timestamp);
         const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
         const card = createMessageCard(msg, currentUser, showBadge);
-        messagesContainer.appendChild(card);
+        messagesContainer.insertBefore(card, loadingState);
       });
 
+      applySortOrder();
       updateNewSinceSummary(newCount);
     }
 
@@ -1099,8 +1134,8 @@ async function startListeningMessages() {
 
         trackAuthor(msg.author, msg.timestamp);
         const card = createMessageCard(msg, currentUser);
-        // Prepend new messages to the top (right after the empty/loading states)
-        messagesContainer.insertBefore(card, loadingState.nextSibling);
+        messagesContainer.insertBefore(card, loadingState);
+        applySortOrder();
         filterMessages();
         maybeFireMentionNotification(msg);
 
@@ -1217,10 +1252,10 @@ async function loadMoreMessages() {
       trackAuthor(msg.author, msg.timestamp);
       const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
       const card = createMessageCard(msg, currentUser, showBadge);
-      // Ensure the loading state is always at the bottom if it's there
       messagesContainer.insertBefore(card, loadingState);
     });
 
+    applySortOrder();
     filterMessages();
     handleDeepLink();
 
@@ -1745,6 +1780,8 @@ function createMessageCard(msg, user, isNew) {
   const card = document.createElement('div');
   card.className = 'message-card';
   card.id = `msg-${msg.id}`;
+  card.dataset.timestamp = String(msg.timestamp);
+  card.dataset.replyCount = '0';
 
   const header = document.createElement('div');
   header.className = 'message-header';
@@ -2194,6 +2231,7 @@ function createMessageCard(msg, user, isNew) {
     const reply = { id: snap.key, ...snap.val() };
     localReplyCount++;
     replyCountMap.set(msg.id, localReplyCount);
+    card.dataset.replyCount = String(localReplyCount);
 
     replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
     replyCountEl.style.display = '';
@@ -2205,6 +2243,7 @@ function createMessageCard(msg, user, isNew) {
 
     if (initialReplyLoadComplete) {
       maybeFireReplyNotification(msg, reply);
+      if (currentSort === SORT_ACTIVE) applySortOrder();
     }
   });
 
@@ -2213,6 +2252,7 @@ function createMessageCard(msg, user, isNew) {
     if (replyEl) replyEl.remove();
     localReplyCount = Math.max(0, localReplyCount - 1);
     replyCountMap.set(msg.id, localReplyCount);
+    card.dataset.replyCount = String(localReplyCount);
 
     if (localReplyCount === 0) {
       replyCountEl.style.display = 'none';
@@ -2220,6 +2260,7 @@ function createMessageCard(msg, user, isNew) {
     } else {
       replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
     }
+    if (currentSort === SORT_ACTIVE) applySortOrder();
   });
 
   replyListenerMap.set(msg.id, repliesRef);
@@ -2379,6 +2420,39 @@ function attachMentionAutocomplete(textarea, relativeParent) {
 
   return { removeDropdown };
 }
+
+// ========================================
+// Sort Control
+// ========================================
+(function initSortControl() {
+  const sortGroup = document.getElementById('sort-group');
+  if (!sortGroup) return;
+
+  const disclaimerEl = document.getElementById('sort-disclaimer');
+
+  function updateSortUI(sort) {
+    sortGroup.querySelectorAll('.sort-btn').forEach(btn => {
+      const active = btn.dataset.sort === sort;
+      btn.classList.toggle('sort-btn--active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    if (disclaimerEl) disclaimerEl.style.display = sort === SORT_ACTIVE ? '' : 'none';
+  }
+
+  // Initialize button state to reflect saved sort
+  updateSortUI(currentSort);
+
+  sortGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sort-btn');
+    if (!btn) return;
+    const sort = btn.dataset.sort;
+    if (sort === currentSort) return;
+    currentSort = sort;
+    try { localStorage.setItem(SORT_KEY, sort); } catch (_) {}
+    updateSortUI(sort);
+    applySortOrder();
+  });
+})();
 
 // Wire up typing indicator listeners
 setupTypingInputListeners();
@@ -2554,5 +2628,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder };
 }

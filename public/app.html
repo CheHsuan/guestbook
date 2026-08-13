@@ -134,7 +134,13 @@
         <h2 class="section-title">
           Messages from the last 24 hours
           <span id="message-count" class="message-count-badge">0</span>
+          <div class="sort-group" id="sort-group" role="group" aria-label="Sort messages">
+            <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
+            <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
+            <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+          </div>
         </h2>
+        <p id="sort-disclaimer" class="sort-disclaimer" style="display:none;">Sorting applies to messages loaded so far.</p>
         <p id="new-since-visit-summary" class="new-since-visit-summary" style="display:none;" role="button" tabindex="0"></p>
         <div id="typing-indicator" class="typing-indicator" style="display:none;" aria-live="polite" aria-atomic="true"></div>
         <div id="messages-container" class="messages-container">

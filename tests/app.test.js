@@ -39,6 +39,12 @@ const APP_HTML = `
     <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
+  <div id="sort-group">
+    <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
+    <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
+    <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+  </div>
+  <p id="sort-disclaimer" style="display:none;"></p>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="saved-badge" style="display:none;"></button>
@@ -5130,5 +5136,104 @@ describe('bio feature', () => {
 
     expect(document.querySelector('.bio-edit-wrapper')).toBeNull();
     expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+});
+
+// --- sort comparators ---
+describe('sort comparators (getSortComparator)', () => {
+  let getSortComparator;
+
+  function makeCardEl(timestamp, replyCount) {
+    const el = document.createElement('div');
+    el.className = 'message-card';
+    el.dataset.timestamp = String(timestamp);
+    el.dataset.replyCount = String(replyCount);
+    return el;
+  }
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ getSortComparator } = require('../public/app.js'));
+  });
+
+  test('newest comparator sorts higher timestamps first', () => {
+    const cmp = getSortComparator('newest');
+    const a = makeCardEl(1000, 0);
+    const b = makeCardEl(2000, 0);
+    expect(cmp(a, b)).toBeGreaterThan(0);
+    expect(cmp(b, a)).toBeLessThan(0);
+    expect(cmp(a, a)).toBe(0);
+  });
+
+  test('oldest comparator sorts lower timestamps first', () => {
+    const cmp = getSortComparator('oldest');
+    const a = makeCardEl(1000, 0);
+    const b = makeCardEl(2000, 0);
+    expect(cmp(a, b)).toBeLessThan(0);
+    expect(cmp(b, a)).toBeGreaterThan(0);
+    expect(cmp(a, a)).toBe(0);
+  });
+
+  test('active comparator sorts by descending reply count', () => {
+    const cmp = getSortComparator('active');
+    const a = makeCardEl(1000, 5);
+    const b = makeCardEl(2000, 3);
+    expect(cmp(a, b)).toBeLessThan(0);
+    expect(cmp(b, a)).toBeGreaterThan(0);
+  });
+
+  test('active comparator uses descending timestamp as tie-breaker when reply counts are equal', () => {
+    const cmp = getSortComparator('active');
+    const a = makeCardEl(1000, 5);
+    const b = makeCardEl(2000, 5);
+    expect(cmp(a, b)).toBeGreaterThan(0);
+    expect(cmp(b, a)).toBeLessThan(0);
+  });
+
+  test('active comparator returns 0 for identical timestamp and reply count', () => {
+    const cmp = getSortComparator('active');
+    const a = makeCardEl(1000, 5);
+    const b = makeCardEl(1000, 5);
+    expect(cmp(a, b)).toBe(0);
+  });
+
+  test('unknown sort value defaults to newest (descending timestamp)', () => {
+    const cmp = getSortComparator('unknown');
+    const a = makeCardEl(1000, 0);
+    const b = makeCardEl(2000, 0);
+    expect(cmp(a, b)).toBeGreaterThan(0);
+    expect(cmp(b, a)).toBeLessThan(0);
+  });
+
+  test('newest comparator returns 0 for equal timestamps', () => {
+    const cmp = getSortComparator('newest');
+    const a = makeCardEl(1500, 0);
+    const b = makeCardEl(1500, 0);
+    expect(cmp(a, b)).toBe(0);
+  });
+
+  test('oldest comparator returns 0 for equal timestamps', () => {
+    const cmp = getSortComparator('oldest');
+    const a = makeCardEl(1500, 0);
+    const b = makeCardEl(1500, 0);
+    expect(cmp(a, b)).toBe(0);
   });
 });
