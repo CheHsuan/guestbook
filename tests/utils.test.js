@@ -1,4 +1,113 @@
-const { validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
+const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
+
+// ========================================
+// validateWebsiteURL
+// ========================================
+describe('validateWebsiteURL', () => {
+    test('accepts a valid https URL', () => {
+        const result = validateWebsiteURL('https://example.com');
+        expect(result.valid).toBe(true);
+        expect(result.url).toBe('https://example.com');
+    });
+
+    test('accepts a valid http URL', () => {
+        const result = validateWebsiteURL('http://example.com');
+        expect(result.valid).toBe(true);
+        expect(result.url).toBe('http://example.com');
+    });
+
+    test('accepts URL with path and query', () => {
+        const result = validateWebsiteURL('https://example.com/path?q=1');
+        expect(result.valid).toBe(true);
+    });
+
+    test('trims whitespace before validation', () => {
+        const result = validateWebsiteURL('  https://example.com  ');
+        expect(result.valid).toBe(true);
+        expect(result.url).toBe('https://example.com');
+    });
+
+    test('rejects URL without protocol', () => {
+        const result = validateWebsiteURL('example.com');
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('http');
+    });
+
+    test('rejects ftp:// URL', () => {
+        const result = validateWebsiteURL('ftp://example.com');
+        expect(result.valid).toBe(false);
+    });
+
+    test('rejects javascript: scheme', () => {
+        const result = validateWebsiteURL('javascript:alert(1)');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects javascript: scheme case-insensitively', () => {
+        const result = validateWebsiteURL('JAVASCRIPT:alert(1)');
+        expect(result.valid).toBe(false);
+    });
+
+    test('rejects javascript: scheme with leading whitespace trimmed', () => {
+        const result = validateWebsiteURL('  javascript:alert(1)');
+        expect(result.valid).toBe(false);
+    });
+
+    test('rejects URL over 200 characters', () => {
+        const longUrl = 'https://example.com/' + 'a'.repeat(185);
+        expect(longUrl.length).toBeGreaterThan(200);
+        const result = validateWebsiteURL(longUrl);
+        expect(result.valid).toBe(false);
+        expect(result.error).toContain('200');
+    });
+
+    test('accepts URL at exactly 200 characters', () => {
+        const base = 'https://example.com/';
+        const url = base + 'a'.repeat(200 - base.length);
+        expect(url.length).toBe(200);
+        const result = validateWebsiteURL(url);
+        expect(result.valid).toBe(true);
+    });
+
+    test('rejects bare hostname without a dot (e.g. localhost)', () => {
+        const result = validateWebsiteURL('http://localhost');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects empty string', () => {
+        const result = validateWebsiteURL('');
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects whitespace-only string', () => {
+        const result = validateWebsiteURL('   ');
+        expect(result.valid).toBe(false);
+    });
+
+    test('rejects non-string input (null)', () => {
+        const result = validateWebsiteURL(null);
+        expect(result.valid).toBe(false);
+        expect(result.error).toBeTruthy();
+    });
+
+    test('rejects non-string input (number)', () => {
+        const result = validateWebsiteURL(123);
+        expect(result.valid).toBe(false);
+    });
+
+    test('accepts URL with subdomain', () => {
+        const result = validateWebsiteURL('https://blog.example.com');
+        expect(result.valid).toBe(true);
+    });
+
+    test('accepts https URL with port', () => {
+        const result = validateWebsiteURL('https://example.com:8080');
+        expect(result.valid).toBe(true);
+    });
+});
 
 // ========================================
 // validateMessage

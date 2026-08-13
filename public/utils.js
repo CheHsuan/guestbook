@@ -3,6 +3,38 @@
 // ========================================
 
 /**
+ * Validate a profile website URL.
+ * Returns { valid: boolean, error?: string, url?: string }
+ */
+function validateWebsiteURL(text) {
+    if (typeof text !== 'string') {
+        return { valid: false, error: 'Website URL must be a string.' };
+    }
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+        return { valid: false, error: 'URL cannot be empty.' };
+    }
+    if (trimmed.length > 200) {
+        return { valid: false, error: 'URL must be 200 characters or less.' };
+    }
+    if (/^javascript:/i.test(trimmed)) {
+        return { valid: false, error: 'Invalid URL.' };
+    }
+    if (!/^https?:\/\//i.test(trimmed)) {
+        return { valid: false, error: 'URL must start with http:// or https://.' };
+    }
+    try {
+        const parsed = new URL(trimmed);
+        if (!parsed.hostname.includes('.')) {
+            return { valid: false, error: 'URL must have a valid hostname (e.g. example.com).' };
+        }
+    } catch (_) {
+        return { valid: false, error: 'Invalid URL.' };
+    }
+    return { valid: true, url: trimmed };
+}
+
+/**
  * Validate a profile bio.
  * Returns { valid: boolean, error?: string, text?: string }
  */
@@ -410,5 +442,5 @@ function wrapSelection(textarea, before, after) {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
 }

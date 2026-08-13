@@ -108,6 +108,7 @@ const newMessagesBanner = document.getElementById('new-messages-banner');
 let currentUser = null;
 let userAlias = null;
 let userBio = null;
+let userWebsite = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
@@ -268,6 +269,49 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
       editBioBtn.textContent = bio ? 'Edit bio' : '+ Add bio';
       editBioBtn.addEventListener('click', () => openBioEditor());
       authorPanelBioEl.insertAdjacentElement('afterend', editBioBtn);
+    }
+
+    // Display website link if set (inserted before subtitle)
+    const existingWebsiteRow = authorPanelEl.querySelector('.author-panel-website-row');
+    if (existingWebsiteRow) existingWebsiteRow.remove();
+    const existingEditWebsiteBtn = authorPanelEl.querySelector('.author-panel-edit-website-btn');
+    if (existingEditWebsiteBtn) existingEditWebsiteBtn.remove();
+
+    const website = profileData && profileData.website ? profileData.website : null;
+    if (website) {
+      const validation = validateWebsiteURL(website);
+      if (validation.valid) {
+        const websiteRow = document.createElement('div');
+        websiteRow.className = 'author-panel-website-row';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'author-panel-website-icon';
+        iconSpan.innerHTML = LINK_ICON; // static SVG constant — no user data
+
+        let hostname = '';
+        try { hostname = new URL(validation.url).hostname; } catch (_) { hostname = validation.url; }
+        const displayLabel = hostname.length > 40 ? hostname.slice(0, 40) + '…' : hostname;
+
+        const link = document.createElement('a');
+        link.href = validation.url; // validated — only http/https, no javascript:
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = displayLabel; // textContent — XSS safe
+
+        websiteRow.appendChild(iconSpan);
+        websiteRow.appendChild(link);
+        authorPanelSubtitleEl.insertAdjacentElement('beforebegin', websiteRow);
+      }
+    }
+
+    // Show "Edit website" / "Add website" button when viewing own profile
+    if (currentUser && authorId === currentUser.uid) {
+      const editWebsiteBtn = document.createElement('button');
+      editWebsiteBtn.className = 'author-panel-edit-website-btn';
+      editWebsiteBtn.setAttribute('aria-label', website ? 'Edit website' : 'Add website');
+      editWebsiteBtn.textContent = website ? 'Edit website' : '+ Add website';
+      editWebsiteBtn.addEventListener('click', () => openWebsiteEditor());
+      authorPanelSubtitleEl.insertAdjacentElement('beforebegin', editWebsiteBtn);
     }
 
     const messages = [];
@@ -714,13 +758,16 @@ async function loadUserAlias(user) {
       const profile = snap.val();
       userAlias = profile.displayName || null;
       userBio = profile.bio || null;
+      userWebsite = profile.website || null;
     } else {
       userAlias = null;
       userBio = null;
+      userWebsite = null;
     }
   } catch (e) {
     userAlias = null;
     userBio = null;
+    userWebsite = null;
   }
 }
 
@@ -926,6 +973,112 @@ function openBioEditor() {
 }
 
 // ========================================
+// Website Editor
+// ========================================
+const editWebsiteBtn = document.getElementById('edit-website-btn');
+
+function openWebsiteEditor() {
+  if (!currentUser) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'website-edit-wrapper';
+
+  const row = document.createElement('div');
+  row.className = 'website-edit-row';
+
+  const input = document.createElement('input');
+  input.type = 'url';
+  input.className = 'website-input';
+  input.value = userWebsite || '';
+  input.maxLength = 200;
+  input.placeholder = 'https://yoursite.com';
+  input.setAttribute('aria-label', 'Website URL');
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-save btn-website-save';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'btn btn-cancel btn-website-cancel';
+  cancelBtn.textContent = 'Cancel';
+
+  row.appendChild(input);
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+
+  const errorEl = document.createElement('span');
+  errorEl.className = 'website-error';
+
+  wrapper.appendChild(row);
+  wrapper.appendChild(errorEl);
+
+  const targetEl = editWebsiteBtn || logoutBtn;
+  userInfo.insertBefore(wrapper, targetEl);
+  if (editWebsiteBtn) editWebsiteBtn.style.display = 'none';
+  input.focus();
+  input.select();
+
+  function closeEditor() {
+    wrapper.remove();
+    if (editWebsiteBtn) editWebsiteBtn.style.display = '';
+  }
+
+  cancelBtn.addEventListener('click', closeEditor);
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeEditor(); }
+    if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const raw = input.value;
+    const trimmed = raw.trim();
+    errorEl.textContent = '';
+
+    if (trimmed.length === 0) {
+      // Clear website
+      saveBtn.disabled = true;
+      cancelBtn.disabled = true;
+      try {
+        await db.ref(`users/${currentUser.uid}/profile/website`).remove();
+        userWebsite = null;
+        closeEditor();
+        showToast('Website removed');
+      } catch (err) {
+        console.error('Failed to remove website:', err);
+        errorEl.textContent = 'Failed to save. Please try again.';
+        saveBtn.disabled = false;
+        cancelBtn.disabled = false;
+      }
+      return;
+    }
+
+    const validation = validateWebsiteURL(raw);
+    if (!validation.valid) {
+      errorEl.textContent = validation.error;
+      return;
+    }
+
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+
+    try {
+      await db.ref(`users/${currentUser.uid}/profile`).update({ website: validation.url });
+      userWebsite = validation.url;
+      closeEditor();
+      showToast('Website saved');
+    } catch (err) {
+      console.error('Failed to save website:', err);
+      errorEl.textContent = 'Failed to save. Please try again.';
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+    }
+  });
+}
+
+// ========================================
 // Auth: Sign In / Sign Out
 // ========================================
 function signIn() {
@@ -945,6 +1098,7 @@ loginBtnHeader.addEventListener('click', signIn);
 logoutBtn.addEventListener('click', signOut);
 if (editDisplayNameBtn) editDisplayNameBtn.addEventListener('click', openDisplayNameEditor);
 if (editBioBtn) editBioBtn.addEventListener('click', openBioEditor);
+if (editWebsiteBtn) editWebsiteBtn.addEventListener('click', openWebsiteEditor);
 
 // ========================================
 // Auth: State Observer
@@ -956,6 +1110,7 @@ auth.onAuthStateChanged(async (user) => {
     typingRef = null;
     userAlias = null;
     userBio = null;
+    userWebsite = null;
   }
 
   currentUser = user;
@@ -2628,5 +2783,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder };
 }
