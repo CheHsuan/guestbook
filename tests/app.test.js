@@ -47,12 +47,17 @@ const APP_HTML = `
   <p id="sort-disclaimer" style="display:none;"></p>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
+  <button id="muted-badge" style="display:none;"></button>
   <button id="saved-badge" style="display:none;"></button>
   <section id="saved-panel" style="display:none;">
     <div class="saved-panel-header">
       <button id="saved-panel-clear"></button>
     </div>
     <div id="saved-panel-list"></div>
+  </section>
+  <section id="muted-panel" style="display:none;">
+    <div class="muted-panel-header"></div>
+    <div id="muted-panel-list"></div>
   </section>
   <div id="author-panel-backdrop" style="display:none;"></div>
   <aside id="author-panel" style="display:none;">
@@ -5235,5 +5240,177 @@ describe('sort comparators (getSortComparator)', () => {
     const a = makeCardEl(1500, 0);
     const b = makeCardEl(1500, 0);
     expect(cmp(a, b)).toBe(0);
+  });
+});
+
+// --- Mute feature ---
+describe('mute feature', () => {
+  let createMessageCard;
+  let loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, filterMessages;
+
+  const baseMsg = {
+    id: 'mute-msg1',
+    author: 'Bob',
+    text: 'Hello there',
+    timestamp: Date.now(),
+    authorId: 'uid-bob',
+    photoURL: null,
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    createMessageCard = mod.createMessageCard;
+    loadMuted = mod.loadMuted;
+    saveMuted = mod.saveMuted;
+    isMuted = mod.isMuted;
+    addMuted = mod.addMuted;
+    removeMuted = mod.removeMuted;
+    updateMutedChip = mod.updateMutedChip;
+    refreshMutedPanel = mod.refreshMutedPanel;
+    filterMessages = mod.filterMessages;
+  }
+
+  beforeEach(setupModule);
+
+  // --- localStorage helpers ---
+  test('loadMuted returns empty array when localStorage is empty', () => {
+    expect(loadMuted()).toEqual([]);
+  });
+
+  test('addMuted persists UID to localStorage', () => {
+    addMuted('uid-bob');
+    expect(loadMuted()).toContain('uid-bob');
+  });
+
+  test('isMuted returns true for a muted UID', () => {
+    addMuted('uid-bob');
+    expect(isMuted('uid-bob')).toBe(true);
+  });
+
+  test('isMuted returns false for an unmuted UID', () => {
+    expect(isMuted('uid-bob')).toBe(false);
+  });
+
+  test('isMuted returns false for null/undefined uid', () => {
+    expect(isMuted(null)).toBe(false);
+    expect(isMuted(undefined)).toBe(false);
+    expect(isMuted('')).toBe(false);
+  });
+
+  test('removeMuted removes UID from localStorage', () => {
+    addMuted('uid-bob');
+    removeMuted('uid-bob');
+    expect(isMuted('uid-bob')).toBe(false);
+  });
+
+  test('addMuted returns true when adding a new UID', () => {
+    expect(addMuted('uid-bob')).toBe(true);
+  });
+
+  test('addMuted returns true without duplicating when UID already present', () => {
+    addMuted('uid-bob');
+    const result = addMuted('uid-bob');
+    expect(result).toBe(true);
+    expect(loadMuted().filter(id => id === 'uid-bob')).toHaveLength(1);
+  });
+
+  test('addMuted shows toast and returns false when mute limit (50) is reached', () => {
+    const existing = Array.from({ length: 50 }, (_, i) => 'uid-fill-' + i);
+    localStorage.setItem('guestbook_muted', JSON.stringify(existing));
+
+    const toastSpy = jest.spyOn(document.body, 'appendChild');
+    const result = addMuted('uid-new');
+    expect(result).toBe(false);
+    expect(loadMuted()).toHaveLength(50);
+    toastSpy.mockRestore();
+  });
+
+  // --- createMessageCard integration ---
+  test('createMessageCard sets data-author-id attribute', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.dataset.authorId).toBe('uid-bob');
+  });
+
+  test('createMessageCard hides card when author is muted', () => {
+    addMuted('uid-bob');
+    const card = createMessageCard(baseMsg, null);
+    expect(card.style.display).toBe('none');
+  });
+
+  test('createMessageCard does not hide card when author is not muted', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.style.display).not.toBe('none');
+  });
+
+  // --- updateMutedChip ---
+  test('updateMutedChip hides chip when no muted authors', () => {
+    updateMutedChip();
+    expect(document.getElementById('muted-badge').style.display).toBe('none');
+  });
+
+  test('updateMutedChip shows chip when at least one author is muted', () => {
+    addMuted('uid-bob');
+    updateMutedChip();
+    expect(document.getElementById('muted-badge').style.display).not.toBe('none');
+  });
+
+  test('updateMutedChip shows correct count in chip text', () => {
+    addMuted('uid-bob');
+    addMuted('uid-alice');
+    updateMutedChip();
+    expect(document.getElementById('muted-badge').textContent).toContain('2');
+  });
+
+  test('updateMutedChip hides muted panel when count drops to zero', () => {
+    addMuted('uid-bob');
+    updateMutedChip();
+    removeMuted('uid-bob');
+    updateMutedChip();
+    const panel = document.getElementById('muted-panel');
+    expect(panel.style.display).toBe('none');
+  });
+
+  // --- filterMessages integration ---
+  test('filterMessages does not reveal muted author cards during search', () => {
+    addMuted('uid-bob');
+    const card = createMessageCard(baseMsg, null);
+    card.style.display = 'none'; // simulate hidden muted card
+    document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
+
+    document.getElementById('search-input').value = 'Hello';
+    filterMessages();
+
+    expect(card.style.display).toBe('none');
+  });
+
+  test('filterMessages restores non-muted cards when search is cleared', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.style.display = 'none'; // simulate hidden by search
+    document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(card.style.display).toBe('');
   });
 });

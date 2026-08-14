@@ -56,6 +56,7 @@
         <button id="theme-toggle" class="btn-theme-toggle" aria-label="Switch to dark mode">
           <!-- icon updated by JS -->
         </button>
+        <button id="muted-badge" class="muted-badge" style="display:none;" aria-label="View muted authors" aria-expanded="false"></button>
         <button id="saved-badge" class="saved-badge" style="display:none;" aria-label="View saved messages" aria-expanded="false"></button>
         <div id="auth-section">
           <button id="login-btn-header" class="btn btn-login" style="display: none;">
@@ -133,6 +134,13 @@
             <button id="saved-panel-clear" class="saved-panel-clear">Clear all</button>
           </div>
           <div id="saved-panel-list" class="saved-panel-list"></div>
+        </section>
+        <!-- Muted authors panel — toggled by #muted-badge in the header -->
+        <section id="muted-panel" class="muted-panel" style="display:none;" aria-label="Muted authors">
+          <div class="muted-panel-header">
+            <span class="muted-panel-title">Muted authors</span>
+          </div>
+          <div id="muted-panel-list" class="muted-panel-list"></div>
         </section>
         <h2 class="section-title">
           Messages from the last 24 hours

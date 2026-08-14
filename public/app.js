@@ -153,6 +153,139 @@ function applySortOrder() {
 }
 
 // ========================================
+// Mute List (localStorage)
+// ========================================
+const MUTED_KEY = 'guestbook_muted';
+const MUTE_LIMIT = 50;
+
+function loadMuted() {
+  try {
+    const raw = localStorage.getItem(MUTED_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveMuted(list) {
+  try {
+    localStorage.setItem(MUTED_KEY, JSON.stringify(list));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isMuted(uid) {
+  if (!uid) return false;
+  return loadMuted().includes(uid);
+}
+
+function addMuted(uid) {
+  const list = loadMuted();
+  if (list.includes(uid)) return true;
+  if (list.length >= MUTE_LIMIT) {
+    showToast(`Mute list is full (${MUTE_LIMIT} authors). Unmute someone first.`);
+    return false;
+  }
+  list.push(uid);
+  saveMuted(list);
+  return true;
+}
+
+function removeMuted(uid) {
+  const list = loadMuted().filter(id => id !== uid);
+  saveMuted(list);
+}
+
+function updateMutedChip() {
+  const chipEl = document.getElementById('muted-badge');
+  if (!chipEl) return;
+  const count = loadMuted().length;
+  if (count === 0) {
+    chipEl.style.display = 'none';
+    chipEl.setAttribute('aria-expanded', 'false');
+    const panel = document.getElementById('muted-panel');
+    if (panel) panel.style.display = 'none';
+  } else {
+    chipEl.textContent = '🚫 ' + count + ' muted';
+    chipEl.style.display = '';
+  }
+}
+
+function refreshMutedPanel() {
+  const panel = document.getElementById('muted-panel');
+  if (!panel || panel.style.display === 'none') return;
+
+  const listEl = document.getElementById('muted-panel-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  const mutedUids = loadMuted();
+
+  if (mutedUids.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'muted-panel-list-empty';
+    empty.textContent = 'No muted authors.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  mutedUids.forEach(uid => {
+    let name = 'Unknown user';
+    const matchCard = messagesContainer.querySelector(`.message-card[data-author-id="${uid}"]`);
+    if (matchCard) {
+      const nameEl = matchCard.querySelector('.message-author');
+      if (nameEl) name = nameEl.textContent;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'muted-panel-row';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'muted-panel-name';
+    nameEl.textContent = name; // textContent — XSS safe
+
+    const unmuteBtn = document.createElement('button');
+    unmuteBtn.className = 'muted-panel-unmute-btn';
+    unmuteBtn.textContent = 'Unmute';
+    unmuteBtn.addEventListener('click', () => {
+      removeMuted(uid);
+      messagesContainer.querySelectorAll(`.message-card[data-author-id="${uid}"]`).forEach(c => {
+        c.style.display = '';
+      });
+      updateMutedChip();
+      refreshMutedPanel();
+      filterMessages();
+    });
+
+    row.appendChild(nameEl);
+    row.appendChild(unmuteBtn);
+    listEl.appendChild(row);
+  });
+
+  const unmuteAllRow = document.createElement('div');
+  unmuteAllRow.className = 'muted-panel-unmute-all-row';
+  const unmuteAllBtn = document.createElement('button');
+  unmuteAllBtn.className = 'muted-panel-unmute-all-btn';
+  unmuteAllBtn.textContent = 'Unmute all';
+  unmuteAllBtn.addEventListener('click', () => {
+    const uids = loadMuted();
+    uids.forEach(uid => {
+      messagesContainer.querySelectorAll(`.message-card[data-author-id="${uid}"]`).forEach(c => {
+        c.style.display = '';
+      });
+    });
+    saveMuted([]);
+    updateMutedChip();
+    refreshMutedPanel();
+    filterMessages();
+  });
+  unmuteAllRow.appendChild(unmuteAllBtn);
+  listEl.appendChild(unmuteAllRow);
+}
+
+// ========================================
 // Last-visit tracking (localStorage)
 // ========================================
 const LAST_VISIT_KEY = 'guestbook_last_visit';
@@ -214,6 +347,10 @@ function closeAuthorPanel() {
 }
 
 async function openAuthorPanel(authorId, authorName, photoURL) {
+  // Remove stale mute button from previous open
+  const existingMuteBtn = authorPanelEl.querySelector('.author-panel-mute-btn');
+  if (existingMuteBtn) existingMuteBtn.remove();
+
   // Populate header immediately
   authorPanelAvatarEl.innerHTML = '';
   const panelAvatar = createAvatarElement(photoURL, authorName);
@@ -375,6 +512,40 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
 
         authorPanelBodyEl.appendChild(preview);
       });
+    }
+
+    // Add mute/unmute button for non-self profiles
+    if (!currentUser || authorId !== currentUser.uid) {
+      const muted = isMuted(authorId);
+      const muteBtn = document.createElement('button');
+      muteBtn.className = 'author-panel-mute-btn' + (muted ? ' author-panel-mute-btn--unmute' : '');
+      muteBtn.textContent = muted ? `Unmute ${authorName}` : `Mute ${authorName}`; // textContent — XSS safe
+
+      muteBtn.addEventListener('click', () => {
+        if (isMuted(authorId)) {
+          removeMuted(authorId);
+          messagesContainer.querySelectorAll(`.message-card[data-author-id="${authorId}"]`).forEach(c => {
+            c.style.display = '';
+          });
+          filterMessages();
+          updateMutedChip();
+          closeAuthorPanel();
+          showToast(`Unmuted ${authorName}.`);
+        } else {
+          const success = addMuted(authorId);
+          if (success) {
+            messagesContainer.querySelectorAll(`.message-card[data-author-id="${authorId}"]`).forEach(c => {
+              c.style.display = 'none';
+            });
+            filterMessages();
+            updateMutedChip();
+            closeAuthorPanel();
+            showToast(`Muted ${authorName}. Their messages are now hidden.`);
+          }
+        }
+      });
+
+      authorPanelBodyEl.insertAdjacentElement('beforebegin', muteBtn);
     }
   } catch (err) {
     console.error('Failed to load author messages:', err);
@@ -695,7 +866,9 @@ function filterMessages() {
   const cards = messagesContainer.querySelectorAll('.message-card');
 
   if (!term) {
-    cards.forEach(card => { card.style.display = ''; });
+    cards.forEach(card => {
+      if (!isMuted(card.dataset.authorId)) card.style.display = '';
+    });
     searchClearBtn.style.display = 'none';
     searchResultsCount.style.display = 'none';
     searchEmptyState.style.display = 'none';
@@ -711,7 +884,10 @@ function filterMessages() {
   }
 
   let matchCount = 0;
+  let visibleTotal = 0;
   cards.forEach(card => {
+    if (isMuted(card.dataset.authorId)) return; // keep muted cards hidden
+    visibleTotal++;
     const author = normalizeStr(card.querySelector('.message-author')?.textContent || '');
     const text = normalizeStr(card.querySelector('.message-text')?.textContent || '');
     const matches = author.includes(term) || text.includes(term);
@@ -724,7 +900,7 @@ function filterMessages() {
     searchResultsCount.style.display = 'none';
   } else {
     searchEmptyState.style.display = 'none';
-    searchResultsCount.textContent = `Showing ${matchCount} of ${cards.length}`;
+    searchResultsCount.textContent = `Showing ${matchCount} of ${visibleTotal}`;
     searchResultsCount.style.display = 'block';
   }
 }
@@ -1288,6 +1464,9 @@ async function startListeningMessages() {
         emptyState.style.display = 'none';
 
         trackAuthor(msg.author, msg.timestamp);
+
+        if (isMuted(msg.authorId)) return; // silently suppress muted authors
+
         const card = createMessageCard(msg, currentUser);
         messagesContainer.insertBefore(card, loadingState);
         applySortOrder();
@@ -1937,6 +2116,11 @@ function createMessageCard(msg, user, isNew) {
   card.id = `msg-${msg.id}`;
   card.dataset.timestamp = String(msg.timestamp);
   card.dataset.replyCount = '0';
+  card.dataset.authorId = msg.authorId || '';
+
+  if (isMuted(msg.authorId)) {
+    card.style.display = 'none';
+  }
 
   const header = document.createElement('div');
   header.className = 'message-header';
@@ -2649,6 +2833,28 @@ if (savedPanelClearEl) {
   });
 }
 
+// ========================================
+// Muted badge + muted panel setup
+// ========================================
+updateMutedChip();
+
+const mutedBadgeEl = document.getElementById('muted-badge');
+if (mutedBadgeEl) {
+  mutedBadgeEl.addEventListener('click', () => {
+    const panel = document.getElementById('muted-panel');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      mutedBadgeEl.setAttribute('aria-expanded', 'false');
+    } else {
+      panel.style.display = '';
+      mutedBadgeEl.setAttribute('aria-expanded', 'true');
+      refreshMutedPanel();
+    }
+  });
+}
+
 // Add formatting toolbar above the main message textarea
 messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
@@ -2783,5 +2989,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel };
 }

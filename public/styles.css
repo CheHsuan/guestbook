@@ -1636,6 +1636,162 @@ body {
 }
 
 /* ========================================
+   Muted Badge (header)
+   ======================================== */
+.muted-badge {
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+
+.muted-badge:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.muted-badge:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ========================================
+   Muted Panel
+   ======================================== */
+.muted-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.muted-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.muted-panel-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.muted-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.muted-panel-row:last-of-type {
+  border-bottom: none;
+}
+
+.muted-panel-name {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.muted-panel-unmute-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-family: inherit;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+
+.muted-panel-unmute-btn:hover {
+  color: var(--text-primary);
+}
+
+.muted-panel-list-empty {
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.muted-panel-unmute-all-row {
+  padding: 8px 14px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+
+.muted-panel-unmute-all-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-family: inherit;
+  text-decoration: underline;
+  padding: 2px 6px;
+}
+
+.muted-panel-unmute-all-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ========================================
+   Author Panel — Mute Button
+   ======================================== */
+.author-panel-mute-btn {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 8px 16px;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  color: var(--text-muted);
+  text-align: center;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.author-panel-mute-btn:hover {
+  color: #c53030;
+  border-color: #c53030;
+  background: rgba(197, 48, 48, 0.06);
+}
+
+.author-panel-mute-btn--unmute {
+  color: var(--text-secondary);
+}
+
+.author-panel-mute-btn--unmute:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.author-panel-mute-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ========================================
    Saved Badge (header)
    ======================================== */
 .saved-badge {
