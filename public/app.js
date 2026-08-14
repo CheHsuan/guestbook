@@ -1463,9 +1463,9 @@ async function startListeningMessages() {
         newestMessageTimestamp = msg.timestamp;
         emptyState.style.display = 'none';
 
-        trackAuthor(msg.author, msg.timestamp);
-
         if (isMuted(msg.authorId)) return; // silently suppress muted authors
+
+        trackAuthor(msg.author, msg.timestamp);
 
         const card = createMessageCard(msg, currentUser);
         messagesContainer.insertBefore(card, loadingState);

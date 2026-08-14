@@ -1692,11 +1692,10 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
 }
 
-.muted-panel-row:last-of-type {
-  border-bottom: none;
+.muted-panel-row + .muted-panel-row {
+  border-top: 1px solid var(--border);
 }
 
 .muted-panel-name {
