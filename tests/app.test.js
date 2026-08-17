@@ -52,6 +52,7 @@ const APP_HTML = `
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
+  <button id="muted-words-badge" style="display:none;"></button>
   <button id="saved-badge" style="display:none;"></button>
   <section id="saved-panel" style="display:none;">
     <div class="saved-panel-header">
@@ -62,6 +63,13 @@ const APP_HTML = `
   <section id="muted-panel" style="display:none;">
     <div class="muted-panel-header"></div>
     <div id="muted-panel-list"></div>
+  </section>
+  <section id="muted-words-panel" style="display:none;">
+    <div class="muted-panel-header"></div>
+    <input id="muted-words-input" type="text" />
+    <p id="muted-words-input-error" style="display:none;"></p>
+    <div id="muted-words-panel-list"></div>
+    <button id="muted-words-add-btn"></button>
   </section>
   <div id="author-panel-backdrop" style="display:none;"></div>
   <aside id="author-panel" style="display:none;">
@@ -5409,6 +5417,211 @@ describe('mute feature', () => {
 
   test('filterMessages restores non-muted cards when search is cleared', () => {
     const card = createMessageCard(baseMsg, null);
+    card.style.display = 'none'; // simulate hidden by search
+    document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(card.style.display).toBe('');
+  });
+});
+
+// --- keyword mute feature ---
+describe('keyword mute feature', () => {
+  let createMessageCard;
+  let loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord;
+  let updateMutedWordsBadge, refreshMutedWordsPanel, filterMessages;
+
+  const baseMsg = {
+    id: 'kw-msg1',
+    author: 'Alice',
+    text: 'I love talking about crypto coins',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+    photoURL: null,
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    createMessageCard = mod.createMessageCard;
+    loadMutedWords = mod.loadMutedWords;
+    saveMutedWords = mod.saveMutedWords;
+    isMutedByKeyword = mod.isMutedByKeyword;
+    addMutedWord = mod.addMutedWord;
+    removeMutedWord = mod.removeMutedWord;
+    updateMutedWordsBadge = mod.updateMutedWordsBadge;
+    refreshMutedWordsPanel = mod.refreshMutedWordsPanel;
+    filterMessages = mod.filterMessages;
+  }
+
+  beforeEach(setupModule);
+
+  // --- localStorage helpers ---
+  test('loadMutedWords returns empty array when localStorage is empty', () => {
+    expect(loadMutedWords()).toEqual([]);
+  });
+
+  test('addMutedWord persists word to localStorage', () => {
+    addMutedWord('crypto');
+    expect(loadMutedWords()).toContain('crypto');
+  });
+
+  test('addMutedWord returns "added" for a new word', () => {
+    expect(addMutedWord('crypto')).toBe('added');
+  });
+
+  test('addMutedWord returns "duplicate" (case-insensitive) and does not add again', () => {
+    addMutedWord('Crypto');
+    const result = addMutedWord('crypto');
+    expect(result).toBe('duplicate');
+    expect(loadMutedWords()).toHaveLength(1);
+  });
+
+  test('addMutedWord returns "toolong" for words exceeding 50 characters', () => {
+    const long = 'a'.repeat(51);
+    expect(addMutedWord(long)).toBe('toolong');
+    expect(loadMutedWords()).toHaveLength(0);
+  });
+
+  test('addMutedWord returns "limit" when 50 words are already muted', () => {
+    const existing = Array.from({ length: 50 }, (_, i) => 'word' + i);
+    localStorage.setItem('guestbook_muted_words', JSON.stringify(existing));
+    expect(addMutedWord('newword')).toBe('limit');
+    expect(loadMutedWords()).toHaveLength(50);
+  });
+
+  test('addMutedWord returns "empty" for blank input', () => {
+    expect(addMutedWord('   ')).toBe('empty');
+    expect(loadMutedWords()).toHaveLength(0);
+  });
+
+  test('removeMutedWord removes the word from localStorage (case-insensitive)', () => {
+    addMutedWord('crypto');
+    removeMutedWord('CRYPTO');
+    expect(loadMutedWords()).not.toContain('crypto');
+  });
+
+  // --- isMutedByKeyword ---
+  test('isMutedByKeyword returns true when text contains muted keyword (case-insensitive)', () => {
+    addMutedWord('crypto');
+    expect(isMutedByKeyword('I love CRYPTO coins')).toBe(true);
+  });
+
+  test('isMutedByKeyword returns false when text does not contain any muted keyword', () => {
+    addMutedWord('crypto');
+    expect(isMutedByKeyword('hello world')).toBe(false);
+  });
+
+  test('isMutedByKeyword matches substring', () => {
+    addMutedWord('pol');
+    expect(isMutedByKeyword('I dislike politics')).toBe(true);
+  });
+
+  test('isMutedByKeyword matches multi-word phrase as contiguous substring', () => {
+    addMutedWord('good morning');
+    expect(isMutedByKeyword('good morning everyone')).toBe(true);
+    expect(isMutedByKeyword('good evening')).toBe(false);
+  });
+
+  test('isMutedByKeyword returns false for empty text', () => {
+    addMutedWord('crypto');
+    expect(isMutedByKeyword('')).toBe(false);
+    expect(isMutedByKeyword(null)).toBe(false);
+  });
+
+  test('isMutedByKeyword returns false when no keywords are muted', () => {
+    expect(isMutedByKeyword('any text here')).toBe(false);
+  });
+
+  // --- createMessageCard integration ---
+  test('createMessageCard hides card when message text contains muted keyword', () => {
+    addMutedWord('crypto');
+    const card = createMessageCard(baseMsg, null);
+    expect(card.style.display).toBe('none');
+  });
+
+  test('createMessageCard does not hide card when message text does not match muted keywords', () => {
+    addMutedWord('politics');
+    const card = createMessageCard(baseMsg, null);
+    expect(card.style.display).not.toBe('none');
+  });
+
+  // --- updateMutedWordsBadge ---
+  test('updateMutedWordsBadge hides badge when no muted words', () => {
+    updateMutedWordsBadge();
+    expect(document.getElementById('muted-words-badge').style.display).toBe('none');
+  });
+
+  test('updateMutedWordsBadge shows badge when at least one word is muted', () => {
+    addMutedWord('crypto');
+    updateMutedWordsBadge();
+    expect(document.getElementById('muted-words-badge').style.display).not.toBe('none');
+  });
+
+  test('updateMutedWordsBadge shows correct count in badge text', () => {
+    addMutedWord('crypto');
+    addMutedWord('politics');
+    updateMutedWordsBadge();
+    expect(document.getElementById('muted-words-badge').textContent).toContain('2');
+  });
+
+  test('updateMutedWordsBadge hides muted-words panel when count drops to zero', () => {
+    addMutedWord('crypto');
+    updateMutedWordsBadge();
+    removeMutedWord('crypto');
+    updateMutedWordsBadge();
+    const panel = document.getElementById('muted-words-panel');
+    expect(panel.style.display).toBe('none');
+  });
+
+  // --- filterMessages integration ---
+  test('filterMessages hides cards whose message-text contains a muted keyword', () => {
+    addMutedWord('crypto');
+    const card = createMessageCard(baseMsg, null);
+    card.style.display = ''; // simulate visible card
+    document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
+
+    document.getElementById('search-input').value = '';
+    filterMessages();
+
+    expect(card.style.display).toBe('none');
+  });
+
+  test('filterMessages does not reveal keyword-muted cards during search', () => {
+    addMutedWord('crypto');
+    const card = createMessageCard(baseMsg, null);
+    card.style.display = 'none';
+    document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
+
+    document.getElementById('search-input').value = 'crypto';
+    filterMessages();
+
+    expect(card.style.display).toBe('none');
+  });
+
+  test('filterMessages restores non-keyword-muted cards when search is cleared', () => {
+    const card = createMessageCard({ ...baseMsg, text: 'hello world' }, null);
     card.style.display = 'none'; // simulate hidden by search
     document.getElementById('messages-container').insertBefore(card, document.getElementById('loading-state'));
 

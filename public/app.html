@@ -57,6 +57,7 @@
           <!-- icon updated by JS -->
         </button>
         <button id="muted-badge" class="muted-badge" style="display:none;" aria-label="View muted authors" aria-expanded="false"></button>
+        <button id="muted-words-badge" class="muted-badge" style="display:none;" aria-label="View muted words" aria-expanded="false"></button>
         <button id="saved-badge" class="saved-badge" style="display:none;" aria-label="View saved messages" aria-expanded="false"></button>
         <div id="auth-section">
           <button id="login-btn-header" class="btn btn-login" style="display: none;">
@@ -146,6 +147,18 @@
             <span class="muted-panel-title">Muted authors</span>
           </div>
           <div id="muted-panel-list" class="muted-panel-list"></div>
+        </section>
+        <!-- Muted words panel — toggled by #muted-words-badge in the header -->
+        <section id="muted-words-panel" class="muted-panel" style="display:none;" aria-label="Muted words">
+          <div class="muted-panel-header">
+            <span class="muted-panel-title">Muted words</span>
+          </div>
+          <div class="muted-words-panel-add-row">
+            <input id="muted-words-input" class="muted-words-panel-input" type="text" placeholder="e.g. politics" maxlength="50">
+            <button id="muted-words-add-btn" class="muted-words-panel-add-btn">Mute</button>
+          </div>
+          <p id="muted-words-input-error" class="muted-words-panel-error" style="display:none;"></p>
+          <div id="muted-words-panel-list" class="muted-panel-list"></div>
         </section>
         <h2 class="section-title">
           Messages from the last 24 hours

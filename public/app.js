@@ -286,6 +286,133 @@ function refreshMutedPanel() {
 }
 
 // ========================================
+// Keyword Mute List (localStorage)
+// ========================================
+const MUTED_WORDS_KEY = 'guestbook_muted_words';
+const MUTED_WORDS_LIMIT = 50;
+const MUTED_WORD_MAX_LEN = 50;
+
+function loadMutedWords() {
+  try {
+    const raw = localStorage.getItem(MUTED_WORDS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveMutedWords(list) {
+  try {
+    localStorage.setItem(MUTED_WORDS_KEY, JSON.stringify(list));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isMutedByKeyword(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return loadMutedWords().some(w => lower.includes(w.toLowerCase()));
+}
+
+function addMutedWord(word) {
+  try {
+    localStorage.setItem('__mw_probe__', '1');
+    localStorage.removeItem('__mw_probe__');
+  } catch (e) {
+    return 'unavailable';
+  }
+  const trimmed = word.trim();
+  if (!trimmed) return 'empty';
+  if (trimmed.length > MUTED_WORD_MAX_LEN) return 'toolong';
+  const list = loadMutedWords();
+  const lowerTrimmed = trimmed.toLowerCase();
+  if (list.some(w => w.toLowerCase() === lowerTrimmed)) return 'duplicate';
+  if (list.length >= MUTED_WORDS_LIMIT) return 'limit';
+  list.push(trimmed);
+  saveMutedWords(list);
+  return 'added';
+}
+
+function removeMutedWord(word) {
+  const lowerWord = word.toLowerCase();
+  const list = loadMutedWords().filter(w => w.toLowerCase() !== lowerWord);
+  saveMutedWords(list);
+}
+
+function updateMutedWordsBadge() {
+  const badgeEl = document.getElementById('muted-words-badge');
+  if (!badgeEl) return;
+  const count = loadMutedWords().length;
+  if (count === 0) {
+    badgeEl.style.display = 'none';
+    badgeEl.setAttribute('aria-expanded', 'false');
+    const panel = document.getElementById('muted-words-panel');
+    if (panel) panel.style.display = 'none';
+  } else {
+    badgeEl.textContent = '🔇 ' + count + ' muted word' + (count === 1 ? '' : 's');
+    badgeEl.style.display = '';
+  }
+}
+
+function refreshMutedWordsPanel() {
+  const panel = document.getElementById('muted-words-panel');
+  if (!panel || panel.style.display === 'none') return;
+
+  const listEl = document.getElementById('muted-words-panel-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+  const words = loadMutedWords();
+
+  if (words.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'muted-panel-list-empty';
+    empty.textContent = 'No muted words.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  words.forEach(word => {
+    const row = document.createElement('div');
+    row.className = 'muted-panel-row';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'muted-panel-name';
+    nameEl.textContent = word; // textContent — XSS safe
+
+    const unmuteBtn = document.createElement('button');
+    unmuteBtn.className = 'muted-panel-unmute-btn';
+    unmuteBtn.textContent = 'Unmute';
+    unmuteBtn.addEventListener('click', () => {
+      removeMutedWord(word);
+      updateMutedWordsBadge();
+      refreshMutedWordsPanel();
+      filterMessages();
+    });
+
+    row.appendChild(nameEl);
+    row.appendChild(unmuteBtn);
+    listEl.appendChild(row);
+  });
+
+  const unmuteAllRow = document.createElement('div');
+  unmuteAllRow.className = 'muted-panel-unmute-all-row';
+  const unmuteAllBtn = document.createElement('button');
+  unmuteAllBtn.className = 'muted-panel-unmute-all-btn';
+  unmuteAllBtn.textContent = 'Unmute all';
+  unmuteAllBtn.addEventListener('click', () => {
+    saveMutedWords([]);
+    updateMutedWordsBadge();
+    refreshMutedWordsPanel();
+    filterMessages();
+  });
+  unmuteAllRow.appendChild(unmuteAllBtn);
+  listEl.appendChild(unmuteAllRow);
+}
+
+// ========================================
 // Last-visit tracking (localStorage)
 // ========================================
 const LAST_VISIT_KEY = 'guestbook_last_visit';
@@ -926,7 +1053,12 @@ function filterMessages() {
 
   if (!term) {
     cards.forEach(card => {
-      if (!isMuted(card.dataset.authorId)) card.style.display = '';
+      const msgText = card.querySelector('.message-text')?.textContent || '';
+      if (isMuted(card.dataset.authorId) || isMutedByKeyword(msgText)) {
+        card.style.display = 'none';
+      } else {
+        card.style.display = '';
+      }
     });
     searchClearBtn.style.display = 'none';
     searchResultsCount.style.display = 'none';
@@ -946,6 +1078,8 @@ function filterMessages() {
   let visibleTotal = 0;
   cards.forEach(card => {
     if (isMuted(card.dataset.authorId)) return; // keep muted cards hidden
+    const msgText = card.querySelector('.message-text')?.textContent || '';
+    if (isMutedByKeyword(msgText)) return; // keep keyword-muted cards hidden
     visibleTotal++;
     const author = normalizeStr(card.querySelector('.message-author')?.textContent || '');
     const text = normalizeStr(card.querySelector('.message-text')?.textContent || '');
@@ -1523,7 +1657,7 @@ async function startListeningMessages() {
         newestMessageTimestamp = msg.timestamp;
         emptyState.style.display = 'none';
 
-        if (isMuted(msg.authorId)) return; // silently suppress muted authors
+        if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) return; // silently suppress muted authors/keywords
 
         trackAuthor(msg.author, msg.timestamp);
 
@@ -2181,7 +2315,7 @@ function createMessageCard(msg, user, isNew) {
   card.dataset.replyCount = '0';
   card.dataset.authorId = msg.authorId || '';
 
-  if (isMuted(msg.authorId)) {
+  if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) {
     card.style.display = 'none';
   }
 
@@ -2918,6 +3052,77 @@ if (mutedBadgeEl) {
   });
 }
 
+// ========================================
+// Muted words badge + panel setup
+// ========================================
+updateMutedWordsBadge();
+
+const mutedWordsBadgeEl = document.getElementById('muted-words-badge');
+if (mutedWordsBadgeEl) {
+  mutedWordsBadgeEl.addEventListener('click', () => {
+    const panel = document.getElementById('muted-words-panel');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      mutedWordsBadgeEl.setAttribute('aria-expanded', 'false');
+    } else {
+      panel.style.display = '';
+      mutedWordsBadgeEl.setAttribute('aria-expanded', 'true');
+      refreshMutedWordsPanel();
+    }
+  });
+}
+
+const mutedWordsAddBtn = document.getElementById('muted-words-add-btn');
+if (mutedWordsAddBtn) {
+  mutedWordsAddBtn.addEventListener('click', () => {
+    const inputEl = document.getElementById('muted-words-input');
+    const errorEl = document.getElementById('muted-words-input-error');
+    if (!inputEl) return;
+
+    const value = inputEl.value;
+
+    if (value.trim().length > MUTED_WORD_MAX_LEN) {
+      if (errorEl) {
+        errorEl.textContent = 'Keyword must be 50 characters or fewer.';
+        errorEl.style.display = 'block';
+      }
+      return;
+    }
+    if (errorEl) errorEl.style.display = 'none';
+
+    const result = addMutedWord(value);
+    if (result === 'unavailable') {
+      showToast('Keyword mute is unavailable in this browser mode.');
+    } else if (result === 'duplicate') {
+      showToast('Already muted');
+    } else if (result === 'limit') {
+      showToast(`Muted words list is full (${MUTED_WORDS_LIMIT}). Unmute a word first.`);
+    } else if (result === 'toolong') {
+      if (errorEl) {
+        errorEl.textContent = 'Keyword must be 50 characters or fewer.';
+        errorEl.style.display = 'block';
+      }
+    } else if (result === 'added') {
+      inputEl.value = '';
+      updateMutedWordsBadge();
+      refreshMutedWordsPanel();
+      filterMessages();
+    }
+  });
+}
+
+const mutedWordsInputEl = document.getElementById('muted-words-input');
+if (mutedWordsInputEl) {
+  mutedWordsInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('muted-words-add-btn')?.click();
+    }
+  });
+}
+
 // Add formatting toolbar above the main message textarea
 messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
@@ -3052,5 +3257,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel };
 }
