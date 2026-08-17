@@ -848,6 +848,71 @@ body {
 }
 
 /* ========================================
+   Trending hashtags
+   ======================================== */
+.trending-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+
+.trending-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.trending-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-width: 0;
+}
+
+.trending-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.trending-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  flex-shrink: 0;
+}
+
+.trending-chip:hover {
+  background: var(--border);
+  text-decoration: underline;
+}
+
+.trending-chip:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.trending-chip-count {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* ========================================
    Messages Section
    ======================================== */
 .messages-section .section-title {

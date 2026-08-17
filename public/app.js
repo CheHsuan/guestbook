@@ -855,6 +855,64 @@ function handleDeepLink() {
 }
 
 // ========================================
+// Trending Hashtags
+// ========================================
+function renderTrendingHashtags() {
+  const trendingSection = document.getElementById('trending-section');
+  if (!trendingSection) return;
+
+  if (searchInput.value.trim()) {
+    trendingSection.style.display = 'none';
+    return;
+  }
+
+  const countMap = new Map();
+  messagesContainer.querySelectorAll('.hashtag').forEach(el => {
+    const tag = el.textContent;
+    countMap.set(tag, (countMap.get(tag) || 0) + 1);
+  });
+
+  if (countMap.size < 2) {
+    trendingSection.style.display = 'none';
+    return;
+  }
+
+  const top5 = Array.from(countMap.entries())
+    .sort(([tagA, countA], [tagB, countB]) => countB !== countA ? countB - countA : tagA.localeCompare(tagB))
+    .slice(0, 5);
+
+  const chipsEl = trendingSection.querySelector('.trending-chips');
+  chipsEl.innerHTML = '';
+
+  top5.forEach(([tag, count]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'trending-chip';
+    btn.setAttribute('aria-label', `Filter by ${tag} (${count} messages)`);
+
+    const tagSpan = document.createElement('span');
+    tagSpan.textContent = tag;
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'trending-chip-count';
+    countSpan.textContent = `\xD7 ${count}`;
+
+    btn.appendChild(tagSpan);
+    btn.appendChild(countSpan);
+
+    btn.addEventListener('click', () => {
+      searchInput.value = tag;
+      filterMessages();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    chipsEl.appendChild(btn);
+  });
+
+  trendingSection.style.display = '';
+}
+
+// ========================================
 // Search / Filter
 // ========================================
 function normalizeStr(str) {
@@ -862,6 +920,7 @@ function normalizeStr(str) {
 }
 
 function filterMessages() {
+  renderTrendingHashtags();
   const term = normalizeStr(searchInput.value.trim());
   const cards = messagesContainer.querySelectorAll('.message-card');
 
@@ -1421,6 +1480,7 @@ async function startListeningMessages() {
 
       applySortOrder();
       updateNewSinceSummary(newCount);
+      renderTrendingHashtags();
     }
 
     handleDeepLink();
@@ -1503,6 +1563,7 @@ async function startListeningMessages() {
           emptyState.style.display = 'block';
           searchEmptyState.style.display = 'none';
           searchResultsCount.style.display = 'none';
+          renderTrendingHashtags();
         } else {
           filterMessages();
         }
@@ -1729,6 +1790,8 @@ function tickExpiryLabels() {
   if (savedPanelNeedsRefresh) {
     refreshSavedPanel();
   }
+
+  renderTrendingHashtags();
 }
 
 // ========================================
@@ -2989,5 +3052,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel };
 }

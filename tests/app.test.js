@@ -33,6 +33,10 @@ const APP_HTML = `
   <input id="search-input" type="search" />
   <button id="search-clear-btn" style="display:none"></button>
   <p id="search-results-count" style="display:none"></p>
+  <div id="trending-section" class="trending-section" style="display:none;">
+    <span class="trending-label">Trending</span>
+    <div class="trending-chips"></div>
+  </div>
   <div id="messages-container">
     <div id="empty-state" style="display:none"></div>
     <div id="search-empty-state" style="display:none"></div>
@@ -5412,5 +5416,163 @@ describe('mute feature', () => {
     filterMessages();
 
     expect(card.style.display).toBe('');
+  });
+});
+
+// --- renderTrendingHashtags ---
+describe('renderTrendingHashtags', () => {
+  let renderTrendingHashtags;
+  let filterMessages;
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    renderTrendingHashtags = mod.renderTrendingHashtags;
+    filterMessages = mod.filterMessages;
+  }
+
+  function addHashtag(tag) {
+    const span = document.createElement('span');
+    span.className = 'hashtag';
+    span.textContent = tag;
+    document.getElementById('messages-container').appendChild(span);
+  }
+
+  beforeEach(setupModule);
+
+  test('section is hidden when fewer than 2 distinct hashtags exist', () => {
+    addHashtag('#coffee');
+    renderTrendingHashtags();
+    expect(document.getElementById('trending-section').style.display).toBe('none');
+  });
+
+  test('section is hidden when no hashtags exist', () => {
+    renderTrendingHashtags();
+    expect(document.getElementById('trending-section').style.display).toBe('none');
+  });
+
+  test('section is visible when 2 or more distinct hashtags exist', () => {
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags();
+    expect(document.getElementById('trending-section').style.display).not.toBe('none');
+  });
+
+  test('shows top 5 hashtags at most', () => {
+    ['#a', '#b', '#c', '#d', '#e', '#f'].forEach(t => addHashtag(t));
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    expect(chips.length).toBe(5);
+  });
+
+  test('ranks chips by descending count', () => {
+    addHashtag('#rare');
+    addHashtag('#popular');
+    addHashtag('#popular');
+    addHashtag('#popular');
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    expect(chips[0].querySelector('span').textContent).toBe('#popular');
+    expect(chips[1].querySelector('span').textContent).toBe('#rare');
+  });
+
+  test('breaks ties alphabetically', () => {
+    addHashtag('#beta');
+    addHashtag('#alpha');
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    expect(chips[0].querySelector('span').textContent).toBe('#alpha');
+    expect(chips[1].querySelector('span').textContent).toBe('#beta');
+  });
+
+  test('chip displays tag name and count', () => {
+    addHashtag('#coffee');
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    const coffeeChip = Array.from(chips).find(c => c.querySelector('span').textContent === '#coffee');
+    expect(coffeeChip).not.toBeNull();
+    expect(coffeeChip.textContent).toContain('\xD7 2');
+  });
+
+  test('chip has correct aria-label', () => {
+    addHashtag('#coffee');
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    const coffeeChip = Array.from(chips).find(c => c.querySelector('span').textContent === '#coffee');
+    expect(coffeeChip.getAttribute('aria-label')).toBe('Filter by #coffee (2 messages)');
+  });
+
+  test('chips are rendered as button elements', () => {
+    addHashtag('#coding');
+    addHashtag('#music');
+    renderTrendingHashtags();
+    const chips = document.querySelectorAll('.trending-chip');
+    chips.forEach(chip => expect(chip.tagName).toBe('BUTTON'));
+  });
+
+  test('section is hidden when search is active', () => {
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    document.getElementById('search-input').value = '#coffee';
+    renderTrendingHashtags();
+    expect(document.getElementById('trending-section').style.display).toBe('none');
+  });
+
+  test('filterMessages hides trending section when search query is set', () => {
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags(); // show it first
+    expect(document.getElementById('trending-section').style.display).not.toBe('none');
+
+    document.getElementById('search-input').value = '#coffee';
+    filterMessages();
+    expect(document.getElementById('trending-section').style.display).toBe('none');
+  });
+
+  test('clicking a chip sets searchInput value to that hashtag', () => {
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags();
+
+    const chips = document.querySelectorAll('.trending-chip');
+    const coffeeChip = Array.from(chips).find(c => c.querySelector('span').textContent === '#coffee');
+    coffeeChip.click();
+
+    expect(document.getElementById('search-input').value).toBe('#coffee');
+  });
+
+  test('clicking a chip hides the trending section (search becomes active)', () => {
+    addHashtag('#coffee');
+    addHashtag('#tea');
+    renderTrendingHashtags();
+
+    const chips = document.querySelectorAll('.trending-chip');
+    const coffeeChip = Array.from(chips).find(c => c.querySelector('span').textContent === '#coffee');
+    coffeeChip.click();
+
+    expect(document.getElementById('trending-section').style.display).toBe('none');
   });
 });
