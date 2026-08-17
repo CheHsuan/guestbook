@@ -1816,6 +1816,60 @@ body {
 }
 
 /* ========================================
+   Muted Words Panel — Add Row
+   ======================================== */
+.muted-words-panel-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.muted-words-panel-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.muted-words-panel-input:focus {
+  border-color: var(--border-strong);
+}
+
+.muted-words-panel-add-btn {
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  flex-shrink: 0;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.muted-words-panel-add-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.muted-words-panel-error {
+  margin: 0;
+  padding: 4px 14px 6px;
+  font-size: 0.8rem;
+  color: var(--color-danger, #d93025);
+}
+
+/* ========================================
    Author Panel — Mute Button
    ======================================== */
 .author-panel-mute-btn {
