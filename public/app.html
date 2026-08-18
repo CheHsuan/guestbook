@@ -163,13 +163,20 @@
         <h2 class="section-title">
           Messages from the last 24 hours
           <span id="message-count" class="message-count-badge">0</span>
-          <div class="sort-group" id="sort-group" role="group" aria-label="Sort messages">
-            <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
-            <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
-            <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+          <div class="sort-controls">
+            <div class="sort-group" id="sort-group" role="group" aria-label="Sort messages">
+              <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
+              <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
+              <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+            </div>
+            <button id="my-posts-btn" class="my-posts-btn" aria-pressed="false" style="display:none;" title="Show only my posts">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              My Posts
+            </button>
           </div>
         </h2>
         <p id="sort-disclaimer" class="sort-disclaimer" style="display:none;">Sorting applies to messages loaded so far.</p>
+        <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
         <p id="new-since-visit-summary" class="new-since-visit-summary" style="display:none;" role="button" tabindex="0"></p>
         <div id="typing-indicator" class="typing-indicator" style="display:none;" aria-live="polite" aria-atomic="true"></div>
         <div id="messages-container" class="messages-container">
