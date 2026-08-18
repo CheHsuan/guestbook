@@ -38,6 +38,8 @@ const SUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -952,6 +954,29 @@ function maybeFireReplyNotification(msg, reply) {
   });
 }
 
+function maybeFireSubscriptionNotification(msg, reply) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!currentUser) return;
+  if (reply.authorId === currentUser.uid) return;
+  if (document.visibilityState === 'visible') return;
+  if (!isSubscribed(msg.id)) return;
+  if (!document.getElementById('msg-' + msg.id)) return;
+
+  const raw = typeof reply.text === 'string' ? reply.text : '';
+  const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
+  const notif = new Notification((reply.author || 'Someone') + ' replied in a thread you\'re following', {
+    body: snippet,
+    icon: '/icon.png',
+  });
+  notif.addEventListener('click', () => {
+    window.focus();
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+    notif.close();
+  });
+}
+
 // ========================================
 // Permalink: Toast + Deep-link
 // ========================================
@@ -1697,6 +1722,7 @@ async function startListeningMessages() {
       updateNewSinceSummary(newCount);
       renderTrendingHashtags();
       updateMyPostsBtnVisibility();
+      pruneExpiredSubscriptions();
     }
 
     handleDeepLink();
@@ -2183,6 +2209,58 @@ function refreshSavedPanel() {
 
     listEl.appendChild(item);
   });
+}
+
+// ========================================
+// Thread Subscriptions (localStorage)
+// ========================================
+const SUBSCRIPTIONS_KEY = 'guestbook_subscriptions';
+const SUBSCRIPTIONS_LIMIT = 50;
+
+function loadSubscriptions() {
+  try {
+    const raw = localStorage.getItem(SUBSCRIPTIONS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveSubscriptions(list) {
+  try {
+    localStorage.setItem(SUBSCRIPTIONS_KEY, JSON.stringify(list));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isSubscribed(msgId) {
+  return loadSubscriptions().includes(msgId);
+}
+
+function addSubscription(msgId) {
+  const list = loadSubscriptions();
+  if (list.includes(msgId)) return true;
+  if (list.length >= SUBSCRIPTIONS_LIMIT) {
+    list.shift(); // evict oldest entry
+  }
+  list.push(msgId);
+  saveSubscriptions(list);
+  return true;
+}
+
+function removeSubscription(msgId) {
+  const list = loadSubscriptions().filter(id => id !== msgId);
+  saveSubscriptions(list);
+}
+
+function pruneExpiredSubscriptions() {
+  const list = loadSubscriptions();
+  const active = list.filter(id => !!document.getElementById('msg-' + id));
+  if (active.length !== list.length) {
+    saveSubscriptions(active);
+  }
 }
 
 // ========================================
@@ -2778,6 +2856,20 @@ function createMessageCard(msg, user, isNew) {
           updates[`/messages/${msg.id}/replies/${newReplyKey}`] = replyPayload;
           updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
+
+          // Auto-subscribe to thread when replying (non-author only)
+          if (user.uid !== msg.authorId && !isSubscribed(msg.id)) {
+            addSubscription(msg.id);
+            const followBtnEl = card.querySelector('.btn-follow');
+            if (followBtnEl) {
+              followBtnEl.innerHTML = BELL_FILLED_ICON;
+              followBtnEl.setAttribute('aria-label', 'Unfollow thread');
+              followBtnEl.classList.add('btn-follow--active');
+              followBtnEl.setAttribute('tabindex', '0');
+            }
+            showToast("You're now following this thread.");
+          }
+
           formWrapper.remove();
         } catch (err) {
           console.error('Failed to post reply:', err);
@@ -2792,6 +2884,43 @@ function createMessageCard(msg, user, isNew) {
     });
 
     cardFooter.appendChild(replyBtn);
+
+    // Follow button — visible to signed-in users who are not the original author
+    if (msg.authorId !== user.uid) {
+      const subscribed = isSubscribed(msg.id);
+      const followBtn = document.createElement('button');
+      followBtn.className = 'btn-follow' + (subscribed ? ' btn-follow--active' : '');
+      followBtn.innerHTML = subscribed ? BELL_FILLED_ICON : BELL_ICON; // static SVG — no user data
+      followBtn.setAttribute('aria-label', subscribed ? 'Unfollow thread' : 'Follow thread');
+      followBtn.setAttribute('tabindex', isMobile || subscribed ? '0' : '-1');
+
+      if (!isMobile) {
+        card.addEventListener('mouseenter', () => followBtn.setAttribute('tabindex', '0'));
+        card.addEventListener('mouseleave', () => {
+          if (!followBtn.classList.contains('btn-follow--active')) {
+            followBtn.setAttribute('tabindex', '-1');
+          }
+        });
+      }
+
+      followBtn.addEventListener('click', () => {
+        if (isSubscribed(msg.id)) {
+          removeSubscription(msg.id);
+          followBtn.innerHTML = BELL_ICON;
+          followBtn.setAttribute('aria-label', 'Follow thread');
+          followBtn.classList.remove('btn-follow--active');
+          if (!isMobile) followBtn.setAttribute('tabindex', '-1');
+        } else {
+          addSubscription(msg.id);
+          followBtn.innerHTML = BELL_FILLED_ICON;
+          followBtn.setAttribute('aria-label', 'Unfollow thread');
+          followBtn.classList.add('btn-follow--active');
+          followBtn.setAttribute('tabindex', '0');
+        }
+      });
+
+      cardFooter.appendChild(followBtn);
+    }
   }
 
   // Bookmark button — visible to all visitors (not gated on auth)
@@ -2864,6 +2993,7 @@ function createMessageCard(msg, user, isNew) {
 
     if (initialReplyLoadComplete) {
       maybeFireReplyNotification(msg, reply);
+      maybeFireSubscriptionNotification(msg, reply);
       if (currentSort === SORT_ACTIVE) applySortOrder();
     }
   });
@@ -3342,5 +3472,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions };
 }
