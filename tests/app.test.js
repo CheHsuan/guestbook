@@ -43,12 +43,16 @@ const APP_HTML = `
     <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
-  <div id="sort-group">
-    <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
-    <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
-    <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+  <div class="sort-controls">
+    <div id="sort-group">
+      <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
+      <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
+      <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+    </div>
+    <button id="my-posts-btn" class="my-posts-btn" aria-pressed="false" style="display:none;">My Posts</button>
   </div>
   <p id="sort-disclaimer" style="display:none;"></p>
+  <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
@@ -1035,6 +1039,192 @@ describe('search / filter', () => {
     filterMessages();
     expect(c1.style.display).not.toBe('none');
     expect(c2.style.display).not.toBe('none');
+  });
+});
+
+// --- My Posts filter ---
+describe('My Posts filter', () => {
+  let filterMessages;
+  let authStateCallback;
+
+  function addCard(container, { author = 'Alice', text = 'Hello', id = 'c1', authorId = 'uid-alice' } = {}) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.id = `msg-${id}`;
+    card.dataset.authorId = authorId;
+    const authorEl = document.createElement('span');
+    authorEl.className = 'message-author';
+    authorEl.textContent = author;
+    const textEl = document.createElement('p');
+    textEl.className = 'message-text';
+    textEl.textContent = text;
+    card.appendChild(authorEl);
+    card.appendChild(textEl);
+    container.appendChild(card);
+    return card;
+  }
+
+  function simulateSignIn(uid = 'uid-alice') {
+    authStateCallback({
+      uid,
+      displayName: 'Alice',
+      photoURL: '',
+    });
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    global.firebase = firebase;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    ({ filterMessages } = require('../public/app.js'));
+  });
+
+  test('my-posts-btn is hidden by default (logged out)', () => {
+    expect(document.getElementById('my-posts-btn').style.display).toBe('none');
+  });
+
+  test('clicking my-posts-btn toggles aria-pressed to true', () => {
+    simulateSignIn();
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('clicking my-posts-btn again toggles aria-pressed back to false', () => {
+    simulateSignIn();
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+    btn.click();
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('My Posts mode shows only cards matching currentUser uid', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    const own = addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+    const other = addCard(container, { author: 'Bob', text: 'Hey', id: '2', authorId: 'uid-bob' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click(); // activate My Posts
+
+    expect(own.style.display).not.toBe('none');
+    expect(other.style.display).toBe('none');
+  });
+
+  test('deactivating My Posts restores all cards', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    const own = addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+    const other = addCard(container, { author: 'Bob', text: 'Hey', id: '2', authorId: 'uid-bob' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click(); // activate
+    btn.click(); // deactivate
+
+    expect(own.style.display).not.toBe('none');
+    expect(other.style.display).not.toBe('none');
+  });
+
+  test('shows my-posts-count when own messages exist', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+
+    const countEl = document.getElementById('my-posts-count');
+    expect(countEl.style.display).toBe('block');
+    expect(countEl.textContent).toBe('Your 1 message');
+  });
+
+  test('count label uses plural for multiple messages', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+    addCard(container, { author: 'Alice', text: 'Bye', id: '2', authorId: 'uid-alice' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+
+    expect(document.getElementById('my-posts-count').textContent).toBe('Your 2 messages');
+  });
+
+  test('shows search-empty-state when user has no own messages', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Bob', text: 'Hey', id: '1', authorId: 'uid-bob' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+
+    expect(document.getElementById('search-empty-state').style.display).toBe('block');
+  });
+
+  test('clears search input when My Posts is activated with a search term', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+
+    document.getElementById('search-input').value = 'some search';
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+
+    expect(document.getElementById('search-input').value).toBe('');
+  });
+
+  test('my-posts-count is hidden after deactivating My Posts', () => {
+    simulateSignIn('uid-alice');
+    const container = document.getElementById('messages-container');
+    addCard(container, { author: 'Alice', text: 'Hi', id: '1', authorId: 'uid-alice' });
+
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click(); // activate
+    btn.click(); // deactivate
+
+    expect(document.getElementById('my-posts-count').style.display).toBe('none');
+  });
+
+  test('My Posts mode button adds my-posts-btn--active class when active', () => {
+    simulateSignIn('uid-alice');
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+    expect(btn.classList.contains('my-posts-btn--active')).toBe(true);
+  });
+
+  test('My Posts mode button removes my-posts-btn--active class when deactivated', () => {
+    simulateSignIn('uid-alice');
+    const btn = document.getElementById('my-posts-btn');
+    btn.style.display = '';
+    btn.click();
+    btn.click();
+    expect(btn.classList.contains('my-posts-btn--active')).toBe(false);
   });
 });
 

@@ -101,12 +101,15 @@ const searchInput = document.getElementById('search-input');
 const searchClearBtn = document.getElementById('search-clear-btn');
 const searchResultsCount = document.getElementById('search-results-count');
 const newMessagesBanner = document.getElementById('new-messages-banner');
+const myPostsBtn = document.getElementById('my-posts-btn');
+const myPostsCount = document.getElementById('my-posts-count');
 
 // ========================================
 // State
 // ========================================
 let currentUser = null;
 let userAlias = null;
+let myPostsActive = false;
 let userBio = null;
 let userWebsite = null;
 let messagesListener = null;
@@ -1048,6 +1051,43 @@ function normalizeStr(str) {
 
 function filterMessages() {
   renderTrendingHashtags();
+
+  if (myPostsActive && currentUser) {
+    const cards = messagesContainer.querySelectorAll('.message-card');
+    let ownCount = 0;
+
+    cards.forEach(card => {
+      const msgText = card.querySelector('.message-text')?.textContent || '';
+      if (isMuted(card.dataset.authorId) || isMutedByKeyword(msgText)) {
+        card.style.display = 'none';
+        return;
+      }
+      const isOwn = card.dataset.authorId === currentUser.uid;
+      card.style.display = isOwn ? '' : 'none';
+      if (isOwn) ownCount++;
+    });
+
+    searchClearBtn.style.display = 'none';
+    searchResultsCount.style.display = 'none';
+
+    if (ownCount === 0) {
+      const emptyP = searchEmptyState.querySelector('p');
+      if (emptyP) emptyP.textContent = 'You haven\'t posted in the last 24 hours.';
+      searchEmptyState.style.display = 'block';
+      if (myPostsCount) myPostsCount.style.display = 'none';
+    } else {
+      searchEmptyState.style.display = 'none';
+      if (myPostsCount) {
+        myPostsCount.textContent = `Your ${ownCount} message${ownCount === 1 ? '' : 's'}`;
+        myPostsCount.style.display = 'block';
+      }
+    }
+    return;
+  }
+
+  // Hide my-posts count when not in My Posts mode
+  if (myPostsCount) myPostsCount.style.display = 'none';
+
   const term = normalizeStr(searchInput.value.trim());
   const cards = messagesContainer.querySelectorAll('.message-card');
 
@@ -1089,12 +1129,27 @@ function filterMessages() {
   });
 
   if (matchCount === 0) {
+    const emptyP = searchEmptyState.querySelector('p');
+    if (emptyP) emptyP.textContent = 'No messages match your search.';
     searchEmptyState.style.display = 'block';
     searchResultsCount.style.display = 'none';
   } else {
     searchEmptyState.style.display = 'none';
     searchResultsCount.textContent = `Showing ${matchCount} of ${visibleTotal}`;
     searchResultsCount.style.display = 'block';
+  }
+}
+
+function updateMyPostsBtnVisibility() {
+  if (!myPostsBtn) return;
+  const hasMessages = messagesContainer.querySelectorAll('.message-card').length > 0;
+  const shouldShow = !!currentUser && hasMessages;
+  myPostsBtn.style.display = shouldShow ? '' : 'none';
+  if (!shouldShow && myPostsActive) {
+    myPostsActive = false;
+    myPostsBtn.setAttribute('aria-pressed', 'false');
+    myPostsBtn.classList.remove('my-posts-btn--active');
+    if (myPostsCount) myPostsCount.style.display = 'none';
   }
 }
 
@@ -1108,6 +1163,21 @@ searchClearBtn.addEventListener('click', () => {
   searchInput.value = '';
   filterMessages();
 });
+
+if (myPostsBtn) {
+  myPostsBtn.addEventListener('click', () => {
+    myPostsActive = !myPostsActive;
+    myPostsBtn.setAttribute('aria-pressed', myPostsActive ? 'true' : 'false');
+    myPostsBtn.classList.toggle('my-posts-btn--active', myPostsActive);
+
+    if (myPostsActive && searchInput.value) {
+      searchInput.value = '';
+      searchClearBtn.style.display = 'none';
+    }
+
+    filterMessages();
+  });
+}
 
 messagesContainer.addEventListener('click', (e) => {
   const hashtag = e.target.closest('.hashtag');
@@ -1496,12 +1566,23 @@ auth.onAuthStateChanged(async (user) => {
     postSection.style.display = 'block';
     loginBtnHeader.style.display = 'none';
     restoreDraft();
+    updateMyPostsBtnVisibility();
   } else {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     hideNewMessagesBanner();
     clearDraft();
+    // Deactivate My Posts filter on sign-out
+    if (myPostsActive) {
+      myPostsActive = false;
+      if (myPostsBtn) {
+        myPostsBtn.setAttribute('aria-pressed', 'false');
+        myPostsBtn.classList.remove('my-posts-btn--active');
+      }
+      if (myPostsCount) myPostsCount.style.display = 'none';
+    }
+    if (myPostsBtn) myPostsBtn.style.display = 'none';
   }
 
   // Start the listener once; skip if already running to avoid duplicate listeners
@@ -1615,6 +1696,7 @@ async function startListeningMessages() {
       applySortOrder();
       updateNewSinceSummary(newCount);
       renderTrendingHashtags();
+      updateMyPostsBtnVisibility();
     }
 
     handleDeepLink();
@@ -1698,8 +1780,10 @@ async function startListeningMessages() {
           searchEmptyState.style.display = 'none';
           searchResultsCount.style.display = 'none';
           renderTrendingHashtags();
+          updateMyPostsBtnVisibility();
         } else {
           filterMessages();
+          updateMyPostsBtnVisibility();
         }
       }
     });
@@ -1787,6 +1871,7 @@ async function loadMoreMessages() {
     applySortOrder();
     filterMessages();
     handleDeepLink();
+    updateMyPostsBtnVisibility();
 
   } catch (error) {
     console.error('Error loading more messages:', error);
@@ -3257,5 +3342,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility };
 }
