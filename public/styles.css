@@ -1754,6 +1754,60 @@ body {
 }
 
 /* ========================================
+   Follow Button
+   ======================================== */
+.btn-follow {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-follow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-card:hover .btn-follow {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-follow--active {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--link);
+}
+
+.btn-follow:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-follow:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .btn-follow {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ========================================
    Muted Badge (header)
    ======================================== */
 .muted-badge {

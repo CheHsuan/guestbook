@@ -5979,3 +5979,530 @@ describe('renderTrendingHashtags', () => {
     expect(document.getElementById('trending-section').style.display).toBe('none');
   });
 });
+
+// --- Thread Follow feature ---
+describe('thread follow — subscription localStorage helpers', () => {
+  let loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions;
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const mod = require('../public/app.js');
+    loadSubscriptions = mod.loadSubscriptions;
+    saveSubscriptions = mod.saveSubscriptions;
+    isSubscribed = mod.isSubscribed;
+    addSubscription = mod.addSubscription;
+    removeSubscription = mod.removeSubscription;
+    pruneExpiredSubscriptions = mod.pruneExpiredSubscriptions;
+  }
+
+  beforeEach(setupModule);
+
+  test('loadSubscriptions returns empty array when localStorage is empty', () => {
+    expect(loadSubscriptions()).toEqual([]);
+  });
+
+  test('addSubscription adds msgId to localStorage', () => {
+    addSubscription('msg-abc');
+    expect(loadSubscriptions()).toContain('msg-abc');
+  });
+
+  test('isSubscribed returns true after addSubscription', () => {
+    addSubscription('msg-abc');
+    expect(isSubscribed('msg-abc')).toBe(true);
+  });
+
+  test('isSubscribed returns false for unknown msgId', () => {
+    expect(isSubscribed('msg-unknown')).toBe(false);
+  });
+
+  test('removeSubscription removes msgId from localStorage', () => {
+    addSubscription('msg-abc');
+    removeSubscription('msg-abc');
+    expect(isSubscribed('msg-abc')).toBe(false);
+  });
+
+  test('addSubscription is idempotent (does not duplicate)', () => {
+    addSubscription('msg-abc');
+    addSubscription('msg-abc');
+    expect(loadSubscriptions()).toHaveLength(1);
+  });
+
+  test('cap at 50 entries — oldest entry evicted when limit is reached', () => {
+    for (let i = 0; i < 50; i++) addSubscription('msg-' + i);
+    expect(loadSubscriptions()).toHaveLength(50);
+    expect(loadSubscriptions()[0]).toBe('msg-0');
+
+    addSubscription('msg-50');
+    const list = loadSubscriptions();
+    expect(list).toHaveLength(50);
+    expect(list).not.toContain('msg-0'); // oldest evicted
+    expect(list).toContain('msg-50');
+  });
+
+  test('pruneExpiredSubscriptions removes IDs not in DOM', () => {
+    addSubscription('msg-exists');
+    addSubscription('msg-missing');
+
+    const card = document.createElement('div');
+    card.id = 'msg-msg-exists';
+    document.getElementById('messages-container').appendChild(card);
+
+    pruneExpiredSubscriptions();
+
+    expect(isSubscribed('msg-exists')).toBe(true);
+    expect(isSubscribed('msg-missing')).toBe(false);
+  });
+
+  test('pruneExpiredSubscriptions keeps all when all IDs are in DOM', () => {
+    addSubscription('msg-a');
+    addSubscription('msg-b');
+
+    ['msg-a', 'msg-b'].forEach(id => {
+      const el = document.createElement('div');
+      el.id = 'msg-' + id;
+      document.getElementById('messages-container').appendChild(el);
+    });
+
+    pruneExpiredSubscriptions();
+    expect(loadSubscriptions()).toHaveLength(2);
+  });
+
+  test('pruneExpiredSubscriptions no-ops when list is empty', () => {
+    expect(() => pruneExpiredSubscriptions()).not.toThrow();
+    expect(loadSubscriptions()).toEqual([]);
+  });
+});
+
+describe('thread follow — follow button in createMessageCard', () => {
+  let createMessageCard;
+
+  const baseMsg = {
+    id: 'follow-msg-1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+  }
+
+  beforeEach(setupModule);
+
+  test('follow button is not present when user is null (unauthenticated)', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-follow')).toBeNull();
+  });
+
+  test('follow button is not present for the original message author', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-follow')).toBeNull();
+  });
+
+  test('follow button is present for authenticated non-author', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-follow')).not.toBeNull();
+  });
+
+  test('follow button has aria-label "Follow thread" when not subscribed', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-follow').getAttribute('aria-label')).toBe('Follow thread');
+  });
+
+  test('follow button has aria-label "Unfollow thread" when already subscribed', () => {
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([baseMsg.id]));
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-follow').getAttribute('aria-label')).toBe('Unfollow thread');
+  });
+
+  test('follow button has btn-follow--active class when pre-subscribed', () => {
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([baseMsg.id]));
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-follow').classList.contains('btn-follow--active')).toBe(true);
+  });
+
+  test('clicking follow button adds subscription to localStorage', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-follow').click();
+    const list = JSON.parse(localStorage.getItem('guestbook_subscriptions') || '[]');
+    expect(list).toContain(baseMsg.id);
+  });
+
+  test('clicking follow button toggles to active state (aria-label + class)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const btn = card.querySelector('.btn-follow');
+    btn.click();
+    expect(btn.getAttribute('aria-label')).toBe('Unfollow thread');
+    expect(btn.classList.contains('btn-follow--active')).toBe(true);
+  });
+
+  test('clicking follow button again unsubscribes (toggle off)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const btn = card.querySelector('.btn-follow');
+    btn.click(); // follow
+    btn.click(); // unfollow
+    const list = JSON.parse(localStorage.getItem('guestbook_subscriptions') || '[]');
+    expect(list).not.toContain(baseMsg.id);
+    expect(btn.getAttribute('aria-label')).toBe('Follow thread');
+    expect(btn.classList.contains('btn-follow--active')).toBe(false);
+  });
+
+  test('follow button appears in card-footer', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const footer = card.querySelector('.card-footer');
+    expect(footer.querySelector('.btn-follow')).not.toBeNull();
+  });
+
+  test('follow button appears after reply button in the footer', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const replyIdx = children.findIndex(el => el.classList.contains('btn-reply'));
+    const followIdx = children.findIndex(el => el.classList.contains('btn-follow'));
+    expect(replyIdx).toBeGreaterThanOrEqual(0);
+    expect(followIdx).toBeGreaterThan(replyIdx);
+  });
+});
+
+describe('thread follow — auto-subscribe on reply post', () => {
+  let createMessageCard;
+  let authStateCallback;
+  let mocks;
+
+  const baseMsg = {
+    id: 'auto-sub-msg-1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.firebase = mocks.firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+  }
+
+  beforeEach(setupModule);
+
+  test('auto-subscribes when non-author posts a reply', async () => {
+    authStateCallback({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Nice message!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const list = JSON.parse(localStorage.getItem('guestbook_subscriptions') || '[]');
+    expect(list).toContain(baseMsg.id);
+  });
+
+  test('does NOT auto-subscribe when original author replies to own message', async () => {
+    authStateCallback({ uid: 'uid-alice', displayName: 'Alice', photoURL: '' });
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice', displayName: 'Alice' });
+    // author's card has no follow button, but they can still reply
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Own reply';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const list = JSON.parse(localStorage.getItem('guestbook_subscriptions') || '[]');
+    expect(list).not.toContain(baseMsg.id);
+  });
+
+  test('auto-subscribe updates follow button to active state', async () => {
+    authStateCallback({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Nice!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const followBtn = card.querySelector('.btn-follow');
+    expect(followBtn.classList.contains('btn-follow--active')).toBe(true);
+    expect(followBtn.getAttribute('aria-label')).toBe('Unfollow thread');
+  });
+
+  test('shows toast "You\'re now following this thread." on auto-subscribe', async () => {
+    authStateCallback({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Nice!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe("You're now following this thread.");
+  });
+
+  test('does NOT show toast or re-subscribe when already subscribed before reply', async () => {
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([baseMsg.id]));
+    authStateCallback({ uid: 'uid-bob', displayName: 'Bob', photoURL: '' });
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', displayName: 'Bob' });
+    card.querySelector('.btn-reply').click();
+    card.querySelector('.reply-textarea').value = 'Already following!';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector('.permalink-toast')).toBeNull();
+    const list = JSON.parse(localStorage.getItem('guestbook_subscriptions') || '[]');
+    expect(list.filter(id => id === baseMsg.id)).toHaveLength(1);
+  });
+});
+
+describe('thread follow — maybeFireSubscriptionNotification', () => {
+  let maybeFireSubscriptionNotification;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Me', photoURL: '' };
+
+  const otherMsg = {
+    id: 'sub-notif-msg-1',
+    author: 'Alice',
+    text: 'Hello',
+    timestamp: 1000,
+    authorId: 'uid-alice',
+  };
+
+  const incomingReply = {
+    id: 'r1',
+    author: 'Bob',
+    text: 'Great thread!',
+    timestamp: 2000,
+    authorId: 'uid-bob',
+  };
+
+  function setVisibility(state) {
+    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true, writable: true });
+  }
+
+  function mockNotificationCtor(permission = 'granted') {
+    const instances = [];
+    const Ctor = jest.fn().mockImplementation(() => {
+      const inst = { addEventListener: jest.fn(), close: jest.fn() };
+      instances.push(inst);
+      return inst;
+    });
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    Ctor.instances = instances;
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  function addCard(msgId) {
+    const el = document.createElement('div');
+    el.id = 'msg-' + msgId;
+    document.getElementById('messages-container').appendChild(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+    delete global.Notification;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.firebase = mocks.firebase;
+
+    ({ maybeFireSubscriptionNotification } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+    setVisibility('hidden');
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([otherMsg.id]));
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    setVisibility('visible');
+  });
+
+  test('does not throw when Notification API is unavailable', () => {
+    addCard(otherMsg.id);
+    expect(() => maybeFireSubscriptionNotification(otherMsg, incomingReply)).not.toThrow();
+  });
+
+  test('fires notification for subscribed thread when all conditions are met', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('notification title is "{replierName} replied in a thread you\'re following"', () => {
+    mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(global.Notification.mock.calls[0][0]).toBe('Bob replied in a thread you\'re following');
+  });
+
+  test('notification body is the reply snippet', () => {
+    mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(global.Notification.mock.calls[0][1].body).toBe('Great thread!');
+  });
+
+  test('notification body is truncated to 80 chars with ellipsis when reply is long', () => {
+    mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    const longReply = { ...incomingReply, text: 'A'.repeat(100) };
+    maybeFireSubscriptionNotification(otherMsg, longReply);
+    const body = global.Notification.mock.calls[0][1].body;
+    expect(body).toBe('A'.repeat(80) + '…');
+  });
+
+  test('notification icon is /icon.png', () => {
+    mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(global.Notification.mock.calls[0][1].icon).toBe('/icon.png');
+  });
+
+  test('does NOT fire when message is not subscribed', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([]));
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does NOT fire when replier is the current user (self-reply)', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    const selfReply = { ...incomingReply, authorId: 'uid-me' };
+    maybeFireSubscriptionNotification(otherMsg, selfReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does NOT fire when tab is visible', () => {
+    const Ctor = mockNotificationCtor('granted');
+    setVisibility('visible');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does NOT fire when permission is "denied"', () => {
+    const Ctor = mockNotificationCtor('denied');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does NOT fire when permission is "default"', () => {
+    const Ctor = mockNotificationCtor('default');
+    addCard(otherMsg.id);
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('does NOT fire when message card is not in the DOM', () => {
+    const Ctor = mockNotificationCtor('granted');
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('clicking notification calls window.focus() and scrolls to parent message', () => {
+    const Ctor = mockNotificationCtor('granted');
+    const card = addCard(otherMsg.id);
+    card.scrollIntoView = jest.fn();
+    const focusSpy = jest.spyOn(window, 'focus').mockImplementation(() => {});
+
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+
+    const notifInstance = Ctor.instances[0];
+    const clickArgs = notifInstance.addEventListener.mock.calls.find(c => c[0] === 'click');
+    expect(clickArgs).toBeDefined();
+    clickArgs[1]();
+
+    expect(focusSpy).toHaveBeenCalled();
+    expect(card.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+
+    focusSpy.mockRestore();
+  });
+});
