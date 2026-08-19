@@ -334,6 +334,30 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.message-text').style.display).toBe('');
   });
 
+  // --- Edit window (5-minute gate) ---
+  test('hides edit button for own message posted more than 5 minutes ago', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const oldMsg = { ...baseMsg, timestamp: Date.now() - 6 * 60 * 1000 };
+    const card = createMessageCard(oldMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('shows edit button for own message posted within the last 5 minutes', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const recentMsg = { ...baseMsg, timestamp: Date.now() - 60 * 1000 };
+    const card = createMessageCard(recentMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).not.toBeNull();
+  });
+
+  test('(edited) label includes title tooltip with formatted edit time', () => {
+    const editedAt = Date.now();
+    const editedMsg = { ...baseMsg, editedAt };
+    const card = createMessageCard(editedMsg, null);
+    const label = card.querySelector('.edited-label');
+    expect(label).not.toBeNull();
+    expect(label.title).toContain('Last edited at');
+  });
+
   // --- Avatar feature ---
   test('renders <img class="message-avatar"> when photoURL is provided', () => {
     const msgWithPhoto = { ...baseMsg, photoURL: 'https://example.com/avatar.jpg' };
