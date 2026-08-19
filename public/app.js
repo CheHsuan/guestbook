@@ -1630,6 +1630,7 @@ auth.onAuthStateChanged(async (user) => {
 // ========================================
 let realtimeAddedListener = null;
 let realtimeRemovedListener = null;
+let realtimeChangedListener = null;
 let oldestMessageTimestamp = null;
 let newestMessageTimestamp = null;
 let isLoadingMore = false;
@@ -1637,6 +1638,7 @@ let hasMoreMessages = true;
 let totalMessagesListener = null;
 let expiryInterval = null;
 const INITIAL_LOAD_LIMIT = 20;
+const EDIT_WINDOW_MS = 5 * 60 * 1000; // 5-minute edit window
 
 // ========================================
 // Realtime Database: Listen for Messages
@@ -1814,10 +1816,39 @@ async function startListeningMessages() {
       }
     });
 
+    // 4. Listen for CHANGED messages (cross-tab edit sync)
+    realtimeChangedListener = db.ref('messages').on('child_changed', (childSnapshot) => {
+      const msgId = childSnapshot.key;
+      const updatedData = childSnapshot.val();
+      const card = document.getElementById(`msg-${msgId}`);
+      if (!card) return;
+
+      const textEl = card.querySelector('.message-text');
+      if (textEl && updatedData.text) {
+        renderMessageText(textEl, updatedData.text);
+      }
+
+      if (updatedData.editedAt) {
+        const timeEl = card.querySelector('.message-time');
+        if (timeEl && !timeEl.querySelector('.edited-label')) {
+          const editedLabel = document.createElement('span');
+          editedLabel.className = 'edited-label';
+          editedLabel.textContent = ' · edited';
+          editedLabel.title = `Last edited at ${formatTimestamp(updatedData.editedAt)}`;
+          const expiryEl = timeEl.querySelector('.expiry-label');
+          if (expiryEl) {
+            timeEl.insertBefore(editedLabel, expiryEl);
+          } else {
+            timeEl.appendChild(editedLabel);
+          }
+        }
+      }
+    });
+
     // Assign scroll listener
     window.addEventListener('scroll', handleScroll);
 
-    // 4. Listen for typing indicators
+    // 5. Listen for typing indicators
     if (!typingListener) {
       const typingDbRef = db.ref('typing');
       typingDbRef.on('child_added', (snap) => {
@@ -1931,6 +1962,10 @@ function stopListeningMessages() {
   if (realtimeRemovedListener) {
     db.ref('messages').off('child_removed', realtimeRemovedListener);
     realtimeRemovedListener = null;
+  }
+  if (realtimeChangedListener) {
+    db.ref('messages').off('child_changed', realtimeChangedListener);
+    realtimeChangedListener = null;
   }
   if (totalMessagesListener) {
     db.ref('messages').off('value', totalMessagesListener);
@@ -2496,6 +2531,7 @@ function createMessageCard(msg, user, isNew) {
     const editedLabel = document.createElement('span');
     editedLabel.className = 'edited-label';
     editedLabel.textContent = ' · edited';
+    editedLabel.title = `Last edited at ${formatTimestamp(msg.editedAt)}`;
     timeEl.appendChild(editedLabel);
   }
   timeEl.appendChild(createExpiryLabel(msg.timestamp));
@@ -2539,6 +2575,9 @@ function createMessageCard(msg, user, isNew) {
     const DELETE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
     card.classList.add('has-actions');
 
+    const elapsedMs = Date.now() - msg.timestamp;
+    const withinEditWindow = elapsedMs < EDIT_WINDOW_MS;
+
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
     editBtn.innerHTML = EDIT_ICON;
@@ -2567,123 +2606,141 @@ function createMessageCard(msg, user, isNew) {
       }
     });
 
-    editBtn.addEventListener('click', () => {
-      // Hide read-only text and action buttons
-      textEl.style.display = 'none';
-      editBtn.style.display = 'none';
-      deleteBtn.style.display = 'none';
+    if (withinEditWindow) {
+      editBtn.addEventListener('click', () => {
+        // Hide read-only text and action buttons
+        textEl.style.display = 'none';
+        editBtn.style.display = 'none';
+        deleteBtn.style.display = 'none';
 
-      // Build edit UI
-      const editWrapper = document.createElement('div');
-      editWrapper.className = 'edit-wrapper';
+        // Build edit UI
+        const editWrapper = document.createElement('div');
+        editWrapper.className = 'edit-wrapper';
 
-      const textarea = document.createElement('textarea');
-      textarea.className = 'edit-textarea';
-      textarea.value = msg.text;
-      textarea.maxLength = 250;
+        const textarea = document.createElement('textarea');
+        textarea.className = 'edit-textarea';
+        textarea.value = msg.text;
+        textarea.maxLength = 250;
+        textarea.rows = 3;
 
-      const editCounter = document.createElement('span');
-      editCounter.className = 'edit-char-counter';
-      updateEditCounter(editCounter, textarea.value.length);
-
-      textarea.addEventListener('input', () => {
+        const editCounter = document.createElement('span');
+        editCounter.className = 'edit-char-counter';
         updateEditCounter(editCounter, textarea.value.length);
-      });
 
-      const editError = document.createElement('p');
-      editError.className = 'edit-error-msg';
-      editError.style.display = 'none';
+        textarea.addEventListener('input', () => {
+          updateEditCounter(editCounter, textarea.value.length);
+        });
 
-      const editActions = document.createElement('div');
-      editActions.className = 'edit-actions';
-
-      const saveBtn = document.createElement('button');
-      saveBtn.className = 'btn btn-save';
-      saveBtn.textContent = 'Save';
-
-      const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'btn btn-cancel';
-      cancelBtn.textContent = 'Cancel';
-
-      const editHint = document.createElement('span');
-      editHint.className = 'submit-hint';
-      editHint.textContent = SUBMIT_HINT_TEXT;
-
-      editActions.appendChild(saveBtn);
-      editActions.appendChild(cancelBtn);
-
-      editWrapper.appendChild(createFormattingToolbar(textarea));
-      editWrapper.appendChild(textarea);
-      editWrapper.appendChild(editCounter);
-      editWrapper.appendChild(editError);
-      editWrapper.appendChild(editActions);
-      editWrapper.appendChild(editHint);
-      card.insertBefore(editWrapper, editBtn);
-
-      textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-          e.preventDefault();
-          saveBtn.click();
-        }
-      });
-
-      textarea.focus();
-
-      cancelBtn.addEventListener('click', () => {
-        editWrapper.remove();
-        textEl.style.display = '';
-        editBtn.style.display = '';
-        deleteBtn.style.display = '';
-      });
-
-      saveBtn.addEventListener('click', async () => {
-        const validation = validateMessage(textarea.value);
-        if (!validation.valid) {
-          editError.textContent = validation.error;
-          editError.style.display = 'block';
-          textarea.classList.add('input-error');
-          return;
-        }
+        const editError = document.createElement('p');
+        editError.className = 'edit-error-msg';
         editError.style.display = 'none';
-        textarea.classList.remove('input-error');
 
-        saveBtn.disabled = true;
-        cancelBtn.disabled = true;
+        const editActions = document.createElement('div');
+        editActions.className = 'edit-actions';
 
-        try {
-          await db.ref(`messages/${msg.id}`).update({
-            text: validation.text,
-            editedAt: firebase.database.ServerValue.TIMESTAMP,
-          });
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'btn btn-save';
+        saveBtn.textContent = 'Save';
 
-          // Update in-memory msg for re-edits
-          msg.text = validation.text;
-          msg.editedAt = Date.now();
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-cancel';
+        cancelBtn.textContent = 'Cancel';
 
-          // Update card to reflect saved text
-          renderMessageText(textEl, validation.text);
-          if (!timeEl.querySelector('.edited-label')) {
-            const editedLabel = document.createElement('span');
-            editedLabel.className = 'edited-label';
-            editedLabel.textContent = ' · edited';
-            timeEl.appendChild(editedLabel);
+        const editHint = document.createElement('span');
+        editHint.className = 'submit-hint';
+        editHint.textContent = SUBMIT_HINT_TEXT;
+
+        editActions.appendChild(saveBtn);
+        editActions.appendChild(cancelBtn);
+
+        editWrapper.appendChild(createFormattingToolbar(textarea));
+        editWrapper.appendChild(textarea);
+        editWrapper.appendChild(editCounter);
+        editWrapper.appendChild(editError);
+        editWrapper.appendChild(editActions);
+        editWrapper.appendChild(editHint);
+        card.insertBefore(editWrapper, editBtn.parentNode ? editBtn : deleteBtn);
+
+        textarea.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            saveBtn.click();
           }
+        });
 
+        textarea.focus();
+
+        cancelBtn.addEventListener('click', () => {
           editWrapper.remove();
           textEl.style.display = '';
-          editBtn.style.display = '';
+          if (editBtn.parentNode) editBtn.style.display = '';
           deleteBtn.style.display = '';
-        } catch (err) {
-          console.error('Failed to save edit:', err);
-          editError.textContent = 'Failed to save. Please try again.';
-          editError.style.display = 'block';
-          saveBtn.disabled = false;
-          cancelBtn.disabled = false;
-        }
-      });
-    });
+        });
 
-    card.appendChild(editBtn);
+        saveBtn.addEventListener('click', async () => {
+          const validation = validateMessage(textarea.value);
+          if (!validation.valid) {
+            editError.textContent = validation.error;
+            editError.style.display = 'block';
+            textarea.classList.add('input-error');
+            return;
+          }
+          editError.style.display = 'none';
+          textarea.classList.remove('input-error');
+
+          saveBtn.disabled = true;
+          cancelBtn.disabled = true;
+
+          try {
+            await db.ref(`messages/${msg.id}`).update({
+              text: validation.text,
+              editedAt: firebase.database.ServerValue.TIMESTAMP,
+            });
+
+            // Update in-memory msg for re-edits
+            msg.text = validation.text;
+            msg.editedAt = Date.now();
+
+            // Update card to reflect saved text
+            renderMessageText(textEl, validation.text);
+            if (!timeEl.querySelector('.edited-label')) {
+              const editedLabel = document.createElement('span');
+              editedLabel.className = 'edited-label';
+              editedLabel.textContent = ' · edited';
+              editedLabel.title = `Last edited at ${formatTimestamp(msg.editedAt)}`;
+              const expiryEl = timeEl.querySelector('.expiry-label');
+              if (expiryEl) {
+                timeEl.insertBefore(editedLabel, expiryEl);
+              } else {
+                timeEl.appendChild(editedLabel);
+              }
+            }
+
+            showToast('Message updated');
+
+            editWrapper.remove();
+            textEl.style.display = '';
+            if (editBtn.parentNode) editBtn.style.display = '';
+            deleteBtn.style.display = '';
+          } catch (err) {
+            console.error('Failed to save edit:', err);
+            editError.textContent = 'Failed to save. Please try again.';
+            editError.style.display = 'block';
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+          }
+        });
+      });
+
+      // Auto-remove edit button when the 5-minute edit window closes
+      const remainingMs = EDIT_WINDOW_MS - elapsedMs;
+      setTimeout(() => {
+        if (editBtn.parentNode) editBtn.remove();
+      }, remainingMs);
+
+      card.appendChild(editBtn);
+    }
+
     card.appendChild(deleteBtn);
   }
 
