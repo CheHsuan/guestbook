@@ -6883,13 +6883,13 @@ describe('poll — vote casting and already-voted guard', () => {
         ? { exists: () => true, val: () => 0 }
         : { exists: () => false, val: () => null },
     };
-    mocks.dbRef.once.mockResolvedValue(votesSnap);
+    mocks.dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'value') cb(votesSnap);
+      return 'listener-token';
+    });
 
     const card = createMessageCard({ ...pollMsg, id: 'vote-poll-4' }, user);
     document.body.appendChild(card);
-
-    await Promise.resolve();
-    await Promise.resolve();
 
     const btns = card.querySelectorAll('.poll-option-btn');
     btns.forEach(btn => expect(btn.disabled).toBe(true));

@@ -2638,16 +2638,15 @@ function createPollBody(msgId, options, user) {
   const votesRef = db.ref(`pollVotes/${msgId}`);
   let currentUserVoteIndex = null;
 
-  votesRef.once('value').then(snap => {
-    // Check if current user already voted
-    if (user && snap.exists() && snap.child(user.uid).exists()) {
-      currentUserVoteIndex = snap.child(user.uid).val();
-      lockAllOptions(currentUserVoteIndex);
-    }
-    renderVotes(snap, currentUserVoteIndex);
-  }).catch(() => {});
-
+  let initialSnapHandled = false;
   votesRef.on('value', snap => {
+    if (!initialSnapHandled) {
+      initialSnapHandled = true;
+      if (user && snap.exists() && snap.child(user.uid).exists()) {
+        currentUserVoteIndex = snap.child(user.uid).val();
+        lockAllOptions(currentUserVoteIndex);
+      }
+    }
     renderVotes(snap, currentUserVoteIndex);
   });
   pollVoteListenerMap.set(msgId, votesRef);
