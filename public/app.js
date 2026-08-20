@@ -3515,7 +3515,7 @@ function resetPollComposer() {
   addPollOption();
   addPollOption();
   if (pollQuestionInput) pollQuestionInput.value = '';
-  if (pollQuestionCounter) pollQuestionCounter.textContent = '0 / 120';
+  if (pollQuestionCounter) pollQuestionCounter.textContent = `0 / ${POLL_QUESTION_MAX_LEN}`;
 }
 
 function enablePollMode() {
@@ -3589,7 +3589,7 @@ if (pollQuestionInput) {
   pollQuestionInput.addEventListener('input', () => {
     const len = pollQuestionInput.value.length;
     if (pollQuestionCounter) {
-      pollQuestionCounter.textContent = `${len} / 120`;
+      pollQuestionCounter.textContent = `${len} / ${POLL_QUESTION_MAX_LEN}`;
       pollQuestionCounter.classList.remove('warning', 'danger');
       if (len >= 110) pollQuestionCounter.classList.add('danger');
       else if (len >= 90) pollQuestionCounter.classList.add('warning');
