@@ -66,6 +66,19 @@
         "photoURL": {
           ".validate": "newData.isString()"
         },
+        "type": {
+          ".validate": "newData.isString() && newData.val() === 'poll'"
+        },
+        "poll": {
+          "options": {
+            "$index": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
         "replies": {
           "$reply_id": {
             ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
@@ -89,6 +102,16 @@
         },
         "$other": {
           ".validate": false
+        }
+      }
+    },
+    "pollVotes": {
+      ".read": true,
+      "$message_id": {
+        ".write": "auth != null && !newData.exists() && root.child('messages').child($message_id).child('authorId').val() === auth.uid",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid && !data.exists()",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3"
         }
       }
     }

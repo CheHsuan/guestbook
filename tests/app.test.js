@@ -18,11 +18,20 @@ const APP_HTML = `
   <div id="login-prompt" style="display:flex"></div>
   <div id="post-section" style="display:none">
     <form id="post-form">
-      <input id="message-input" type="text" />
-      <span id="char-counter">0 / 250</span>
-      <span id="draft-label" class="draft-label" style="display:none;"></span>
+      <button type="button" id="poll-toggle-btn" aria-pressed="false"></button>
+      <div id="text-composer">
+        <input id="message-input" type="text" />
+        <span id="char-counter">0 / 250</span>
+        <span id="draft-label" class="draft-label" style="display:none;"></span>
+      </div>
+      <div id="poll-composer" style="display:none">
+        <input id="poll-question-input" type="text" maxlength="120" />
+        <span id="poll-question-counter" class="char-counter">0 / 120</span>
+        <div id="poll-options-container"></div>
+        <button type="button" id="poll-add-option-btn">+ Add option</button>
+      </div>
       <button id="submit-btn" type="submit">
-        <span class="btn-text" style="display:inline"></span>
+        <span class="btn-text" style="display:inline">Post Message</span>
         <span class="btn-loading" style="display:none"></span>
       </button>
       <span id="submit-hint" class="submit-hint"></span>
@@ -6528,5 +6537,454 @@ describe('thread follow — maybeFireSubscriptionNotification', () => {
     expect(card.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
 
     focusSpy.mockRestore();
+  });
+});
+
+// ============================================================
+// Poll feature
+// ============================================================
+describe('poll — createMessageCard renders poll card', () => {
+  let createMessageCard;
+
+  const pollMsg = {
+    id: 'poll1',
+    type: 'poll',
+    author: 'Alice',
+    text: 'What is your favorite color?',
+    poll: { options: { '0': 'Red', '1': 'Blue', '2': 'Green' } },
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('renders poll-card-badge with Poll text', () => {
+    const card = createMessageCard(pollMsg, null);
+    const badge = card.querySelector('.poll-card-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toContain('Poll');
+  });
+
+  test('renders .poll-body with one button per option', () => {
+    const card = createMessageCard(pollMsg, null);
+    const btns = card.querySelectorAll('.poll-option-btn');
+    expect(btns.length).toBe(3);
+  });
+
+  test('each poll option button shows correct label via textContent', () => {
+    const card = createMessageCard(pollMsg, null);
+    const labels = Array.from(card.querySelectorAll('.poll-option-label')).map(el => el.textContent);
+    expect(labels).toContain('Red');
+    expect(labels).toContain('Blue');
+    expect(labels).toContain('Green');
+  });
+
+  test('option label text is set via textContent so the DOM never parses it as HTML (XSS safe)', () => {
+    const xssPollMsg = {
+      ...pollMsg,
+      id: 'poll-xss',
+      poll: { options: { '0': '<b>bold</b>', '1': 'Safe' } },
+    };
+    const card = createMessageCard(xssPollMsg, null);
+    // The label element must not contain any child HTML elements (textContent only)
+    const labels = card.querySelectorAll('.poll-option-label');
+    expect(labels[0].children.length).toBe(0);
+    expect(labels[0].textContent).toBe('<b>bold</b>');
+    // No <b> element should appear inside the label
+    expect(labels[0].querySelector('b')).toBeNull();
+  });
+
+  test('does NOT render edit button for poll messages (no editing after votes)', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(pollMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('renders delete button for own poll message', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(pollMsg, ownUser);
+    expect(card.querySelector('.btn-delete')).not.toBeNull();
+  });
+
+  test('options are disabled for unauthenticated visitors', () => {
+    const card = createMessageCard(pollMsg, null);
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns.forEach(btn => expect(btn.disabled).toBe(true));
+  });
+
+  test('shows sign-in hint for unauthenticated visitors', () => {
+    const card = createMessageCard(pollMsg, null);
+    const hint = card.querySelector('.poll-signin-hint');
+    expect(hint).not.toBeNull();
+    expect(hint.textContent).toContain('Sign in');
+  });
+
+  test('options are enabled for authenticated users who have not voted', () => {
+    const card = createMessageCard({ ...pollMsg, id: 'poll-auth' }, { uid: 'uid-bob' });
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns.forEach(btn => expect(btn.disabled).toBe(false));
+  });
+
+  test('renders the question text in .message-text', () => {
+    const card = createMessageCard(pollMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent).toContain('What is your favorite color?');
+  });
+
+  test('does not render .poll-body for non-poll messages', () => {
+    const regularMsg = { id: 'msg-r1', author: 'Alice', text: 'Hello', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createMessageCard(regularMsg, null);
+    expect(card.querySelector('.poll-body')).toBeNull();
+  });
+});
+
+describe('poll — post form creates poll payload', () => {
+  let mocks;
+  let authStateCallback;
+
+  function loadUtils() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    loadUtils();
+    global.firebase = mocks.firebase;
+    require('../public/app.js');
+  });
+
+  function simulateSignIn(user) {
+    authStateCallback(user || { uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+  }
+
+  function activatePollMode() {
+    document.getElementById('poll-toggle-btn').click();
+  }
+
+  test('clicking poll toggle button shows poll-composer and hides text-composer', () => {
+    simulateSignIn();
+    activatePollMode();
+    expect(document.getElementById('poll-composer').style.display).not.toBe('none');
+    expect(document.getElementById('text-composer').style.display).toBe('none');
+  });
+
+  test('clicking poll toggle again restores text-composer', () => {
+    simulateSignIn();
+    activatePollMode();
+    document.getElementById('poll-toggle-btn').click();
+    expect(document.getElementById('text-composer').style.display).not.toBe('none');
+    expect(document.getElementById('poll-composer').style.display).toBe('none');
+  });
+
+  test('poll toggle sets aria-pressed="true" when active', () => {
+    simulateSignIn();
+    activatePollMode();
+    expect(document.getElementById('poll-toggle-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('poll submit shows error when question is empty', async () => {
+    simulateSignIn();
+    activatePollMode();
+    const optInputs = document.querySelectorAll('.poll-option-input');
+    if (optInputs[0]) optInputs[0].value = 'Option A';
+    if (optInputs[1]) optInputs[1].value = 'Option B';
+
+    document.getElementById('post-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+
+    expect(document.getElementById('empty-error-msg').style.display).toBe('block');
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  test('poll submit shows error when fewer than 2 options filled', async () => {
+    simulateSignIn();
+    activatePollMode();
+    document.getElementById('poll-question-input').value = 'Best language?';
+
+    document.getElementById('post-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+
+    expect(document.getElementById('empty-error-msg').style.display).toBe('block');
+    expect(mocks.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  test('valid poll submits correct Firebase payload', async () => {
+    simulateSignIn({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
+    activatePollMode();
+    document.getElementById('poll-question-input').value = 'Favorite language?';
+    const optInputs = document.querySelectorAll('.poll-option-input');
+    if (optInputs[0]) optInputs[0].value = 'Python';
+    if (optInputs[1]) optInputs[1].value = 'JavaScript';
+
+    document.getElementById('post-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledTimes(1);
+    const updateArg = mocks.dbRef.update.mock.calls[0][0];
+    const msgEntry = Object.values(updateArg).find(v => v && v.type === 'poll');
+    expect(msgEntry).toBeDefined();
+    expect(msgEntry.type).toBe('poll');
+    expect(msgEntry.text).toBe('Favorite language?');
+    expect(msgEntry.poll).toBeDefined();
+    expect(Object.values(msgEntry.poll.options)).toContain('Python');
+    expect(Object.values(msgEntry.poll.options)).toContain('JavaScript');
+  });
+
+  test('successful poll submit switches back to text mode', async () => {
+    simulateSignIn();
+    activatePollMode();
+    document.getElementById('poll-question-input').value = 'Best city?';
+    const optInputs = document.querySelectorAll('.poll-option-input');
+    if (optInputs[0]) optInputs[0].value = 'NYC';
+    if (optInputs[1]) optInputs[1].value = 'London';
+
+    document.getElementById('post-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.getElementById('text-composer').style.display).not.toBe('none');
+    expect(document.getElementById('poll-composer').style.display).toBe('none');
+  });
+});
+
+describe('poll — vote casting and already-voted guard', () => {
+  let createMessageCard;
+  let mocks;
+
+  const pollMsg = {
+    id: 'vote-poll-1',
+    type: 'poll',
+    author: 'Alice',
+    text: 'Pick one',
+    poll: { options: { '0': 'Yes', '1': 'No' } },
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.dbRef.set = jest.fn().mockResolvedValue(undefined);
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.firebase = mocks.firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('clicking a poll option calls db.ref().set() with the option index', async () => {
+    const user = { uid: 'uid-voter', displayName: 'Voter' };
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn() });
+
+    const card = createMessageCard({ ...pollMsg }, user);
+    document.body.appendChild(card);
+
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns[0].click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const setCalls = mocks.dbRef.set ? mocks.dbRef.set.mock.calls : [];
+    expect(setCalls.some(call => call[0] === 0)).toBe(true);
+
+    document.body.removeChild(card);
+  });
+
+  test('clicking a poll option disables all option buttons (already-voted guard)', async () => {
+    const user = { uid: 'uid-voter2', displayName: 'Voter2' };
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn() });
+
+    const card = createMessageCard({ ...pollMsg, id: 'vote-poll-2' }, user);
+    document.body.appendChild(card);
+
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns[1].click();
+
+    btns.forEach(btn => expect(btn.disabled).toBe(true));
+
+    document.body.removeChild(card);
+  });
+
+  test('voted option gets poll-option-btn--voted class', async () => {
+    const user = { uid: 'uid-voter3', displayName: 'Voter3' };
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn() });
+
+    const card = createMessageCard({ ...pollMsg, id: 'vote-poll-3' }, user);
+    document.body.appendChild(card);
+
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns[0].click();
+
+    expect(btns[0].classList.contains('poll-option-btn--voted')).toBe(true);
+
+    document.body.removeChild(card);
+  });
+
+  test('options are disabled from start when user already voted (pre-existing vote)', async () => {
+    const user = { uid: 'uid-prev-voter', displayName: 'PrevVoter' };
+
+    const votesSnap = {
+      exists: () => true,
+      forEach: jest.fn(),
+      child: (uid) => uid === user.uid
+        ? { exists: () => true, val: () => 0 }
+        : { exists: () => false, val: () => null },
+    };
+    mocks.dbRef.once.mockResolvedValue(votesSnap);
+
+    const card = createMessageCard({ ...pollMsg, id: 'vote-poll-4' }, user);
+    document.body.appendChild(card);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const btns = card.querySelectorAll('.poll-option-btn');
+    btns.forEach(btn => expect(btn.disabled).toBe(true));
+
+    document.body.removeChild(card);
+  });
+});
+
+describe('poll — validatePoll', () => {
+  let validatePoll;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ validatePoll } = require('../public/app.js'));
+  });
+
+  function setQuestion(val) {
+    const q = document.getElementById('poll-question-input');
+    if (q) q.value = val;
+  }
+
+  function setOptions(values) {
+    const container = document.getElementById('poll-options-container');
+    if (!container) return;
+    container.innerHTML = '';
+    values.forEach(v => {
+      const row = document.createElement('div');
+      row.className = 'poll-option-row';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'poll-option-input';
+      input.value = v;
+      row.appendChild(input);
+      container.appendChild(row);
+    });
+  }
+
+  test('returns null when question is empty', () => {
+    setQuestion('');
+    setOptions(['Yes', 'No']);
+    expect(validatePoll()).toBeNull();
+  });
+
+  test('returns null when fewer than 2 options are filled', () => {
+    setQuestion('A question?');
+    setOptions(['Only one', '']);
+    expect(validatePoll()).toBeNull();
+  });
+
+  test('returns question and options when valid', () => {
+    setQuestion('Best fruit?');
+    setOptions(['Apple', 'Banana']);
+    const result = validatePoll();
+    expect(result).not.toBeNull();
+    expect(result.question).toBe('Best fruit?');
+    expect(result.options).toContain('Apple');
+    expect(result.options).toContain('Banana');
+  });
+
+  test('returns null when question exceeds 120 chars', () => {
+    setQuestion('Q'.repeat(121));
+    setOptions(['A', 'B']);
+    expect(validatePoll()).toBeNull();
+  });
+
+  test('returns null when an option exceeds 60 chars', () => {
+    setQuestion('Short question?');
+    setOptions(['A'.repeat(61), 'B']);
+    expect(validatePoll()).toBeNull();
+  });
+
+  test('filters out blank options when at least 2 are filled', () => {
+    setQuestion('Choose?');
+    setOptions(['Alpha', 'Beta', '']);
+    const result = validatePoll();
+    expect(result).not.toBeNull();
+    expect(result.options.length).toBe(2);
+    expect(result.options).not.toContain('');
   });
 });

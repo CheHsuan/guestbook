@@ -228,3 +228,79 @@ describe('messages: author field accepts stored alias', () => {
     await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
   });
 });
+
+// ============================================================
+// pollVotes — vote write rules
+// ============================================================
+describe('pollVotes: voting rules', () => {
+  async function seedPollMessage(msgId, authorId) {
+    await seedMessage(`messages/${msgId}`, {
+      text: 'Pick one',
+      author: 'Test User',
+      authorId,
+      timestamp: Date.now(),
+      type: 'poll',
+      poll: { options: { '0': 'Yes', '1': 'No' } },
+    });
+  }
+
+  test('authenticated user can cast their own vote', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertSucceeds(set(ref(aliceDb(), 'pollVotes/poll1/uid-alice'), 0));
+  });
+
+  test('unauthenticated user cannot vote', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertFails(set(ref(anonDb(), 'pollVotes/poll1/some-uid'), 0));
+  });
+
+  test('user cannot vote as another user (uid mismatch)', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertFails(set(ref(aliceDb(), 'pollVotes/poll1/uid-bob'), 0));
+  });
+
+  test('user cannot change their vote (no-overwrite rule)', async () => {
+    await seedMessage('pollVotes/poll1/uid-alice', 0);
+    await assertFails(set(ref(aliceDb(), 'pollVotes/poll1/uid-alice'), 1));
+  });
+
+  test('vote value must be a number (rejects string)', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertFails(set(ref(aliceDb(), 'pollVotes/poll1/uid-alice'), 'yes'));
+  });
+
+  test('vote value must be 0–3 (rejects value 4)', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertFails(set(ref(aliceDb(), 'pollVotes/poll1/uid-alice'), 4));
+  });
+
+  test('vote value must be 0–3 (rejects negative value)', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await assertFails(set(ref(aliceDb(), 'pollVotes/poll1/uid-alice'), -1));
+  });
+
+  test('poll author can delete all votes for their poll', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await seedMessage('pollVotes/poll1/uid-bob', 0);
+    await assertSucceeds(remove(ref(aliceDb(), 'pollVotes/poll1')));
+  });
+
+  test('non-author cannot delete poll votes', async () => {
+    await seedPollMessage('poll1', 'uid-alice');
+    await seedMessage('pollVotes/poll1/uid-alice', 0);
+    await assertFails(remove(ref(bobDb(), 'pollVotes/poll1')));
+  });
+});
+
+// ============================================================
+// pollVotes — read access
+// ============================================================
+describe('pollVotes: read access', () => {
+  test('unauthenticated users can read poll votes', async () => {
+    await assertSucceeds(get(ref(anonDb(), 'pollVotes')));
+  });
+
+  test('authenticated users can read poll votes', async () => {
+    await assertSucceeds(get(ref(aliceDb(), 'pollVotes')));
+  });
+});
