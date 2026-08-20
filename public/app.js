@@ -105,6 +105,13 @@ const searchResultsCount = document.getElementById('search-results-count');
 const newMessagesBanner = document.getElementById('new-messages-banner');
 const myPostsBtn = document.getElementById('my-posts-btn');
 const myPostsCount = document.getElementById('my-posts-count');
+const pollToggleBtn = document.getElementById('poll-toggle-btn');
+const textComposer = document.getElementById('text-composer');
+const pollComposer = document.getElementById('poll-composer');
+const pollQuestionInput = document.getElementById('poll-question-input');
+const pollQuestionCounter = document.getElementById('poll-question-counter');
+const pollOptionsContainer = document.getElementById('poll-options-container');
+const pollAddOptionBtn = document.getElementById('poll-add-option-btn');
 
 // ========================================
 // State
@@ -112,12 +119,14 @@ const myPostsCount = document.getElementById('my-posts-count');
 let currentUser = null;
 let userAlias = null;
 let myPostsActive = false;
+let pollMode = false;
 let userBio = null;
 let userWebsite = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+const pollVoteListenerMap = new Map(); // msgId -> db ref (for cleanup)
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
@@ -1799,6 +1808,11 @@ async function startListeningMessages() {
           replyListenerMap.delete(msgId);
         }
         replyCountMap.delete(msgId);
+        const pollRef = pollVoteListenerMap.get(msgId);
+        if (pollRef) {
+          pollRef.off();
+          pollVoteListenerMap.delete(msgId);
+        }
         cardToRemove.remove();
 
         // Hide empty state if there are elements besides loading/empty states
@@ -1980,6 +1994,9 @@ function stopListeningMessages() {
   replyListenerMap.forEach(ref => ref.off());
   replyListenerMap.clear();
   replyCountMap.clear();
+
+  pollVoteListenerMap.forEach(ref => ref.off());
+  pollVoteListenerMap.clear();
 
   window.removeEventListener('scroll', handleScroll);
 
@@ -2503,6 +2520,162 @@ function createAvatarElement(photoURL, author) {
 }
 
 // ========================================
+// Poll Body (feed card)
+// ========================================
+function createPollBody(msgId, options, user) {
+  const pollBody = document.createElement('div');
+  pollBody.className = 'poll-body';
+  pollBody.dataset.msgId = msgId;
+
+  const optionBtns = [];
+  options.forEach((optionText, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'poll-option-btn';
+    btn.dataset.index = String(idx);
+    btn.setAttribute('aria-label', optionText);
+
+    const barBg = document.createElement('div');
+    barBg.className = 'poll-bar-bg';
+    const barFill = document.createElement('div');
+    barFill.className = 'poll-bar-fill';
+    barFill.style.width = '0%';
+    barBg.appendChild(barFill);
+
+    const inner = document.createElement('div');
+    inner.className = 'poll-option-inner';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'poll-option-label';
+    labelEl.textContent = optionText; // textContent — XSS safe
+
+    const pctEl = document.createElement('span');
+    pctEl.className = 'poll-option-pct';
+    pctEl.style.display = 'none';
+
+    const checkEl = document.createElement('span');
+    checkEl.className = 'poll-option-voted-mark';
+    checkEl.textContent = '✓';
+    checkEl.style.display = 'none';
+
+    inner.appendChild(labelEl);
+    inner.appendChild(checkEl);
+    inner.appendChild(pctEl);
+
+    btn.appendChild(barBg);
+    btn.appendChild(inner);
+    pollBody.appendChild(btn);
+    optionBtns.push({ btn, barFill, pctEl, checkEl });
+  });
+
+  const metaEl = document.createElement('div');
+  metaEl.className = 'poll-meta';
+  metaEl.textContent = 'Be the first to vote!';
+  pollBody.appendChild(metaEl);
+
+  if (!user) {
+    optionBtns.forEach(({ btn }) => {
+      btn.disabled = true;
+      btn.title = 'Sign in to vote';
+    });
+    const hintEl = document.createElement('p');
+    hintEl.className = 'poll-signin-hint';
+    hintEl.textContent = 'Sign in to vote';
+    pollBody.appendChild(hintEl);
+  }
+
+  function renderVotes(votesSnap, userVoteIndex) {
+    const counts = new Array(options.length).fill(0);
+    let total = 0;
+    if (votesSnap && votesSnap.exists()) {
+      votesSnap.forEach(child => {
+        const idx = child.val();
+        if (typeof idx === 'number' && idx >= 0 && idx < options.length) {
+          counts[idx]++;
+          total++;
+        }
+      });
+    }
+
+    if (total === 0) {
+      metaEl.textContent = 'Be the first to vote!';
+      optionBtns.forEach(({ btn, barFill, pctEl, checkEl }) => {
+        barFill.style.width = '0%';
+        pctEl.style.display = 'none';
+        checkEl.style.display = 'none';
+      });
+      return;
+    }
+
+    const voteLabel = total === 1 ? '1 vote' : `${total} votes`;
+    metaEl.textContent = voteLabel;
+
+    optionBtns.forEach(({ btn, barFill, pctEl, checkEl }, idx) => {
+      const pct = total > 0 ? Math.round((counts[idx] / total) * 100) : 0;
+      barFill.style.width = `${pct}%`;
+      pctEl.textContent = `${pct}%`;
+      pctEl.style.display = '';
+      if (userVoteIndex === idx) {
+        checkEl.style.display = '';
+        btn.classList.add('poll-option-btn--voted');
+      } else {
+        checkEl.style.display = 'none';
+        btn.classList.remove('poll-option-btn--voted');
+      }
+    });
+  }
+
+  function lockAllOptions(votedIndex) {
+    optionBtns.forEach(({ btn }, idx) => {
+      btn.disabled = true;
+      if (idx === votedIndex) {
+        btn.classList.add('poll-option-btn--voted');
+      }
+    });
+  }
+
+  // Set up real-time vote listener
+  const votesRef = db.ref(`pollVotes/${msgId}`);
+  let currentUserVoteIndex = null;
+
+  let initialSnapHandled = false;
+  votesRef.on('value', snap => {
+    if (!initialSnapHandled) {
+      initialSnapHandled = true;
+      if (user && snap.exists() && snap.child(user.uid).exists()) {
+        currentUserVoteIndex = snap.child(user.uid).val();
+        lockAllOptions(currentUserVoteIndex);
+      }
+    }
+    renderVotes(snap, currentUserVoteIndex);
+  });
+  pollVoteListenerMap.set(msgId, votesRef);
+
+  // Wire up vote click handlers for signed-in users
+  if (user) {
+    optionBtns.forEach(({ btn }, idx) => {
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        lockAllOptions(idx);
+        currentUserVoteIndex = idx;
+
+        try {
+          await db.ref(`pollVotes/${msgId}/${user.uid}`).set(idx);
+        } catch (err) {
+          console.error('Failed to cast vote:', err);
+          // Restore buttons on failure
+          optionBtns.forEach(({ btn: b }) => { b.disabled = false; });
+          btn.classList.remove('poll-option-btn--voted');
+          currentUserVoteIndex = null;
+        }
+      });
+    });
+  }
+
+  return pollBody;
+}
+
+// ========================================
 // Create Message Card Element
 // ========================================
 function createMessageCard(msg, user, isNew) {
@@ -2561,12 +2734,26 @@ function createMessageCard(msg, user, isNew) {
   header.appendChild(authorEl);
   header.appendChild(timeEl);
 
+  if (msg.type === 'poll') {
+    const pollBadge = document.createElement('span');
+    pollBadge.className = 'poll-card-badge';
+    pollBadge.textContent = '📊 Poll';
+    header.appendChild(pollBadge);
+  }
+
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
   renderMessageText(textEl, msg.text);
 
   card.appendChild(header);
   card.appendChild(textEl);
+
+  // Render poll body for poll messages
+  if (msg.type === 'poll' && msg.poll && msg.poll.options) {
+    const options = Object.values(msg.poll.options);
+    const pollBody = createPollBody(msg.id, options, user);
+    card.appendChild(pollBody);
+  }
 
   // Show edit + delete buttons only for own messages
   if (user && msg.authorId === user.uid) {
@@ -2576,7 +2763,8 @@ function createMessageCard(msg, user, isNew) {
     card.classList.add('has-actions');
 
     const elapsedMs = Date.now() - msg.timestamp;
-    const withinEditWindow = elapsedMs < EDIT_WINDOW_MS;
+    // Polls cannot be edited (changing options after votes would be misleading)
+    const withinEditWindow = msg.type !== 'poll' && elapsedMs < EDIT_WINDOW_MS;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -2598,6 +2786,9 @@ function createMessageCard(msg, user, isNew) {
       try {
         if (count > 0) {
           await db.ref(`messages/${msg.id}/replies`).remove();
+        }
+        if (msg.type === 'poll') {
+          await db.ref(`pollVotes/${msg.id}`).remove();
         }
         await db.ref(`messages/${msg.id}`).remove();
       } catch (err) {
@@ -3262,6 +3453,159 @@ function attachMentionAutocomplete(textarea, relativeParent) {
   });
 })();
 
+// ========================================
+// Poll Composer
+// ========================================
+const POLL_MAX_OPTIONS = 4;
+const POLL_MIN_OPTIONS = 2;
+const POLL_OPTION_MAX_LEN = 60;
+const POLL_QUESTION_MAX_LEN = 120;
+
+function getPollOptionInputs() {
+  if (!pollOptionsContainer) return [];
+  return Array.from(pollOptionsContainer.querySelectorAll('.poll-option-input'));
+}
+
+function updatePollOptionRemoveBtns() {
+  if (!pollOptionsContainer) return;
+  const rows = pollOptionsContainer.querySelectorAll('.poll-option-row');
+  rows.forEach(row => {
+    const removeBtn = row.querySelector('.poll-option-remove-btn');
+    if (removeBtn) removeBtn.style.visibility = rows.length > POLL_MIN_OPTIONS ? '' : 'hidden';
+  });
+}
+
+function addPollOption(value) {
+  if (!pollOptionsContainer || !pollAddOptionBtn) return;
+  const inputs = getPollOptionInputs();
+  if (inputs.length >= POLL_MAX_OPTIONS) return;
+
+  const index = inputs.length;
+  const row = document.createElement('div');
+  row.className = 'poll-option-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'poll-option-input';
+  input.placeholder = `Option ${index + 1}`;
+  input.maxLength = POLL_OPTION_MAX_LEN;
+  if (value !== undefined) input.value = value;
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'poll-option-remove-btn';
+  removeBtn.setAttribute('aria-label', 'Remove option');
+  removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    updatePollOptionRemoveBtns();
+    pollAddOptionBtn.disabled = getPollOptionInputs().length >= POLL_MAX_OPTIONS;
+  });
+
+  row.appendChild(input);
+  row.appendChild(removeBtn);
+  pollOptionsContainer.appendChild(row);
+  updatePollOptionRemoveBtns();
+  pollAddOptionBtn.disabled = getPollOptionInputs().length >= POLL_MAX_OPTIONS;
+}
+
+function resetPollComposer() {
+  if (!pollOptionsContainer) return;
+  pollOptionsContainer.innerHTML = '';
+  addPollOption();
+  addPollOption();
+  if (pollQuestionInput) pollQuestionInput.value = '';
+  if (pollQuestionCounter) pollQuestionCounter.textContent = `0 / ${POLL_QUESTION_MAX_LEN}`;
+}
+
+function enablePollMode() {
+  pollMode = true;
+  if (textComposer) textComposer.style.display = 'none';
+  if (pollComposer) pollComposer.style.display = '';
+  if (pollToggleBtn) pollToggleBtn.setAttribute('aria-pressed', 'true');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Poll';
+  resetPollComposer();
+  if (pollQuestionInput) pollQuestionInput.focus();
+}
+
+function disablePollMode() {
+  pollMode = false;
+  if (textComposer) textComposer.style.display = '';
+  if (pollComposer) pollComposer.style.display = 'none';
+  if (pollToggleBtn) pollToggleBtn.setAttribute('aria-pressed', 'false');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Message';
+}
+
+function validatePoll() {
+  const emptyErrorMsg = document.getElementById('empty-error-msg');
+  const question = pollQuestionInput ? pollQuestionInput.value.trim() : '';
+  if (!question) {
+    if (pollQuestionInput) pollQuestionInput.classList.add('input-error');
+    if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Please enter a poll question.'; emptyErrorMsg.style.display = 'block'; }
+    return null;
+  }
+  if (question.length > POLL_QUESTION_MAX_LEN) {
+    if (pollQuestionInput) pollQuestionInput.classList.add('input-error');
+    if (emptyErrorMsg) { emptyErrorMsg.textContent = `Question must be ${POLL_QUESTION_MAX_LEN} characters or fewer.`; emptyErrorMsg.style.display = 'block'; }
+    return null;
+  }
+
+  const inputs = getPollOptionInputs();
+  const options = inputs.map(i => i.value.trim()).filter(v => v.length > 0);
+  const filledInputs = inputs.filter(i => i.value.trim().length > 0);
+
+  if (filledInputs.length < POLL_MIN_OPTIONS) {
+    if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Add at least 2 options.'; emptyErrorMsg.style.display = 'block'; }
+    inputs.forEach(i => { if (!i.value.trim()) i.classList.add('input-error'); });
+    return null;
+  }
+
+  const tooLong = inputs.find(i => i.value.trim().length > POLL_OPTION_MAX_LEN);
+  if (tooLong) {
+    tooLong.classList.add('input-error');
+    if (emptyErrorMsg) { emptyErrorMsg.textContent = `Each option must be ${POLL_OPTION_MAX_LEN} characters or fewer.`; emptyErrorMsg.style.display = 'block'; }
+    return null;
+  }
+
+  if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
+  inputs.forEach(i => i.classList.remove('input-error'));
+  if (pollQuestionInput) pollQuestionInput.classList.remove('input-error');
+  return { question, options };
+}
+
+if (pollToggleBtn) {
+  pollToggleBtn.addEventListener('click', () => {
+    if (pollMode) {
+      disablePollMode();
+    } else {
+      enablePollMode();
+    }
+  });
+}
+
+if (pollQuestionInput) {
+  pollQuestionInput.addEventListener('input', () => {
+    const len = pollQuestionInput.value.length;
+    if (pollQuestionCounter) {
+      pollQuestionCounter.textContent = `${len} / ${POLL_QUESTION_MAX_LEN}`;
+      pollQuestionCounter.classList.remove('warning', 'danger');
+      if (len >= 110) pollQuestionCounter.classList.add('danger');
+      else if (len >= 90) pollQuestionCounter.classList.add('warning');
+    }
+    if (len > 0) pollQuestionInput.classList.remove('input-error');
+  });
+}
+
+if (pollAddOptionBtn) {
+  pollAddOptionBtn.addEventListener('click', () => {
+    addPollOption();
+    const inputs = getPollOptionInputs();
+    if (inputs.length > 0) inputs[inputs.length - 1].focus();
+  });
+}
+
 // Wire up typing indicator listeners
 setupTypingInputListeners();
 
@@ -3457,16 +3801,62 @@ postForm.addEventListener('submit', async (e) => {
 
   if (!currentUser) return;
 
-  // Use shared validation from utils.js
-  const validation = validateMessage(messageInput.value);
   const emptyErrorMsg = document.getElementById('empty-error-msg');
+
+  // ---- Poll submission path ----
+  if (pollMode) {
+    const pollData = validatePoll();
+    if (!pollData) return;
+
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.btn-text').style.display = 'none';
+    submitBtn.querySelector('.btn-loading').style.display = 'inline';
+    rateLimitMsg.style.display = 'none';
+
+    try {
+      const newMessageKey = db.ref('messages').push().key;
+      const optionsObj = {};
+      pollData.options.forEach((opt, idx) => { optionsObj[String(idx)] = opt; });
+
+      const updates = {};
+      updates[`/messages/${newMessageKey}`] = {
+        type: 'poll',
+        text: pollData.question,
+        poll: { options: optionsObj },
+        author: userAlias || currentUser.displayName || 'Anonymous',
+        authorId: currentUser.uid,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        photoURL: currentUser.photoURL || '',
+      };
+      updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+
+      await db.ref().update(updates);
+
+      disablePollMode();
+      resetPollComposer();
+
+    } catch (error) {
+      console.error('Poll post error:', error);
+      if (error.code === 'PERMISSION_DENIED') {
+        rateLimitMsg.style.display = 'block';
+        setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.querySelector('.btn-text').style.display = 'inline';
+      submitBtn.querySelector('.btn-loading').style.display = 'none';
+    }
+    return;
+  }
+
+  // ---- Normal text submission path ----
+  const validation = validateMessage(messageInput.value);
   if (!validation.valid) {
     messageInput.classList.add('input-error');
     emptyErrorMsg.style.display = 'block';
     emptyErrorMsg.textContent = validation.error;
     return;
   }
-  // Clear error state
   messageInput.classList.remove('input-error');
   emptyErrorMsg.style.display = 'none';
   const text = validation.text;
@@ -3529,5 +3919,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs };
 }

@@ -101,10 +101,19 @@
         <div class="post-card glass-card">
           <h2 class="section-title">Leave a Message</h2>
           <form id="post-form">
-            <div class="textarea-wrapper">
+            <div class="poll-toggle-row">
+              <button type="button" id="poll-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Switch to poll mode">&#x1F4CA; Poll</button>
+            </div>
+            <div id="text-composer" class="textarea-wrapper">
               <textarea id="message-input" placeholder="Write something nice..." maxlength="250" rows="3"></textarea>
               <span id="char-counter" class="char-counter">0 / 250</span>
               <span id="draft-label" class="draft-label" style="display:none;"></span>
+            </div>
+            <div id="poll-composer" class="poll-composer" style="display:none;">
+              <input id="poll-question-input" class="poll-question-input" type="text" placeholder="Ask a question&#x2026;" maxlength="120" autocomplete="off">
+              <span id="poll-question-counter" class="char-counter poll-question-counter">0 / 120</span>
+              <div id="poll-options-container" class="poll-options-container"></div>
+              <button type="button" id="poll-add-option-btn" class="poll-add-option-btn">+ Add option</button>
             </div>
             <p id="empty-error-msg" class="empty-error-msg" style="display: none;">Please write a message before
               posting.</p>
