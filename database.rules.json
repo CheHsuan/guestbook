@@ -71,8 +71,9 @@
         },
         "poll": {
           "options": {
+            ".validate": "newData.hasChildren(['0', '1'])",
             "$index": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+              ".validate": "($index === '0' || $index === '1' || $index === '2' || $index === '3') && newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
             }
           },
           "$other": {
@@ -111,7 +112,7 @@
         ".write": "auth != null && !newData.exists() && root.child('messages').child($message_id).child('authorId').val() === auth.uid",
         "$uid": {
           ".write": "auth != null && auth.uid === $uid && !data.exists()",
-          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3"
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && ((newData.val() === 0 && root.child('messages').child($message_id).child('poll/options/0').exists()) || (newData.val() === 1 && root.child('messages').child($message_id).child('poll/options/1').exists()) || (newData.val() === 2 && root.child('messages').child($message_id).child('poll/options/2').exists()) || (newData.val() === 3 && root.child('messages').child($message_id).child('poll/options/3').exists()))"
         }
       }
     }
