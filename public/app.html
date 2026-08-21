@@ -103,6 +103,7 @@
           <form id="post-form">
             <div class="poll-toggle-row">
               <button type="button" id="poll-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Switch to poll mode">&#x1F4CA; Poll</button>
+              <button type="button" id="gif-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Post a GIF">GIF</button>
             </div>
             <div id="text-composer" class="textarea-wrapper">
               <textarea id="message-input" placeholder="Write something nice..." maxlength="250" rows="3"></textarea>
@@ -114,6 +115,10 @@
               <span id="poll-question-counter" class="char-counter poll-question-counter">0 / 120</span>
               <div id="poll-options-container" class="poll-options-container"></div>
               <button type="button" id="poll-add-option-btn" class="poll-add-option-btn">+ Add option</button>
+            </div>
+            <div id="gif-composer" class="gif-composer" style="display:none;">
+              <div id="gif-preview-wrap" class="gif-preview-wrap"></div>
+              <button type="button" id="gif-change-btn" class="gif-change-btn" style="display:none;">Change GIF</button>
             </div>
             <p id="empty-error-msg" class="empty-error-msg" style="display: none;">Please write a message before
               posting.</p>
@@ -237,6 +242,20 @@
     <span>·</span>
     <a href="/terms">Terms of Service</a>
   </footer>
+
+  <!-- GIF Picker Modal -->
+  <div id="gif-picker-backdrop" class="gif-picker-backdrop" style="display:none;" aria-hidden="true"></div>
+  <div id="gif-picker" class="gif-picker" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="gif-picker-title">
+    <div class="gif-picker-header">
+      <span id="gif-picker-title" class="gif-picker-title">Choose a GIF</span>
+      <button id="gif-picker-close" class="gif-picker-close" aria-label="Close GIF picker">&#x2715;</button>
+    </div>
+    <div class="gif-search-row">
+      <input id="gif-search-input" class="gif-search-input" type="text" placeholder="Search GIFs..." autocomplete="off" aria-label="Search GIFs">
+    </div>
+    <div id="gif-grid" class="gif-grid"></div>
+    <p id="gif-search-error" class="gif-search-error" style="display:none;"></p>
+  </div>
 
   <!-- Firebase SDKs (compat for simplicity with free CDN) — keep version in sync with "firebase" in package.json -->
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>

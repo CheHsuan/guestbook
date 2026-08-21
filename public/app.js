@@ -112,6 +112,15 @@ const pollQuestionInput = document.getElementById('poll-question-input');
 const pollQuestionCounter = document.getElementById('poll-question-counter');
 const pollOptionsContainer = document.getElementById('poll-options-container');
 const pollAddOptionBtn = document.getElementById('poll-add-option-btn');
+const gifToggleBtn = document.getElementById('gif-toggle-btn');
+const gifComposer = document.getElementById('gif-composer');
+const gifPreviewWrap = document.getElementById('gif-preview-wrap');
+const gifChangeBtn = document.getElementById('gif-change-btn');
+const gifPickerBackdrop = document.getElementById('gif-picker-backdrop');
+const gifPickerEl = document.getElementById('gif-picker');
+const gifSearchInput = document.getElementById('gif-search-input');
+const gifGrid = document.getElementById('gif-grid');
+const gifSearchError = document.getElementById('gif-search-error');
 
 // ========================================
 // State
@@ -120,6 +129,9 @@ let currentUser = null;
 let userAlias = null;
 let myPostsActive = false;
 let pollMode = false;
+let gifMode = false;
+let selectedGif = null; // { gifUrl, gifPreviewUrl, gifAlt }
+let gifSearchDebounceTimer = null;
 let userBio = null;
 let userWebsite = null;
 let messagesListener = null;
@@ -2741,12 +2753,35 @@ function createMessageCard(msg, user, isNew) {
     header.appendChild(pollBadge);
   }
 
+  if (msg.type === 'gif') {
+    const gifBadge = document.createElement('span');
+    gifBadge.className = 'gif-card-badge';
+    gifBadge.textContent = 'GIF';
+    header.appendChild(gifBadge);
+  }
+
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  renderMessageText(textEl, msg.text);
+  if (msg.type !== 'gif') {
+    renderMessageText(textEl, msg.text);
+  }
 
   card.appendChild(header);
   card.appendChild(textEl);
+
+  // Render GIF image for gif messages
+  if (msg.type === 'gif' && msg.gifUrl && isGifUrlAllowed(msg.gifUrl)) {
+    const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
+    const gifImg = document.createElement('img');
+    gifImg.className = 'gif-message-img';
+    const usePreview = prefersReducedMotion && msg.gifPreviewUrl && isGifUrlAllowed(msg.gifPreviewUrl);
+    gifImg.src = usePreview ? msg.gifPreviewUrl : msg.gifUrl;
+    gifImg.alt = msg.gifAlt || 'GIF';
+    gifImg.setAttribute('loading', 'lazy');
+    card.appendChild(gifImg);
+  }
 
   // Render poll body for poll messages
   if (msg.type === 'poll' && msg.poll && msg.poll.options) {
@@ -2763,8 +2798,8 @@ function createMessageCard(msg, user, isNew) {
     card.classList.add('has-actions');
 
     const elapsedMs = Date.now() - msg.timestamp;
-    // Polls cannot be edited (changing options after votes would be misleading)
-    const withinEditWindow = msg.type !== 'poll' && elapsedMs < EDIT_WINDOW_MS;
+    // Polls and GIFs cannot be edited
+    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && elapsedMs < EDIT_WINDOW_MS;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -3580,6 +3615,7 @@ if (pollToggleBtn) {
     if (pollMode) {
       disablePollMode();
     } else {
+      if (gifMode) disableGifMode();
       enablePollMode();
     }
   });
@@ -3603,6 +3639,252 @@ if (pollAddOptionBtn) {
     addPollOption();
     const inputs = getPollOptionInputs();
     if (inputs.length > 0) inputs[inputs.length - 1].focus();
+  });
+}
+
+// ========================================
+// GIF Feature (Tenor API)
+// ========================================
+
+const TENOR_API_KEY = (typeof window !== 'undefined' && window.TENOR_API_KEY) || '';
+const TENOR_API_BASE = 'https://tenor.googleapis.com/v2';
+const GIF_ALLOWED_DOMAIN = 'media.tenor.com';
+const GIF_SEARCH_LIMIT = 20;
+
+function isGifUrlAllowed(url) {
+  try {
+    return new URL(url).hostname === GIF_ALLOWED_DOMAIN;
+  } catch (_) {
+    return false;
+  }
+}
+
+function enableGifMode() {
+  gifMode = true;
+  selectedGif = null;
+  if (textComposer) textComposer.style.display = 'none';
+  if (pollComposer) pollComposer.style.display = 'none';
+  if (gifComposer) gifComposer.style.display = '';
+  if (gifToggleBtn) gifToggleBtn.setAttribute('aria-pressed', 'true');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post GIF';
+  renderGifComposerEmpty();
+  openGifPicker();
+}
+
+function disableGifMode() {
+  gifMode = false;
+  selectedGif = null;
+  if (textComposer) textComposer.style.display = '';
+  if (gifComposer) gifComposer.style.display = 'none';
+  if (gifToggleBtn) gifToggleBtn.setAttribute('aria-pressed', 'false');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Message';
+  closeGifPicker();
+}
+
+function renderGifComposerEmpty() {
+  if (!gifPreviewWrap) return;
+  gifPreviewWrap.innerHTML = '';
+  const hint = document.createElement('p');
+  hint.className = 'gif-composer-hint';
+  hint.textContent = 'No GIF selected. Click "Choose GIF" to pick one.';
+  const chooseBtn = document.createElement('button');
+  chooseBtn.type = 'button';
+  chooseBtn.className = 'gif-choose-btn';
+  chooseBtn.textContent = 'Choose GIF';
+  chooseBtn.addEventListener('click', openGifPicker);
+  gifPreviewWrap.appendChild(hint);
+  gifPreviewWrap.appendChild(chooseBtn);
+  if (gifChangeBtn) gifChangeBtn.style.display = 'none';
+}
+
+function renderGifComposerPreview(gif) {
+  if (!gifPreviewWrap) return;
+  gifPreviewWrap.innerHTML = '';
+  const img = document.createElement('img');
+  img.className = 'gif-composer-preview';
+  img.src = gif.gifPreviewUrl;
+  img.alt = gif.gifAlt || 'GIF';
+  img.setAttribute('loading', 'lazy');
+  gifPreviewWrap.appendChild(img);
+  if (gifChangeBtn) {
+    gifChangeBtn.style.display = '';
+    gifChangeBtn.onclick = openGifPicker;
+  }
+}
+
+function openGifPicker() {
+  if (!gifPickerBackdrop || !gifPickerEl) return;
+  gifPickerBackdrop.style.display = '';
+  gifPickerEl.style.display = '';
+  gifPickerBackdrop.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    gifPickerBackdrop.classList.add('gif-picker-backdrop--visible');
+    gifPickerEl.classList.add('gif-picker--open');
+  });
+  if (gifSearchInput) {
+    gifSearchInput.value = '';
+    gifSearchInput.focus();
+  }
+  if (gifSearchError) gifSearchError.style.display = 'none';
+  fetchTrendingGifs();
+}
+
+function closeGifPicker() {
+  if (!gifPickerBackdrop || !gifPickerEl) return;
+  gifPickerBackdrop.classList.remove('gif-picker-backdrop--visible');
+  gifPickerEl.classList.remove('gif-picker--open');
+  setTimeout(() => {
+    gifPickerBackdrop.style.display = 'none';
+    gifPickerEl.style.display = 'none';
+    gifPickerBackdrop.setAttribute('aria-hidden', 'true');
+  }, 260);
+}
+
+async function fetchTrendingGifs() {
+  if (!gifGrid) return;
+  if (!TENOR_API_KEY) {
+    renderGifError();
+    return;
+  }
+  renderGifGridLoading();
+  try {
+    const url = `${TENOR_API_BASE}/featured?key=${encodeURIComponent(TENOR_API_KEY)}&limit=${GIF_SEARCH_LIMIT}&media_filter=tinygif,gif&locale=en_US`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Tenor API error: ${resp.status}`);
+    const data = await resp.json();
+    renderGifGrid(data.results || []);
+  } catch (_) {
+    renderGifError();
+  }
+}
+
+async function searchGifs(query) {
+  if (!gifGrid) return;
+  if (!TENOR_API_KEY) {
+    renderGifError();
+    return;
+  }
+  renderGifGridLoading();
+  try {
+    const url = `${TENOR_API_BASE}/search?q=${encodeURIComponent(query)}&key=${encodeURIComponent(TENOR_API_KEY)}&limit=${GIF_SEARCH_LIMIT}&media_filter=tinygif,gif&locale=en_US`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Tenor API error: ${resp.status}`);
+    const data = await resp.json();
+    renderGifGrid(data.results || []);
+  } catch (_) {
+    renderGifError();
+  }
+}
+
+function renderGifGridLoading() {
+  if (!gifGrid) return;
+  gifGrid.innerHTML = '';
+  const spinner = document.createElement('div');
+  spinner.className = 'gif-grid-loading';
+  const s = document.createElement('div');
+  s.className = 'spinner';
+  spinner.appendChild(s);
+  gifGrid.appendChild(spinner);
+  if (gifSearchError) gifSearchError.style.display = 'none';
+}
+
+function renderGifError() {
+  if (!gifGrid) return;
+  gifGrid.innerHTML = '';
+  if (gifSearchError) {
+    gifSearchError.textContent = 'GIF search unavailable — try again later';
+    gifSearchError.style.display = '';
+  }
+  showToast('GIF search unavailable — try again later');
+  closeGifPicker();
+}
+
+function renderGifGrid(results) {
+  if (!gifGrid) return;
+  gifGrid.innerHTML = '';
+  if (gifSearchError) gifSearchError.style.display = 'none';
+
+  if (!results.length) {
+    const empty = document.createElement('p');
+    empty.className = 'gif-grid-empty';
+    empty.textContent = 'No GIFs found.';
+    gifGrid.appendChild(empty);
+    return;
+  }
+
+  results.forEach(item => {
+    const formats = item.media_formats || {};
+    const gifFmt = formats.gif || {};
+    const tinyFmt = formats.tinygif || {};
+    const gifUrl = gifFmt.url || '';
+    const previewUrl = tinyFmt.url || gifFmt.url || '';
+    const alt = item.content_description || '';
+
+    if (!gifUrl || !isGifUrlAllowed(gifUrl)) return;
+    const validatedPreviewUrl = previewUrl && isGifUrlAllowed(previewUrl) ? previewUrl : gifUrl;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'gif-grid-item';
+    btn.setAttribute('aria-label', alt || 'GIF');
+
+    const img = document.createElement('img');
+    img.src = validatedPreviewUrl;
+    img.alt = alt || 'GIF';
+    img.setAttribute('loading', 'lazy');
+
+    btn.appendChild(img);
+    btn.addEventListener('click', () => {
+      selectGif({ gifUrl, gifPreviewUrl: validatedPreviewUrl, gifAlt: alt });
+    });
+    gifGrid.appendChild(btn);
+  });
+}
+
+function selectGif(gif) {
+  selectedGif = gif;
+  closeGifPicker();
+  renderGifComposerPreview(gif);
+}
+
+if (gifToggleBtn) {
+  gifToggleBtn.addEventListener('click', () => {
+    if (gifMode) {
+      disableGifMode();
+    } else {
+      if (pollMode) disablePollMode();
+      enableGifMode();
+    }
+  });
+}
+
+if (gifPickerBackdrop) {
+  gifPickerBackdrop.addEventListener('click', () => {
+    closeGifPicker();
+    if (!selectedGif && gifMode) disableGifMode();
+  });
+}
+
+if (document.getElementById('gif-picker-close')) {
+  document.getElementById('gif-picker-close').addEventListener('click', () => {
+    closeGifPicker();
+    if (!selectedGif && gifMode) disableGifMode();
+  });
+}
+
+if (gifSearchInput) {
+  gifSearchInput.addEventListener('input', () => {
+    const q = gifSearchInput.value.trim();
+    clearTimeout(gifSearchDebounceTimer);
+    gifSearchDebounceTimer = setTimeout(() => {
+      if (q) {
+        searchGifs(q);
+      } else {
+        fetchTrendingGifs();
+      }
+    }, 300);
   });
 }
 
@@ -3849,6 +4131,57 @@ postForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  // ---- GIF submission path ----
+  if (gifMode) {
+    if (!selectedGif) {
+      if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Please choose a GIF before posting.'; emptyErrorMsg.style.display = 'block'; }
+      return;
+    }
+    if (!isGifUrlAllowed(selectedGif.gifUrl)) return;
+
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.btn-text').style.display = 'none';
+    submitBtn.querySelector('.btn-loading').style.display = 'inline';
+    rateLimitMsg.style.display = 'none';
+    if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
+
+    try {
+      const newMessageKey = db.ref('messages').push().key;
+      const updates = {};
+      updates[`/messages/${newMessageKey}`] = {
+        type: 'gif',
+        text: selectedGif.gifAlt || 'GIF',
+        gifUrl: selectedGif.gifUrl,
+        gifPreviewUrl: selectedGif.gifPreviewUrl,
+        gifAlt: selectedGif.gifAlt || '',
+        author: userAlias || currentUser.displayName || 'Anonymous',
+        authorId: currentUser.uid,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        photoURL: currentUser.photoURL || '',
+      };
+      updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+
+      await db.ref().update(updates);
+
+      disableGifMode();
+    } catch (error) {
+      console.error('GIF post error:', error);
+      if (error.code === 'PERMISSION_DENIED') {
+        rateLimitMsg.style.display = 'block';
+        setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
+      } else if (emptyErrorMsg) {
+        emptyErrorMsg.textContent = 'Failed to post GIF. Please try again.';
+        emptyErrorMsg.style.display = 'block';
+        setTimeout(() => { emptyErrorMsg.style.display = 'none'; }, 5000);
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.querySelector('.btn-text').style.display = 'inline';
+      submitBtn.querySelector('.btn-loading').style.display = 'none';
+    }
+    return;
+  }
+
   // ---- Normal text submission path ----
   const validation = validateMessage(messageInput.value);
   if (!validation.valid) {
@@ -3919,5 +4252,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid };
 }

@@ -19,6 +19,7 @@ const APP_HTML = `
   <div id="post-section" style="display:none">
     <form id="post-form">
       <button type="button" id="poll-toggle-btn" aria-pressed="false"></button>
+      <button type="button" id="gif-toggle-btn" aria-pressed="false"></button>
       <div id="text-composer">
         <input id="message-input" type="text" />
         <span id="char-counter">0 / 250</span>
@@ -29,6 +30,10 @@ const APP_HTML = `
         <span id="poll-question-counter" class="char-counter">0 / 120</span>
         <div id="poll-options-container"></div>
         <button type="button" id="poll-add-option-btn">+ Add option</button>
+      </div>
+      <div id="gif-composer" style="display:none">
+        <div id="gif-preview-wrap"></div>
+        <button type="button" id="gif-change-btn" style="display:none;"></button>
       </div>
       <button id="submit-btn" type="submit">
         <span class="btn-text" style="display:inline">Post Message</span>
@@ -97,6 +102,16 @@ const APP_HTML = `
     </div>
     <div id="author-panel-body"></div>
   </aside>
+  <div id="gif-picker-backdrop" style="display:none;"></div>
+  <div id="gif-picker" style="display:none;">
+    <span id="gif-picker-title"></span>
+    <button id="gif-picker-close"></button>
+    <div class="gif-search-row">
+      <input id="gif-search-input" type="text" />
+    </div>
+    <div id="gif-grid"></div>
+    <p id="gif-search-error" style="display:none;"></p>
+  </div>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -6986,5 +7001,143 @@ describe('poll — validatePoll', () => {
     expect(result).not.toBeNull();
     expect(result.options.length).toBe(2);
     expect(result.options).not.toContain('');
+  });
+});
+
+describe('gif — isGifUrlAllowed', () => {
+  let isGifUrlAllowed;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ isGifUrlAllowed } = require('../public/app.js'));
+  });
+
+  test('allows media.tenor.com URLs', () => {
+    expect(isGifUrlAllowed('https://media.tenor.com/abc/file.gif')).toBe(true);
+  });
+
+  test('rejects non-tenor domains', () => {
+    expect(isGifUrlAllowed('https://media.giphy.com/abc.gif')).toBe(false);
+    expect(isGifUrlAllowed('https://example.com/evil.gif')).toBe(false);
+    expect(isGifUrlAllowed('https://evil.media.tenor.com.bad.com/file.gif')).toBe(false);
+  });
+
+  test('rejects malformed URLs', () => {
+    expect(isGifUrlAllowed('not-a-url')).toBe(false);
+    expect(isGifUrlAllowed('')).toBe(false);
+  });
+});
+
+describe('gif — createMessageCard renders gif card', () => {
+  let createMessageCard;
+
+  const gifMsg = {
+    id: 'gif1',
+    type: 'gif',
+    author: 'Bob',
+    text: 'funny cat gif',
+    gifUrl: 'https://media.tenor.com/abc/cat.gif',
+    gifPreviewUrl: 'https://media.tenor.com/abc/cat-tiny.gif',
+    gifAlt: 'Funny cat dancing',
+    timestamp: Date.now(),
+    authorId: 'uid-bob',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('renders gif-card-badge with GIF text', () => {
+    const card = createMessageCard(gifMsg, null);
+    const badge = card.querySelector('.gif-card-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toContain('GIF');
+  });
+
+  test('renders .gif-message-img with correct src', () => {
+    const card = createMessageCard(gifMsg, null);
+    const img = card.querySelector('.gif-message-img');
+    expect(img).not.toBeNull();
+    expect(img.getAttribute('src')).toBe(gifMsg.gifUrl);
+  });
+
+  test('sets alt attribute from gifAlt field', () => {
+    const card = createMessageCard(gifMsg, null);
+    const img = card.querySelector('.gif-message-img');
+    expect(img.getAttribute('alt')).toBe('Funny cat dancing');
+  });
+
+  test('falls back to "GIF" when gifAlt is empty', () => {
+    const msg = { ...gifMsg, id: 'gif-noalt', gifAlt: '' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.gif-message-img');
+    expect(img.getAttribute('alt')).toBe('GIF');
+  });
+
+  test('does NOT render gif img for non-tenor gifUrl (security)', () => {
+    const msg = { ...gifMsg, id: 'gif-bad', gifUrl: 'https://evil.com/bad.gif' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.gif-message-img')).toBeNull();
+  });
+
+  test('does NOT render edit button for gif messages', () => {
+    const ownUser = { uid: 'uid-bob' };
+    const card = createMessageCard(gifMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('renders delete button for own gif message', () => {
+    const ownUser = { uid: 'uid-bob' };
+    const card = createMessageCard(gifMsg, ownUser);
+    expect(card.querySelector('.btn-delete')).not.toBeNull();
+  });
+
+  test('does not render .poll-body for gif messages', () => {
+    const card = createMessageCard(gifMsg, null);
+    expect(card.querySelector('.poll-body')).toBeNull();
+  });
+
+  test('message-text element is empty for gif messages', () => {
+    const card = createMessageCard(gifMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent.trim()).toBe('');
   });
 });
