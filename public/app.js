@@ -2776,7 +2776,8 @@ function createMessageCard(msg, user, isNew) {
       : false;
     const gifImg = document.createElement('img');
     gifImg.className = 'gif-message-img';
-    gifImg.src = prefersReducedMotion && msg.gifPreviewUrl ? msg.gifPreviewUrl : msg.gifUrl;
+    const usePreview = prefersReducedMotion && msg.gifPreviewUrl && isGifUrlAllowed(msg.gifPreviewUrl);
+    gifImg.src = usePreview ? msg.gifPreviewUrl : msg.gifUrl;
     gifImg.alt = msg.gifAlt || 'GIF';
     gifImg.setAttribute('loading', 'lazy');
     card.appendChild(gifImg);
@@ -3822,6 +3823,7 @@ function renderGifGrid(results) {
     const alt = item.content_description || '';
 
     if (!gifUrl || !isGifUrlAllowed(gifUrl)) return;
+    const validatedPreviewUrl = previewUrl && isGifUrlAllowed(previewUrl) ? previewUrl : gifUrl;
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -3829,13 +3831,13 @@ function renderGifGrid(results) {
     btn.setAttribute('aria-label', alt || 'GIF');
 
     const img = document.createElement('img');
-    img.src = previewUrl;
+    img.src = validatedPreviewUrl;
     img.alt = alt || 'GIF';
     img.setAttribute('loading', 'lazy');
 
     btn.appendChild(img);
     btn.addEventListener('click', () => {
-      selectGif({ gifUrl, gifPreviewUrl: previewUrl, gifAlt: alt });
+      selectGif({ gifUrl, gifPreviewUrl: validatedPreviewUrl, gifAlt: alt });
     });
     gifGrid.appendChild(btn);
   });
@@ -4167,6 +4169,10 @@ postForm.addEventListener('submit', async (e) => {
       if (error.code === 'PERMISSION_DENIED') {
         rateLimitMsg.style.display = 'block';
         setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
+      } else if (emptyErrorMsg) {
+        emptyErrorMsg.textContent = 'Failed to post GIF. Please try again.';
+        emptyErrorMsg.style.display = 'block';
+        setTimeout(() => { emptyErrorMsg.style.display = 'none'; }, 5000);
       }
     } finally {
       submitBtn.disabled = false;
