@@ -67,7 +67,16 @@
           ".validate": "newData.isString()"
         },
         "type": {
-          ".validate": "newData.isString() && newData.val() === 'poll'"
+          ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif')"
+        },
+        "gifUrl": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+        },
+        "gifPreviewUrl": {
+          ".validate": "newData.isString() && newData.val().length <= 500"
+        },
+        "gifAlt": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
         },
         "poll": {
           "options": {
