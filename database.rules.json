@@ -70,10 +70,10 @@
           ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif')"
         },
         "gifUrl": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/media\\.tenor\\.com\\/[^\\s]+/)"
         },
         "gifPreviewUrl": {
-          ".validate": "newData.isString() && newData.val().length <= 500"
+          ".validate": "newData.isString() && newData.val().length <= 500 && (newData.val().length === 0 || newData.val().matches(/^https:\\/\\/media\\.tenor\\.com\\/[^\\s]+/))"
         },
         "gifAlt": {
           ".validate": "newData.isString() && newData.val().length <= 200"
