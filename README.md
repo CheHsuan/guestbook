@@ -114,6 +114,7 @@ The CI workflows require two GitHub repository secrets. Configure them under **S
 |---|---|---|
 | `GH_PAT` | Push commits, create/edit PRs and issues, merge PRs | Create a GitHub Personal Access Token with `repo` and `workflow` scopes at [github.com/settings/tokens](https://github.com/settings/tokens) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Authenticate the Claude Code CLI for automated review, auto-fix, and health checks | Obtain via the Claude Code CLI by running `claude auth` after installing Claude Code |
+| `TENOR_API_KEY` | Powers the GIF search feature via the Tenor API | Register at [developers.google.com/tenor](https://developers.google.com/tenor) and create an API key |
 
 Without these secrets, the `ci.yml`, `health-check.yml`, and `issue-scan.yml` workflows will fail silently on any fork or fresh repository setup.
 

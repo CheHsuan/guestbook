@@ -31,6 +31,11 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
 
+      - name: Write runtime config
+        env:
+          TENOR_API_KEY: ${{ secrets.TENOR_API_KEY }}
+        run: echo "window.TENOR_API_KEY = '$TENOR_API_KEY';" > public/config.js
+
       - name: Deploy Hosting to Preview Channel
         run: npx -y firebase-tools hosting:channel:deploy preview-${{ github.event.release.tag_name }} --expires 1d
 
@@ -61,6 +66,11 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GUESTBOOK_3C7EB }}
+
+      - name: Write runtime config
+        env:
+          TENOR_API_KEY: ${{ secrets.TENOR_API_KEY }}
+        run: echo "window.TENOR_API_KEY = '$TENOR_API_KEY';" > public/config.js
 
       - name: Deploy Hosting and Database Rules
         run: npx -y firebase-tools deploy --only hosting,database
