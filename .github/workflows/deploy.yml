@@ -34,7 +34,8 @@ jobs:
       - name: Write runtime config
         env:
           TENOR_API_KEY: ${{ secrets.TENOR_API_KEY }}
-        run: echo "window.TENOR_API_KEY = '$TENOR_API_KEY';" > public/config.js
+        run: |
+          node -e "require('fs').writeFileSync('public/config.js', \"window.TENOR_API_KEY = '\" + process.env.TENOR_API_KEY + \"';\\n\")"
 
       - name: Deploy Hosting to Preview Channel
         run: npx -y firebase-tools hosting:channel:deploy preview-${{ github.event.release.tag_name }} --expires 1d
@@ -70,7 +71,8 @@ jobs:
       - name: Write runtime config
         env:
           TENOR_API_KEY: ${{ secrets.TENOR_API_KEY }}
-        run: echo "window.TENOR_API_KEY = '$TENOR_API_KEY';" > public/config.js
+        run: |
+          node -e "require('fs').writeFileSync('public/config.js', \"window.TENOR_API_KEY = '\" + process.env.TENOR_API_KEY + \"';\\n\")"
 
       - name: Deploy Hosting and Database Rules
         run: npx -y firebase-tools deploy --only hosting,database
