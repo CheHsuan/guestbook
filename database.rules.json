@@ -89,6 +89,12 @@
             ".validate": false
           }
         },
+        "countryCode": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}$/)"
+        },
+        "countryName": {
+          ".validate": "newData.isString() && newData.val().length <= 100"
+        },
         "replies": {
           "$reply_id": {
             ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",

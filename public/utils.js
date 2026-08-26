@@ -440,7 +440,35 @@ function wrapSelection(textarea, before, after) {
     }
 }
 
+/**
+ * Convert a 2-letter ISO 3166-1 alpha-2 country code to a flag emoji.
+ * Returns the flag emoji string, or null for any invalid input.
+ */
+function countryCodeToFlag(code) {
+    if (typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)) return null;
+    return String.fromCodePoint(...[...code].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
+/**
+ * Fetch the poster's country from ipapi.co/json/ with a 3-second AbortController timeout.
+ * Returns { countryCode, countryName } on success, or null on any failure.
+ */
+async function fetchCountryData() {
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const response = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (!data.country_code || !/^[A-Z]{2}$/.test(data.country_code)) return null;
+        return { countryCode: data.country_code, countryName: data.country_name || '' };
+    } catch (_) {
+        return null;
+    }
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
 }

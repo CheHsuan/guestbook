@@ -2744,6 +2744,19 @@ function createMessageCard(msg, user, isNew) {
 
   header.appendChild(avatarEl);
   header.appendChild(authorEl);
+
+  if (msg.countryCode) {
+    const flag = countryCodeToFlag(msg.countryCode);
+    if (flag) {
+      const flagSpan = document.createElement('span');
+      flagSpan.className = 'message-country-flag';
+      flagSpan.textContent = flag;
+      flagSpan.title = `Posted from ${msg.countryName || msg.countryCode}`;
+      flagSpan.setAttribute('aria-label', msg.countryName || msg.countryCode);
+      header.appendChild(flagSpan);
+    }
+  }
+
   header.appendChild(timeEl);
 
   if (msg.type === 'poll') {
@@ -4083,6 +4096,13 @@ postForm.addEventListener('submit', async (e) => {
 
   if (!currentUser) return;
 
+  // One-time notice: IP is sent to ipapi.co to detect country for the flag badge
+  const GEO_NOTICE_KEY = 'guestbook_geo_notice_shown';
+  if (!localStorage.getItem(GEO_NOTICE_KEY)) {
+    localStorage.setItem(GEO_NOTICE_KEY, '1');
+    showToast('Your country will be detected via IP geolocation (ipapi.co) to display a flag badge. Only the country code is stored.');
+  }
+
   const emptyErrorMsg = document.getElementById('empty-error-msg');
 
   // ---- Poll submission path ----
@@ -4096,6 +4116,7 @@ postForm.addEventListener('submit', async (e) => {
     rateLimitMsg.style.display = 'none';
 
     try {
+      const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
       const optionsObj = {};
       pollData.options.forEach((opt, idx) => { optionsObj[String(idx)] = opt; });
@@ -4109,6 +4130,7 @@ postForm.addEventListener('submit', async (e) => {
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: currentUser.photoURL || '',
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -4146,6 +4168,7 @@ postForm.addEventListener('submit', async (e) => {
     if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
 
     try {
+      const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
       const updates = {};
       updates[`/messages/${newMessageKey}`] = {
@@ -4158,6 +4181,7 @@ postForm.addEventListener('submit', async (e) => {
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: currentUser.photoURL || '',
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -4201,6 +4225,8 @@ postForm.addEventListener('submit', async (e) => {
   rateLimitMsg.style.display = 'none';
 
   try {
+    const countryData = await fetchCountryData();
+
     // Generate a new unique key for the message
     const newMessageKey = db.ref('messages').push().key;
 
@@ -4211,7 +4237,8 @@ postForm.addEventListener('submit', async (e) => {
       author: userAlias || currentUser.displayName || 'Anonymous',
       authorId: currentUser.uid,
       timestamp: firebase.database.ServerValue.TIMESTAMP,
-      photoURL: currentUser.photoURL || ''
+      photoURL: currentUser.photoURL || '',
+      ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 

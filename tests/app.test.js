@@ -187,6 +187,7 @@ describe('createMessageCard', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -435,6 +436,74 @@ describe('createMessageCard', () => {
 
     document.body.removeChild(card);
   });
+
+  // --- Country flag badge ---
+  test('renders flag emoji span when countryCode and countryName are present', () => {
+    const msg = { ...baseMsg, countryCode: 'US', countryName: 'United States' };
+    const card = createMessageCard(msg, null);
+    const flagSpan = card.querySelector('.message-country-flag');
+    expect(flagSpan).not.toBeNull();
+    expect(flagSpan.textContent).toBe('🇺🇸');
+  });
+
+  test('flag span has correct title tooltip', () => {
+    const msg = { ...baseMsg, countryCode: 'JP', countryName: 'Japan' };
+    const card = createMessageCard(msg, null);
+    const flagSpan = card.querySelector('.message-country-flag');
+    expect(flagSpan.title).toBe('Posted from Japan');
+  });
+
+  test('flag span has correct aria-label', () => {
+    const msg = { ...baseMsg, countryCode: 'BR', countryName: 'Brazil' };
+    const card = createMessageCard(msg, null);
+    const flagSpan = card.querySelector('.message-country-flag');
+    expect(flagSpan.getAttribute('aria-label')).toBe('Brazil');
+  });
+
+  test('falls back to countryCode in title when countryName is absent', () => {
+    const msg = { ...baseMsg, countryCode: 'GB' };
+    const card = createMessageCard(msg, null);
+    const flagSpan = card.querySelector('.message-country-flag');
+    expect(flagSpan).not.toBeNull();
+    expect(flagSpan.title).toBe('Posted from GB');
+  });
+
+  test('does not render flag when countryCode is absent', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.message-country-flag')).toBeNull();
+  });
+
+  test('does not render flag for invalid countryCode (lowercase)', () => {
+    const msg = { ...baseMsg, countryCode: 'us', countryName: 'United States' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.message-country-flag')).toBeNull();
+  });
+
+  test('does not render flag for invalid countryCode (3 letters)', () => {
+    const msg = { ...baseMsg, countryCode: 'USA', countryName: 'United States' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.message-country-flag')).toBeNull();
+  });
+
+  test('flag span is placed after author name and before timestamp', () => {
+    const msg = { ...baseMsg, countryCode: 'US', countryName: 'United States' };
+    const card = createMessageCard(msg, null);
+    const header = card.querySelector('.message-header');
+    const children = Array.from(header.children);
+    const authorIdx = children.findIndex(el => el.classList.contains('message-author'));
+    const flagIdx = children.findIndex(el => el.classList.contains('message-country-flag'));
+    const timeIdx = children.findIndex(el => el.classList.contains('message-time'));
+    expect(flagIdx).toBeGreaterThan(authorIdx);
+    expect(flagIdx).toBeLessThan(timeIdx);
+  });
+
+  test('XSS safety: countryName never creates a script DOM element', () => {
+    const msg = { ...baseMsg, countryCode: 'US', countryName: '<script>alert(1)</script>' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelectorAll('script').length).toBe(0);
+    const flagSpan = card.querySelector('.message-country-flag');
+    expect(flagSpan.title).toBe('Posted from <script>alert(1)</script>');
+  });
 });
 
 // --- Form submit handler ---
@@ -464,6 +533,8 @@ describe('post form submit handler', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -587,6 +658,8 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1963,6 +2036,8 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3520,6 +3595,8 @@ describe('browser notifications — permission request on post', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -6691,6 +6768,8 @@ describe('poll — post form creates poll payload', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
   }
 
   beforeEach(() => {
