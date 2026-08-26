@@ -1612,12 +1612,14 @@ auth.onAuthStateChanged(async (user) => {
     postSection.style.display = 'block';
     loginBtnHeader.style.display = 'none';
     restoreDraft();
+    initPromptCard();
     updateMyPostsBtnVisibility();
   } else {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     hideNewMessagesBanner();
+    hidePromptCard();
     clearDraft();
     // Deactivate My Posts filter on sign-out
     if (myPostsActive) {
@@ -3502,6 +3504,149 @@ function attachMentionAutocomplete(textarea, relativeParent) {
 })();
 
 // ========================================
+// Daily Writing Prompt
+// ========================================
+const PROMPTS = [
+  "What's one thing that made you smile today?",
+  "Share a fun fact you recently learned.",
+  "Describe your current vibe in three words.",
+  "What's something you're looking forward to this week?",
+  "If you could teleport anywhere right now, where would you go?",
+  "Recommend something — a song, book, movie, dish — anything.",
+  "What's the last thing that genuinely surprised you?",
+  "Drop a piece of advice your past self needed.",
+  "What's the most interesting thing you've seen or done recently?",
+  "If today had a title, what would it be?",
+  "What's a small win you had recently?",
+  "Share something you're grateful for today.",
+  "What's a place you'd love to visit and why?",
+  "Name one thing you learned this week.",
+  "What's your go-to comfort food right now?",
+  "If you could have dinner with anyone, who would it be?",
+  "What's a hobby you've always wanted to try?",
+  "Describe the view from where you are right now.",
+  "What's the best thing about today so far?",
+  "What's a movie or show you'd recommend to everyone?",
+  "What's a quote you keep coming back to?",
+  "What's something that made you laugh recently?",
+  "If you had an extra hour today, how would you spend it?",
+  "What's a skill you're proud to have learned?",
+  "What's one thing on your bucket list?",
+  "Describe the perfect lazy Sunday in three words.",
+  "What's a topic you could talk about for hours?",
+  "Share something that sparked your curiosity lately.",
+  "What's the kindest thing someone did for you recently?",
+  "If you could bring back one trend, what would it be?",
+  "What's a simple pleasure you enjoy every day?",
+  "What would your superpower be and why?",
+];
+
+const PROMPT_DISMISSED_PREFIX = 'guestbook_prompt_dismissed_';
+
+let promptCardEl = null;
+let promptDismissed = false;
+
+function getPromptDayIndex() {
+  return Math.floor(Date.now() / 86400000);
+}
+
+function getPromptForDay(dayIndex) {
+  return PROMPTS[dayIndex % PROMPTS.length];
+}
+
+function isPromptDismissed(dayIndex) {
+  try {
+    return localStorage.getItem(PROMPT_DISMISSED_PREFIX + dayIndex) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function dismissPrompt(dayIndex) {
+  try {
+    localStorage.setItem(PROMPT_DISMISSED_PREFIX + dayIndex, '1');
+  } catch (_) {}
+}
+
+function createPromptCard() {
+  const dayIndex = getPromptDayIndex();
+  const promptText = getPromptForDay(dayIndex);
+
+  const card = document.createElement('div');
+  card.className = 'prompt-card';
+  card.id = 'prompt-card';
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.type = 'button';
+  dismissBtn.className = 'prompt-card-dismiss';
+  dismissBtn.setAttribute('aria-label', 'Dismiss prompt');
+  dismissBtn.textContent = '✕';
+  dismissBtn.addEventListener('click', () => {
+    dismissPrompt(dayIndex);
+    promptDismissed = true;
+    hidePromptCard();
+  });
+
+  const label = document.createElement('span');
+  label.className = 'prompt-card-label';
+  label.textContent = '💡 Today\'s prompt';
+
+  const textEl = document.createElement('p');
+  textEl.className = 'prompt-text';
+  textEl.textContent = promptText; // textContent — XSS safe; static literal
+
+  const footer = document.createElement('div');
+  footer.className = 'prompt-card-footer';
+
+  const startBtn = document.createElement('button');
+  startBtn.type = 'button';
+  startBtn.className = 'prompt-card-start-btn';
+  startBtn.textContent = 'Start writing ↩';
+  startBtn.addEventListener('click', () => {
+    hidePromptCard();
+    if (messageInput) messageInput.focus();
+  });
+
+  footer.appendChild(startBtn);
+  card.appendChild(dismissBtn);
+  card.appendChild(label);
+  card.appendChild(textEl);
+  card.appendChild(footer);
+
+  return card;
+}
+
+function hidePromptCard() {
+  if (promptCardEl) promptCardEl.style.display = 'none';
+}
+
+function maybeShowPromptCard() {
+  if (!currentUser) return;
+  if (promptDismissed) return;
+  if (pollMode || gifMode) return;
+  if (messageInput && messageInput.value) return;
+  if (promptCardEl) promptCardEl.style.display = '';
+}
+
+function initPromptCard() {
+  const dayIndex = getPromptDayIndex();
+  promptDismissed = isPromptDismissed(dayIndex);
+
+  const existing = document.getElementById('prompt-card');
+  if (existing) existing.remove();
+
+  promptCardEl = createPromptCard();
+
+  const textComposerEl = document.getElementById('text-composer');
+  if (textComposerEl && textComposerEl.parentNode) {
+    textComposerEl.parentNode.insertBefore(promptCardEl, textComposerEl);
+  }
+
+  promptCardEl.style.display = 'none';
+  maybeShowPromptCard();
+}
+
+// ========================================
 // Poll Composer
 // ========================================
 const POLL_MAX_OPTIONS = 4;
@@ -3568,6 +3713,7 @@ function resetPollComposer() {
 
 function enablePollMode() {
   pollMode = true;
+  hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = '';
   if (pollToggleBtn) pollToggleBtn.setAttribute('aria-pressed', 'true');
@@ -3584,6 +3730,7 @@ function disablePollMode() {
   if (pollToggleBtn) pollToggleBtn.setAttribute('aria-pressed', 'false');
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Message';
+  maybeShowPromptCard();
 }
 
 function validatePoll() {
@@ -3675,6 +3822,7 @@ function isGifUrlAllowed(url) {
 function enableGifMode() {
   gifMode = true;
   selectedGif = null;
+  hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = 'none';
   if (gifComposer) gifComposer.style.display = '';
@@ -3694,6 +3842,7 @@ function disableGifMode() {
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Message';
   closeGifPicker();
+  maybeShowPromptCard();
 }
 
 function renderGifComposerEmpty() {
@@ -4279,5 +4428,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS };
 }
