@@ -7220,3 +7220,137 @@ describe('gif — createMessageCard renders gif card', () => {
     expect(textEl.textContent.trim()).toBe('');
   });
 });
+
+// ========================================
+// Daily Writing Prompt
+// ========================================
+describe('Daily Writing Prompt', () => {
+  let getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt,
+      createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true, text: '' }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: false }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.wrapSelection = utils.wrapSelection || (() => {});
+    global.updateEditCounter = utils.updateEditCounter || (() => {});
+    global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt,
+       createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS }
+      = require('../public/app.js'));
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  test('PROMPTS has at least 30 unique entries', () => {
+    expect(PROMPTS.length).toBeGreaterThanOrEqual(30);
+    const unique = new Set(PROMPTS);
+    expect(unique.size).toBe(PROMPTS.length);
+  });
+
+  test('all prompt strings are non-empty', () => {
+    PROMPTS.forEach(p => expect(typeof p).toBe('string'));
+    PROMPTS.forEach(p => expect(p.trim().length).toBeGreaterThan(0));
+  });
+
+  test('getPromptForDay returns a string from PROMPTS', () => {
+    const prompt = getPromptForDay(0);
+    expect(PROMPTS).toContain(prompt);
+  });
+
+  test('getPromptForDay is deterministic for the same day index', () => {
+    const a = getPromptForDay(42);
+    const b = getPromptForDay(42);
+    expect(a).toBe(b);
+  });
+
+  test('getPromptForDay cycles via modulo — index 0 equals index PROMPTS.length', () => {
+    expect(getPromptForDay(0)).toBe(getPromptForDay(PROMPTS.length));
+  });
+
+  test('isPromptDismissed returns false when key is absent', () => {
+    expect(isPromptDismissed(999)).toBe(false);
+  });
+
+  test('isPromptDismissed returns true after dismissPrompt is called', () => {
+    dismissPrompt(7);
+    expect(isPromptDismissed(7)).toBe(true);
+  });
+
+  test('dismissPrompt for one day does not affect another day', () => {
+    dismissPrompt(10);
+    expect(isPromptDismissed(11)).toBe(false);
+  });
+
+  test('createPromptCard returns element with class prompt-card', () => {
+    const card = createPromptCard();
+    expect(card.className).toBe('prompt-card');
+    expect(card.id).toBe('prompt-card');
+  });
+
+  test('createPromptCard has a dismiss button with aria-label', () => {
+    const card = createPromptCard();
+    const btn = card.querySelector('.prompt-card-dismiss');
+    expect(btn).not.toBeNull();
+    expect(btn.getAttribute('aria-label')).toBe('Dismiss prompt');
+    expect(btn.textContent).toBe('✕');
+  });
+
+  test('createPromptCard has a .prompt-text paragraph set via textContent', () => {
+    const card = createPromptCard();
+    const p = card.querySelector('.prompt-text');
+    expect(p).not.toBeNull();
+    expect(p.textContent.trim().length).toBeGreaterThan(0);
+    expect(PROMPTS).toContain(p.textContent);
+  });
+
+  test('createPromptCard prompt text does not contain HTML tags (XSS safe)', () => {
+    const card = createPromptCard();
+    const p = card.querySelector('.prompt-text');
+    expect(p.innerHTML).not.toMatch(/<[a-z]/i);
+  });
+
+  test('createPromptCard has a start-writing button', () => {
+    const card = createPromptCard();
+    const btn = card.querySelector('.prompt-card-start-btn');
+    expect(btn).not.toBeNull();
+    expect(btn.textContent).toContain('Start writing');
+  });
+
+  test('createPromptCard has a label with lightbulb emoji', () => {
+    const card = createPromptCard();
+    const label = card.querySelector('.prompt-card-label');
+    expect(label).not.toBeNull();
+    expect(label.textContent).toContain('💡');
+  });
+
+  test('hidePromptCard sets display:none on the card', () => {
+    // initPromptCard sets the module-level promptCardEl and inserts the card into DOM
+    initPromptCard();
+    const card = document.getElementById('prompt-card');
+    expect(card).not.toBeNull();
+    card.style.display = '';
+    hidePromptCard();
+    expect(document.getElementById('prompt-card').style.display).toBe('none');
+  });
+});

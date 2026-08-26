@@ -3106,6 +3106,90 @@ body {
   }
 }
 
+/* ========================================
+   Daily Writing Prompt Card
+   ======================================== */
+.prompt-card {
+  position: relative;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px 10px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prompt-card-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: color var(--transition);
+}
+
+.prompt-card-dismiss:hover {
+  color: var(--text-secondary);
+}
+
+.prompt-card-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-right: 20px;
+}
+
+.prompt-text {
+  font-size: 0.95rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.prompt-card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.prompt-card-start-btn {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.prompt-card-start-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+@media (max-width: 480px) {
+  .prompt-card {
+    flex-direction: column;
+  }
+
+  .prompt-card-start-btn {
+    align-self: flex-start;
+  }
+}
+
 /* Mobile: GIF picker fills viewport height */
 @media (max-width: 480px) {
   .gif-picker {
