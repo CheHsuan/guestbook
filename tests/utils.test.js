@@ -1,4 +1,4 @@
-const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit } = require('../public/utils');
+const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData } = require('../public/utils');
 
 // ========================================
 // validateWebsiteURL
@@ -962,6 +962,117 @@ describe('isNewSinceLastVisit', () => {
     test('returns false for a message posted well before last visit', () => {
         const oneHourBefore = LAST_VISIT - 3_600_000;
         expect(isNewSinceLastVisit(oneHourBefore, LAST_VISIT)).toBe(false);
+    });
+});
+
+// ========================================
+// countryCodeToFlag
+// ========================================
+describe('countryCodeToFlag', () => {
+    test('returns flag emoji for US', () => {
+        expect(countryCodeToFlag('US')).toBe('🇺🇸');
+    });
+
+    test('returns flag emoji for GB', () => {
+        expect(countryCodeToFlag('GB')).toBe('🇬🇧');
+    });
+
+    test('returns flag emoji for JP', () => {
+        expect(countryCodeToFlag('JP')).toBe('🇯🇵');
+    });
+
+    test('returns flag emoji for BR', () => {
+        expect(countryCodeToFlag('BR')).toBe('🇧🇷');
+    });
+
+    test('returns null for empty string', () => {
+        expect(countryCodeToFlag('')).toBeNull();
+    });
+
+    test('returns null for lowercase code', () => {
+        expect(countryCodeToFlag('us')).toBeNull();
+    });
+
+    test('returns null for mixed-case code', () => {
+        expect(countryCodeToFlag('Us')).toBeNull();
+    });
+
+    test('returns null for 3-letter code', () => {
+        expect(countryCodeToFlag('USA')).toBeNull();
+    });
+
+    test('returns null for single letter', () => {
+        expect(countryCodeToFlag('U')).toBeNull();
+    });
+
+    test('returns null for null', () => {
+        expect(countryCodeToFlag(null)).toBeNull();
+    });
+
+    test('returns null for undefined', () => {
+        expect(countryCodeToFlag(undefined)).toBeNull();
+    });
+
+    test('returns null for number', () => {
+        expect(countryCodeToFlag(42)).toBeNull();
+    });
+
+    test('returns null for code containing non-ASCII-letter characters', () => {
+        expect(countryCodeToFlag('1A')).toBeNull();
+        expect(countryCodeToFlag('A!')).toBeNull();
+    });
+});
+
+// ========================================
+// fetchCountryData
+// ========================================
+describe('fetchCountryData', () => {
+    afterEach(() => {
+        delete global.fetch;
+    });
+
+    test('returns countryCode and countryName on successful response', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ country_code: 'US', country_name: 'United States' }),
+        });
+        const result = await fetchCountryData();
+        expect(result).toEqual({ countryCode: 'US', countryName: 'United States' });
+    });
+
+    test('returns null on non-2xx HTTP response', async () => {
+        global.fetch = jest.fn().mockResolvedValue({ ok: false });
+        expect(await fetchCountryData()).toBeNull();
+    });
+
+    test('returns null when fetch throws (network error)', async () => {
+        global.fetch = jest.fn().mockRejectedValue(new Error('Network error'));
+        expect(await fetchCountryData()).toBeNull();
+    });
+
+    test('returns null when country_code is missing from response', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ country_name: 'Unknown' }),
+        });
+        expect(await fetchCountryData()).toBeNull();
+    });
+
+    test('returns null when country_code fails the A-Z{2} validation', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ country_code: 'us', country_name: 'United States' }),
+        });
+        expect(await fetchCountryData()).toBeNull();
+    });
+
+    test('falls back to empty string when country_name is missing', async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ country_code: 'DE' }),
+        });
+        const result = await fetchCountryData();
+        expect(result).toEqual({ countryCode: 'DE', countryName: '' });
     });
 });
 

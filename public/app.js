@@ -2687,6 +2687,11 @@ function createPollBody(msgId, options, user) {
   return pollBody;
 }
 
+function countryCodeToFlag(code) {
+  if (typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)) return null;
+  return String.fromCodePoint(...[...code].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
 // ========================================
 // Create Message Card Element
 // ========================================
@@ -2744,6 +2749,19 @@ function createMessageCard(msg, user, isNew) {
 
   header.appendChild(avatarEl);
   header.appendChild(authorEl);
+
+  if (msg.countryCode) {
+    const flag = countryCodeToFlag(msg.countryCode);
+    if (flag) {
+      const flagSpan = document.createElement('span');
+      flagSpan.className = 'message-country-flag';
+      flagSpan.textContent = flag;
+      flagSpan.title = `Posted from ${msg.countryName || msg.countryCode}`;
+      flagSpan.setAttribute('aria-label', msg.countryName || msg.countryCode);
+      header.appendChild(flagSpan);
+    }
+  }
+
   header.appendChild(timeEl);
 
   if (msg.type === 'poll') {
@@ -4096,6 +4114,7 @@ postForm.addEventListener('submit', async (e) => {
     rateLimitMsg.style.display = 'none';
 
     try {
+      const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
       const optionsObj = {};
       pollData.options.forEach((opt, idx) => { optionsObj[String(idx)] = opt; });
@@ -4109,6 +4128,7 @@ postForm.addEventListener('submit', async (e) => {
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: currentUser.photoURL || '',
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -4146,6 +4166,7 @@ postForm.addEventListener('submit', async (e) => {
     if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
 
     try {
+      const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
       const updates = {};
       updates[`/messages/${newMessageKey}`] = {
@@ -4158,6 +4179,7 @@ postForm.addEventListener('submit', async (e) => {
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: currentUser.photoURL || '',
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -4201,6 +4223,8 @@ postForm.addEventListener('submit', async (e) => {
   rateLimitMsg.style.display = 'none';
 
   try {
+    const countryData = await fetchCountryData();
+
     // Generate a new unique key for the message
     const newMessageKey = db.ref('messages').push().key;
 
@@ -4211,7 +4235,8 @@ postForm.addEventListener('submit', async (e) => {
       author: userAlias || currentUser.displayName || 'Anonymous',
       authorId: currentUser.uid,
       timestamp: firebase.database.ServerValue.TIMESTAMP,
-      photoURL: currentUser.photoURL || ''
+      photoURL: currentUser.photoURL || '',
+      ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -4252,5 +4277,5 @@ postForm.addEventListener('submit', async (e) => {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, countryCodeToFlag };
 }
