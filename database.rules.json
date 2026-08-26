@@ -90,7 +90,7 @@
           }
         },
         "countryCode": {
-          ".validate": "newData.isString() && newData.val().length === 2"
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}$/)"
         },
         "countryName": {
           ".validate": "newData.isString() && newData.val().length <= 100"

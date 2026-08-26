@@ -187,6 +187,7 @@ describe('createMessageCard', () => {
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -533,6 +534,7 @@ describe('post form submit handler', () => {
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -657,6 +659,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -2034,6 +2037,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3592,6 +3596,7 @@ describe('browser notifications — permission request on post', () => {
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -6764,6 +6769,7 @@ describe('poll — post form creates poll payload', () => {
     global.renderMessageText = utils.renderMessageText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
   }
 
   beforeEach(() => {
