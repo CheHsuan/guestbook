@@ -112,6 +112,12 @@ const APP_HTML = `
     <div id="gif-grid"></div>
     <p id="gif-search-error" style="display:none;"></p>
   </div>
+  <button type="button" id="image-toggle-btn" aria-pressed="false"></button>
+  <input type="file" id="image-file-input" style="display:none;" />
+  <div id="image-composer" style="display:none;">
+    <div id="image-preview-wrap"></div>
+  </div>
+  <p id="image-upload-error" style="display:none;"></p>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -157,16 +163,37 @@ function makeFirebaseMock() {
     ServerValue: { TIMESTAMP: 'SERVER_TIMESTAMP' },
   });
 
+  const storageRef = {
+    put: jest.fn().mockReturnValue({
+      on: jest.fn(),
+      cancel: jest.fn(),
+      snapshot: { ref: { getDownloadURL: jest.fn().mockResolvedValue('https://example.com/img.jpg') } },
+    }),
+    getDownloadURL: jest.fn().mockResolvedValue('https://example.com/img.jpg'),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const storageInstance = {
+    useEmulator: jest.fn(),
+    ref: jest.fn().mockReturnValue(storageRef),
+    refFromURL: jest.fn().mockReturnValue(storageRef),
+  };
+
+  const storageFn = jest.fn().mockReturnValue(storageInstance);
+
   return {
     firebase: {
       apps: { length: 0 },
       initializeApp: jest.fn(),
       auth: authFn,
       database: dbFn,
+      storage: storageFn,
     },
     authInstance,
     dbInstance,
     dbRef,
+    storageInstance,
+    storageRef,
   };
 }
 
@@ -7218,6 +7245,207 @@ describe('gif — createMessageCard renders gif card', () => {
     const textEl = card.querySelector('.message-text');
     expect(textEl).not.toBeNull();
     expect(textEl.textContent.trim()).toBe('');
+  });
+});
+
+// ========================================
+// Image Attachment — validateImageFile
+// ========================================
+describe('image — validateImageFile', () => {
+  let validateImageFile;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ validateImageFile } = require('../public/app.js'));
+  });
+
+  test('rejects null (no file)', () => {
+    const result = validateImageFile(null);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/no file/i);
+  });
+
+  test('rejects unsupported MIME type (gif)', () => {
+    const file = { type: 'image/gif', size: 1000 };
+    const result = validateImageFile(file);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/jpeg|png|webp/i);
+  });
+
+  test('rejects files over 5 MB', () => {
+    const file = { type: 'image/jpeg', size: 5 * 1024 * 1024 + 1 };
+    const result = validateImageFile(file);
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/5 mb/i);
+  });
+
+  test('accepts valid JPEG within size limit', () => {
+    const file = { type: 'image/jpeg', size: 1024 * 100 };
+    expect(validateImageFile(file).valid).toBe(true);
+  });
+
+  test('accepts valid PNG within size limit', () => {
+    const file = { type: 'image/png', size: 1024 * 200 };
+    expect(validateImageFile(file).valid).toBe(true);
+  });
+
+  test('accepts valid WebP within size limit', () => {
+    const file = { type: 'image/webp', size: 1024 * 50 };
+    expect(validateImageFile(file).valid).toBe(true);
+  });
+
+  test('accepts exactly 5 MB', () => {
+    const file = { type: 'image/png', size: 5 * 1024 * 1024 };
+    expect(validateImageFile(file).valid).toBe(true);
+  });
+});
+
+// ========================================
+// Image Attachment — generateImageAlt
+// ========================================
+describe('image — generateImageAlt', () => {
+  let generateImageAlt;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ generateImageAlt } = require('../public/app.js'));
+  });
+
+  test('includes the display name', () => {
+    expect(generateImageAlt('Alice')).toBe('Image posted by Alice');
+  });
+
+  test('falls back to Anonymous when displayName is empty string', () => {
+    expect(generateImageAlt('')).toBe('Image posted by Anonymous');
+  });
+
+  test('falls back to Anonymous when displayName is null', () => {
+    expect(generateImageAlt(null)).toBe('Image posted by Anonymous');
+  });
+});
+
+// ========================================
+// Image Attachment — createMessageCard renders image card
+// ========================================
+describe('image — createMessageCard renders image card', () => {
+  let createMessageCard;
+
+  const imageMsg = {
+    id: 'img1',
+    type: 'image',
+    author: 'Carol',
+    text: 'Image posted by Carol',
+    imageUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/file.jpg?alt=media',
+    imageAlt: 'Image posted by Carol',
+    timestamp: Date.now(),
+    authorId: 'uid-carol',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('renders .image-message-img element', () => {
+    const card = createMessageCard(imageMsg, null);
+    expect(card.querySelector('.image-message-img')).not.toBeNull();
+  });
+
+  test('sets src from imageUrl via DOM property (XSS-safe)', () => {
+    const card = createMessageCard(imageMsg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.src).toContain('firebasestorage.googleapis.com');
+  });
+
+  test('sets alt from imageAlt via DOM property', () => {
+    const card = createMessageCard(imageMsg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
+  });
+
+  test('falls back to "Image" when imageAlt is empty', () => {
+    const msg = { ...imageMsg, id: 'img-noalt', imageAlt: '' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image');
+  });
+
+  test('message-text element is empty for image messages', () => {
+    const card = createMessageCard(imageMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent.trim()).toBe('');
+  });
+
+  test('does not render edit button for image messages', () => {
+    const ownUser = { uid: 'uid-carol' };
+    const card = createMessageCard(imageMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('renders delete button for own image message', () => {
+    const ownUser = { uid: 'uid-carol' };
+    const card = createMessageCard(imageMsg, ownUser);
+    expect(card.querySelector('.btn-delete')).not.toBeNull();
+  });
+
+  test('does not render .gif-message-img for image messages', () => {
+    const card = createMessageCard(imageMsg, null);
+    expect(card.querySelector('.gif-message-img')).toBeNull();
   });
 });
 

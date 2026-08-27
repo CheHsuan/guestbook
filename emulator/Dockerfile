@@ -11,9 +11,10 @@ WORKDIR /app
 # Expose the ports for the emulators
 # 9000: Database
 # 9099: Auth
+# 9199: Storage
 # 5005: Hosting
 # 4000: Emulator UI
-EXPOSE 9000 9099 5005 4000
+EXPOSE 9000 9099 9199 5005 4000
 
 # Start emulators bound to all interfaces so they are accessible outside the container
 CMD ["firebase", "emulators:start", "--project", "guestbook-3c7eb"]
