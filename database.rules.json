@@ -67,7 +67,7 @@
           ".validate": "newData.isString()"
         },
         "type": {
-          ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif')"
+          ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif' || newData.val() === 'image')"
         },
         "gifUrl": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/media\\.tenor\\.com\\/.+/)"
@@ -88,6 +88,12 @@
           "$other": {
             ".validate": false
           }
+        },
+        "imageUrl": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/.+/)"
+        },
+        "imageAlt": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
         },
         "countryCode": {
           ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}$/)"

@@ -104,7 +104,9 @@
             <div class="poll-toggle-row">
               <button type="button" id="poll-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Switch to poll mode">&#x1F4CA; Poll</button>
               <button type="button" id="gif-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Post a GIF">GIF</button>
+              <button type="button" id="image-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach an image">&#x1F4F7; Image</button>
             </div>
+            <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp" style="display:none;" aria-hidden="true">
             <div id="text-composer" class="textarea-wrapper">
               <textarea id="message-input" placeholder="Write something nice..." maxlength="250" rows="3"></textarea>
               <span id="char-counter" class="char-counter">0 / 250</span>
@@ -120,6 +122,10 @@
               <div id="gif-preview-wrap" class="gif-preview-wrap"></div>
               <button type="button" id="gif-change-btn" class="gif-change-btn" style="display:none;">Change GIF</button>
             </div>
+            <div id="image-composer" class="image-composer" style="display:none;">
+              <div id="image-preview-wrap" class="gif-preview-wrap"></div>
+            </div>
+            <p id="image-upload-error" class="image-upload-error" style="display:none;"></p>
             <p id="empty-error-msg" class="empty-error-msg" style="display: none;">Please write a message before
               posting.</p>
             <button type="submit" id="submit-btn" class="btn btn-submit">
@@ -261,6 +267,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-storage-compat.js"></script>
   <!-- Auto-initializes Firebase with project config via Firebase Hosting reserved URL -->
   <script src="/__/firebase/init.js"></script>
   <!-- Author Profile Panel -->

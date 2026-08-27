@@ -6,6 +6,7 @@ services:
     ports:
       - "9000:9000" # Realtime Database
       - "9099:9099" # Authentication
+      - "9199:9199" # Storage
       - "5005:5005" # Hosting
       - "4000:4000" # Emulator UI
     volumes:
