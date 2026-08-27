@@ -90,7 +90,7 @@
           }
         },
         "imageUrl": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/.+/)"
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/firebasestorage\\.googleapis\\.com\\/.+/)"
         },
         "imageAlt": {
           ".validate": "newData.isString() && newData.val().length <= 200"

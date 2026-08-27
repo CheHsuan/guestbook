@@ -4601,6 +4601,7 @@ postForm.addEventListener('submit', async (e) => {
       // If user removed the image while upload was in flight, abort the DB write
       if (!selectedImageFile) {
         imageUploadTask = null;
+        try { await storageRef.delete(); } catch (_) {}
         return;
       }
       imageUploadTask = null;
