@@ -1631,7 +1631,7 @@ body {
 /* ========================================
    Permalink Button
    ======================================== */
-.btn-permalink {
+.btn-share {
   position: relative;
   background: none;
   border: none;
@@ -1650,53 +1650,31 @@ body {
   flex-shrink: 0;
 }
 
-.btn-permalink svg {
+.btn-share svg {
   width: 16px;
   height: 16px;
 }
 
-.message-card:hover .btn-permalink {
+.message-card:hover .btn-share {
   opacity: 1;
   pointer-events: auto;
 }
 
-.btn-permalink:hover {
+.btn-share:hover {
   color: var(--link);
   background: rgba(29, 155, 240, 0.1);
 }
 
-.btn-permalink:focus-visible {
+.btn-share:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 @media (hover: none) {
-  .btn-permalink {
+  .btn-share {
     opacity: 1;
     pointer-events: auto;
   }
-}
-
-.permalink-tooltip {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text-primary);
-  color: var(--accent-contrast);
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
-  font-family: inherit;
-}
-
-.permalink-tooltip--visible {
-  opacity: 1;
 }
 
 /* ========================================
