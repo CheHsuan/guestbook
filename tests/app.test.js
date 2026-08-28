@@ -1663,12 +1663,12 @@ describe('reply feature', () => {
   });
 });
 
-// --- permalink button ---
-describe('permalink button', () => {
+// --- share button ---
+describe('share button', () => {
   let createMessageCard;
 
   const baseMsg = {
-    id: 'permalink-msg-1',
+    id: 'share-msg-1',
     author: 'Alice',
     text: 'Hello world',
     timestamp: Date.now(),
@@ -1698,56 +1698,101 @@ describe('permalink button', () => {
     ({ createMessageCard } = require('../public/app.js'));
   });
 
-  test('renders .btn-permalink on every card (no user)', () => {
-    const card = createMessageCard(baseMsg, null);
-    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+  beforeEach(() => {
+    // Reset navigator.share to undefined (desktop default) before each test
+    Object.defineProperty(navigator, 'share', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    // Clear any lingering toast elements from previous tests
+    document.querySelectorAll('.permalink-toast').forEach(el => el.remove());
   });
 
-  test('renders .btn-permalink on every card (own message)', () => {
+  test('renders .btn-share on every card (no user)', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-share')).not.toBeNull();
+  });
+
+  test('renders .btn-share on every card (own message)', () => {
     const card = createMessageCard(baseMsg, { uid: 'uid-alice' });
-    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+    expect(card.querySelector('.btn-share')).not.toBeNull();
   });
 
-  test('renders .btn-permalink on every card (other user)', () => {
+  test('renders .btn-share on every card (other user)', () => {
     const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
-    expect(card.querySelector('.btn-permalink')).not.toBeNull();
+    expect(card.querySelector('.btn-share')).not.toBeNull();
   });
 
-  test('.btn-permalink has aria-label="Copy link to this message"', () => {
+  test('.btn-share has aria-label="Share this message"', () => {
     const card = createMessageCard(baseMsg, null);
-    expect(card.querySelector('.btn-permalink').getAttribute('aria-label'))
-      .toBe('Copy link to this message');
+    expect(card.querySelector('.btn-share').getAttribute('aria-label'))
+      .toBe('Share this message');
   });
 
-  test('.btn-permalink has tabindex="-1" in non-touch environment (jsdom has no matchMedia)', () => {
+  test('.btn-share has tabindex="-1" in non-touch environment (jsdom has no matchMedia)', () => {
     const card = createMessageCard(baseMsg, null);
-    expect(card.querySelector('.btn-permalink').getAttribute('tabindex')).toBe('-1');
+    expect(card.querySelector('.btn-share').getAttribute('tabindex')).toBe('-1');
   });
 
-  test('.btn-permalink comes after .btn-reply in the footer', () => {
+  test('.btn-share comes after .btn-reply in the footer', () => {
     const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
     const footer = card.querySelector('.card-footer');
     const children = Array.from(footer.children);
     const replyIdx = children.findIndex(el => el.classList.contains('btn-reply'));
-    const permalinkIdx = children.findIndex(el => el.classList.contains('btn-permalink'));
+    const shareIdx = children.findIndex(el => el.classList.contains('btn-share'));
     expect(replyIdx).toBeGreaterThanOrEqual(0);
-    expect(permalinkIdx).toBeGreaterThan(replyIdx);
+    expect(shareIdx).toBeGreaterThan(replyIdx);
   });
 
-  test('.btn-permalink contains .permalink-tooltip with text "Copied!"', () => {
+  test('uses navigator.share when available and resolves successfully', async () => {
+    const shareMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', {
+      value: shareMock,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: jest.fn() },
+      writable: true,
+      configurable: true,
+    });
+
     const card = createMessageCard(baseMsg, null);
-    const tooltip = card.querySelector('.btn-permalink .permalink-tooltip');
-    expect(tooltip).not.toBeNull();
-    expect(tooltip.textContent).toBe('Copied!');
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(shareMock).toHaveBeenCalledWith({
+      title: 'Guestbook',
+      text: `Alice: Hello world`,
+      url: `https://guestbook.slashstack.app/app#msg-${baseMsg.id}`,
+    });
   });
 
-  test('.permalink-tooltip does not use innerHTML for its text', () => {
+  test('AbortError from navigator.share shows no toast', async () => {
+    const abortError = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    Object.defineProperty(navigator, 'share', {
+      value: jest.fn().mockRejectedValue(abortError),
+      writable: true,
+      configurable: true,
+    });
+
     const card = createMessageCard(baseMsg, null);
-    const tooltip = card.querySelector('.permalink-tooltip');
-    expect(tooltip.children.length).toBe(0);
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.querySelector('.permalink-toast')).toBeNull();
   });
 
-  test('clicking .btn-permalink calls clipboard.writeText with full permalink URL', async () => {
+  test('non-AbortError from navigator.share falls back to clipboard', async () => {
+    const networkError = Object.assign(new Error('Network'), { name: 'TypeError' });
+    Object.defineProperty(navigator, 'share', {
+      value: jest.fn().mockRejectedValue(networkError),
+      writable: true,
+      configurable: true,
+    });
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -1756,7 +1801,9 @@ describe('permalink button', () => {
     });
 
     const card = createMessageCard(baseMsg, null);
-    card.querySelector('.btn-permalink').click();
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(writeText).toHaveBeenCalledWith(
@@ -1764,7 +1811,7 @@ describe('permalink button', () => {
     );
   });
 
-  test('successful clipboard copy adds permalink-tooltip--visible class to tooltip', async () => {
+  test('clicking .btn-share calls clipboard.writeText with full permalink URL (no navigator.share)', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {
       value: { writeText },
@@ -1773,30 +1820,87 @@ describe('permalink button', () => {
     });
 
     const card = createMessageCard(baseMsg, null);
-    card.querySelector('.btn-permalink').click();
+    card.querySelector('.btn-share').click();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(card.querySelector('.permalink-tooltip').classList.contains('permalink-tooltip--visible'))
-      .toBe(true);
+    expect(writeText).toHaveBeenCalledWith(
+      `https://guestbook.slashstack.app/app#msg-${baseMsg.id}`
+    );
   });
 
-  test('falls back to prompt() when clipboard API is unavailable', () => {
+  test('successful clipboard copy shows "Link copied!" toast', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe('Link copied!');
+  });
+
+  test('falls back to toast when clipboard API is unavailable', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       value: null,
       writable: true,
       configurable: true,
     });
-    const promptSpy = jest.spyOn(window, 'prompt').mockImplementation(() => null);
 
     const card = createMessageCard(baseMsg, null);
-    card.querySelector('.btn-permalink').click();
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
 
-    expect(promptSpy).toHaveBeenCalledWith(
-      'Copy this link:',
-      `https://guestbook.slashstack.app/app#msg-${baseMsg.id}`
-    );
-    promptSpy.mockRestore();
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe(`Copy this link: #msg-${baseMsg.id}`);
+  });
+
+  test('GIF message uses fixed share text', async () => {
+    const shareMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', {
+      value: shareMock,
+      writable: true,
+      configurable: true,
+    });
+
+    const gifMsg = { ...baseMsg, id: 'share-gif-1', type: 'gif', gifUrl: 'https://media.tenor.com/x.gif', text: 'some alt' };
+    const card = createMessageCard(gifMsg, null);
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(shareMock).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Check out this GIF on Guestbook',
+    }));
+  });
+
+  test('share text is truncated to 100 chars', async () => {
+    const shareMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'share', {
+      value: shareMock,
+      writable: true,
+      configurable: true,
+    });
+
+    const longText = 'x'.repeat(200);
+    const longMsg = { ...baseMsg, id: 'share-long-1', text: longText };
+    const card = createMessageCard(longMsg, null);
+    card.querySelector('.btn-share').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const { text } = shareMock.mock.calls[0][0];
+    expect(text).toBe('Alice: ' + 'x'.repeat(100));
   });
 });
 

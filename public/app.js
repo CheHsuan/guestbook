@@ -3030,38 +3030,51 @@ function createMessageCard(msg, user, isNew) {
   replyCountEl.style.display = 'none';
   cardFooter.appendChild(replyCountEl);
 
-  // Permalink button — visible to all visitors (not gated on auth)
+  // Share button — visible to all visitors (not gated on auth)
   const isMobile = typeof window !== 'undefined' && window.matchMedia
     ? window.matchMedia('(hover: none)').matches
     : false;
 
-  const permalinkBtn = document.createElement('button');
-  permalinkBtn.className = 'btn-permalink';
-  permalinkBtn.setAttribute('aria-label', 'Copy link to this message');
-  permalinkBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
-  permalinkBtn.innerHTML = LINK_ICON; // static SVG — no user data
-
-  const permalinkTooltip = document.createElement('span');
-  permalinkTooltip.className = 'permalink-tooltip';
-  permalinkTooltip.textContent = 'Copied!';
-  permalinkBtn.appendChild(permalinkTooltip);
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn-share';
+  shareBtn.setAttribute('aria-label', 'Share this message');
+  shareBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+  shareBtn.innerHTML = LINK_ICON; // static SVG — no user data
 
   if (!isMobile) {
-    card.addEventListener('mouseenter', () => permalinkBtn.setAttribute('tabindex', '0'));
-    card.addEventListener('mouseleave', () => permalinkBtn.setAttribute('tabindex', '-1'));
+    card.addEventListener('mouseenter', () => shareBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => shareBtn.setAttribute('tabindex', '-1'));
   }
 
-  permalinkBtn.addEventListener('click', () => {
+  shareBtn.addEventListener('click', async () => {
     const url = 'https://guestbook.slashstack.app/app#msg-' + msg.id;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(() => {
-        permalinkTooltip.classList.add('permalink-tooltip--visible');
-        setTimeout(() => permalinkTooltip.classList.remove('permalink-tooltip--visible'), 1500);
-      }).catch(() => {
-        prompt('Copy this link:', url);
-      });
+    let shareText;
+    if (msg.type === 'gif') {
+      shareText = 'Check out this GIF on Guestbook';
     } else {
-      prompt('Copy this link:', url);
+      const rawText = msg.text || (msg.poll && msg.poll.question) || '';
+      shareText = msg.author + ': ' + rawText.slice(0, 100);
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Guestbook', text: shareText, url });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        // non-AbortError: fall through to clipboard
+      }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Link copied!');
+      } catch {
+        showToast('Copy this link: #msg-' + msg.id);
+      }
+    } else {
+      showToast('Copy this link: #msg-' + msg.id);
     }
   });
 
@@ -3293,7 +3306,7 @@ function createMessageCard(msg, user, isNew) {
   });
 
   cardFooter.appendChild(bookmarkBtn);
-  cardFooter.appendChild(permalinkBtn);
+  cardFooter.appendChild(shareBtn);
 
   // Replies section (hidden until replies exist)
   const repliesSection = document.createElement('div');
