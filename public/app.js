@@ -82,6 +82,12 @@ function toggleTheme() {
 // ========================================
 const loginBtnMain = document.getElementById('login-btn-main');
 const loginBtnHeader = document.getElementById('login-btn-header');
+const postAsGuestBtnMain = document.getElementById('post-as-guest-btn-main');
+const postAsGuestBtnHeader = document.getElementById('post-as-guest-btn-header');
+const guestNameBackdrop = document.getElementById('guest-name-backdrop');
+const guestNameModal = document.getElementById('guest-name-modal');
+const guestNameInput = document.getElementById('guest-name-input');
+const guestNameConfirm = document.getElementById('guest-name-confirm');
 const logoutBtn = document.getElementById('logout-btn');
 const userInfo = document.getElementById('user-info');
 const userAvatar = document.getElementById('user-avatar');
@@ -134,6 +140,7 @@ const imageUploadError = document.getElementById('image-upload-error');
 // ========================================
 let currentUser = null;
 let userAlias = null;
+let guestDisplayName = null;
 let myPostsActive = false;
 let pollMode = false;
 let gifMode = false;
@@ -817,7 +824,7 @@ function renderTypingLabel(map, currentUid) {
 }
 
 function startTyping() {
-  if (!currentUser) return;
+  if (!currentUser || currentUser.isAnonymous) return;
 
   if (!typingRef) {
     typingRef = db.ref(`typing/${currentUser.uid}`);
@@ -846,7 +853,7 @@ function setupTypingInputListeners() {
     : false;
 
   messageInput.addEventListener('input', () => {
-    if (!currentUser) return;
+    if (!currentUser || currentUser.isAnonymous) return;
     if (isMobile && messageInput.value.length === 0) return;
     if (messageInput.value.length > 0) {
       startTyping();
@@ -1575,19 +1582,86 @@ function openWebsiteEditor() {
 }
 
 // ========================================
-// Auth: Sign In / Sign Out
+// Auth: Sign In / Sign Out / Guest
 // ========================================
 function signIn() {
-  auth.signInWithPopup(provider).catch((error) => {
-    console.error('Sign-in error:', error.message);
-  });
+  if (currentUser && currentUser.isAnonymous) {
+    auth.currentUser.linkWithPopup(provider).then(() => {
+      guestDisplayName = null;
+      sessionStorage.removeItem('guestDisplayName');
+    }).catch((error) => {
+      if (error.code === 'auth/credential-already-in-use') {
+        // Google account already exists; sign in normally (messages stay under anonymous UID until 24h expiry)
+        auth.signInWithPopup(provider).catch((e) => console.error('Sign-in error:', e.message));
+      } else {
+        console.error('Link error:', error.message);
+      }
+    });
+  } else {
+    auth.signInWithPopup(provider).catch((error) => {
+      console.error('Sign-in error:', error.message);
+    });
+  }
 }
 
 function signOut() {
+  guestDisplayName = null;
+  sessionStorage.removeItem('guestDisplayName');
   auth.signOut().catch((error) => {
     console.error('Sign-out error:', error.message);
   });
 }
+
+function openGuestNameModal() {
+  if (!guestNameModal || !guestNameBackdrop) return;
+  if (guestNameInput) guestNameInput.value = '';
+  guestNameBackdrop.style.display = '';
+  guestNameModal.style.display = '';
+  void guestNameModal.offsetWidth;
+  guestNameModal.classList.add('guest-name-modal--open');
+  guestNameBackdrop.classList.add('guest-name-backdrop--visible');
+  if (guestNameInput) guestNameInput.focus();
+}
+
+function closeGuestNameModal() {
+  if (!guestNameModal || !guestNameBackdrop) return;
+  guestNameModal.classList.remove('guest-name-modal--open');
+  guestNameBackdrop.classList.remove('guest-name-backdrop--visible');
+  guestNameModal.addEventListener('transitionend', () => {
+    guestNameModal.style.display = 'none';
+    guestNameBackdrop.style.display = 'none';
+  }, { once: true });
+}
+
+async function signInAsGuest() {
+  try {
+    await auth.signInAnonymously();
+    openGuestNameModal();
+  } catch (error) {
+    console.error('Anonymous sign-in error:', error.message);
+    showToast('Could not connect. Please check your connection and try again.');
+  }
+}
+
+function confirmGuestName() {
+  if (!guestNameInput) return;
+  const rawName = guestNameInput.value.trim();
+  guestDisplayName = rawName || 'Anonymous';
+  sessionStorage.setItem('guestDisplayName', guestDisplayName);
+  closeGuestNameModal();
+  if (postSection) postSection.style.display = 'block';
+  if (userName) userName.textContent = guestDisplayName;
+}
+
+if (postAsGuestBtnMain) postAsGuestBtnMain.addEventListener('click', signInAsGuest);
+if (postAsGuestBtnHeader) postAsGuestBtnHeader.addEventListener('click', signInAsGuest);
+if (guestNameConfirm) guestNameConfirm.addEventListener('click', confirmGuestName);
+if (guestNameInput) {
+  guestNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); confirmGuestName(); }
+  });
+}
+if (guestNameBackdrop) guestNameBackdrop.addEventListener('click', confirmGuestName);
 
 loginBtnMain.addEventListener('click', signIn);
 loginBtnHeader.addEventListener('click', signIn);
@@ -1600,13 +1674,21 @@ if (editWebsiteBtn) editWebsiteBtn.addEventListener('click', openWebsiteEditor);
 // Auth: State Observer
 // ========================================
 auth.onAuthStateChanged(async (user) => {
-  // Clean up typing indicator when signing out
-  if (!user && currentUser) {
+  const wasAnonymous = currentUser && currentUser.isAnonymous;
+
+  // Clean up typing indicator when signing out (not for anonymous — they never set it up)
+  if (!user && currentUser && !wasAnonymous) {
     stopTyping();
     typingRef = null;
     userAlias = null;
     userBio = null;
     userWebsite = null;
+  }
+
+  // Clean up on full sign-out from any state
+  if (!user) {
+    guestDisplayName = null;
+    sessionStorage.removeItem('guestDisplayName');
   }
 
   currentUser = user;
@@ -1615,20 +1697,46 @@ auth.onAuthStateChanged(async (user) => {
   mainContent.style.display = 'block';
   loginPrompt.style.display = 'none';
 
-  if (user) {
-    // Show UI synchronously with Google name; alias will update it once loaded
+  if (user && !user.isAnonymous) {
+    // Fully authenticated Google user
     userInfo.style.display = 'flex';
     userAvatar.src = user.photoURL || '';
     userName.textContent = user.displayName || 'User';
     postSection.style.display = 'block';
     loginBtnHeader.style.display = 'none';
+    if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'none';
+    // Restore media composer toggles for authenticated users
+    if (pollToggleBtn) pollToggleBtn.style.display = '';
+    if (gifToggleBtn) gifToggleBtn.style.display = '';
+    if (imageToggleBtn) imageToggleBtn.style.display = '';
     restoreDraft();
     initPromptCard();
     updateMyPostsBtnVisibility();
+  } else if (user && user.isAnonymous) {
+    // Anonymous / guest user — show header sign-in button for account upgrade
+    userInfo.style.display = 'none';
+    loginBtnHeader.style.display = 'inline-flex';
+    if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'none';
+    // Restore guest name from sessionStorage if page was refreshed (guestDisplayName is reset on each load)
+    if (!guestDisplayName) {
+      guestDisplayName = sessionStorage.getItem('guestDisplayName');
+    }
+    // If name is known (first open or page refresh), show post section immediately
+    if (guestDisplayName) {
+      postSection.style.display = 'block';
+      if (userName) userName.textContent = guestDisplayName;
+    }
+    // Guests: text-only — hide media composer toggles
+    if (pollToggleBtn) pollToggleBtn.style.display = 'none';
+    if (gifToggleBtn) gifToggleBtn.style.display = 'none';
+    if (imageToggleBtn) imageToggleBtn.style.display = 'none';
+    hidePromptCard();
+    if (myPostsBtn) myPostsBtn.style.display = 'none';
   } else {
     userInfo.style.display = 'none';
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
+    if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'inline-flex';
     hideNewMessagesBanner();
     hidePromptCard();
     clearDraft();
@@ -1650,7 +1758,7 @@ auth.onAuthStateChanged(async (user) => {
   }
 
   // Load alias after listener is started so tests see correct listener timing
-  if (user) {
+  if (user && !user.isAnonymous) {
     await loadUserAlias(user);
     userName.textContent = userAlias || user.displayName || 'User';
   }
@@ -2743,20 +2851,30 @@ function createMessageCard(msg, user, isNew) {
   }
 
   const avatarEl = createAvatarElement(msg.photoURL, msg.author);
-  avatarEl.classList.add('author-avatar-btn');
-  avatarEl.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
-  });
+  if (!msg.isGuest) {
+    avatarEl.classList.add('author-avatar-btn');
+    avatarEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
+    });
 
-  authorEl.classList.add('author-name-btn');
-  authorEl.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
-  });
+    authorEl.classList.add('author-name-btn');
+    authorEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openAuthorPanel(msg.authorId, msg.author, msg.photoURL);
+    });
+  }
 
   header.appendChild(avatarEl);
   header.appendChild(authorEl);
+
+  if (msg.isGuest) {
+    const guestBadge = document.createElement('span');
+    guestBadge.className = 'guest-badge';
+    guestBadge.textContent = 'Guest';
+    guestBadge.setAttribute('aria-label', 'Posted as guest');
+    header.appendChild(guestBadge);
+  }
 
   if (msg.countryCode) {
     const flag = countryCodeToFlag(msg.countryCode);
@@ -4690,12 +4808,17 @@ postForm.addEventListener('submit', async (e) => {
 
     // Build the atomic multi-path update
     const updates = {};
+    const isGuest = !!(currentUser.isAnonymous);
+    const authorName = isGuest
+      ? (guestDisplayName || 'Anonymous')
+      : (userAlias || currentUser.displayName || 'Anonymous');
     updates[`/messages/${newMessageKey}`] = {
       text: text,
-      author: userAlias || currentUser.displayName || 'Anonymous',
+      author: authorName,
       authorId: currentUser.uid,
       timestamp: firebase.database.ServerValue.TIMESTAMP,
       photoURL: currentUser.photoURL || '',
+      ...(isGuest && { isGuest: true }),
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
@@ -4704,15 +4827,19 @@ postForm.addEventListener('submit', async (e) => {
     await db.ref().update(updates);
 
     // Request notification permission once per session after the user's first post
-    if ('Notification' in window &&
+    if (!isGuest && 'Notification' in window &&
         Notification.permission === 'default' &&
         !notificationPermissionRequested) {
       notificationPermissionRequested = true;
       Notification.requestPermission();
     }
 
+    if (isGuest) {
+      showToast('Message posted! Guest messages expire in 24 hours. Sign in with Google to manage a persistent profile.');
+    }
+
     // Success — clear input, draft, and stop typing indicator
-    stopTyping();
+    if (!isGuest) stopTyping();
     clearDraft();
     messageInput.value = '';
     charCounter.textContent = '0 / 250';

@@ -52,7 +52,7 @@
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
         },
         "author": {
-          ".validate": "data.exists() ? newData.val() === data.val() : (newData.val() === auth.token.name || newData.val() === root.child('users').child(auth.uid).child('profile/displayName').val())"
+          ".validate": "data.exists() ? newData.val() === data.val() : (auth.token.firebase.sign_in_provider === 'anonymous' ? (newData.isString() && newData.val().length >= 1 && newData.val().length <= 40) : (newData.val() === auth.token.name || newData.val() === root.child('users').child(auth.uid).child('profile/displayName').val()))"
         },
         "authorId": {
           ".validate": "newData.val() === auth.uid"
@@ -65,6 +65,9 @@
         },
         "photoURL": {
           ".validate": "newData.isString()"
+        },
+        "isGuest": {
+          ".validate": "newData.isBoolean() && newData.val() === true"
         },
         "type": {
           ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif' || newData.val() === 'image')"
@@ -109,7 +112,7 @@
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 250"
             },
             "author": {
-              ".validate": "data.exists() ? newData.val() === data.val() : (newData.val() === auth.token.name || newData.val() === root.child('users').child(auth.uid).child('profile/displayName').val())"
+              ".validate": "data.exists() ? newData.val() === data.val() : (auth.token.firebase.sign_in_provider === 'anonymous' ? (newData.isString() && newData.val().length >= 1 && newData.val().length <= 40) : (newData.val() === auth.token.name || newData.val() === root.child('users').child(auth.uid).child('profile/displayName').val()))"
             },
             "authorId": {
               ".validate": "newData.val() === auth.uid"
