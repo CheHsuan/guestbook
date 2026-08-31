@@ -13,7 +13,6 @@ const APP_HTML = `
   <div id="guest-name-backdrop" style="display:none;"></div>
   <div id="guest-name-modal" style="display:none;">
     <input id="guest-name-input" type="text" maxlength="40" />
-    <p id="guest-name-error" style="display:none;"></p>
     <button id="guest-name-confirm"></button>
   </div>
   <button id="logout-btn"></button>
@@ -1488,6 +1487,7 @@ describe('guest posting', () => {
 
   function setupModule() {
     jest.resetModules();
+    sessionStorage.clear();
     document.body.innerHTML = APP_HTML;
 
     mocks = makeFirebaseMock();

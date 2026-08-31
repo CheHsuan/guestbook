@@ -88,7 +88,6 @@ const guestNameBackdrop = document.getElementById('guest-name-backdrop');
 const guestNameModal = document.getElementById('guest-name-modal');
 const guestNameInput = document.getElementById('guest-name-input');
 const guestNameConfirm = document.getElementById('guest-name-confirm');
-const guestNameError = document.getElementById('guest-name-error');
 const logoutBtn = document.getElementById('logout-btn');
 const userInfo = document.getElementById('user-info');
 const userAvatar = document.getElementById('user-avatar');
@@ -1589,6 +1588,7 @@ function signIn() {
   if (currentUser && currentUser.isAnonymous) {
     auth.currentUser.linkWithPopup(provider).then(() => {
       guestDisplayName = null;
+      sessionStorage.removeItem('guestDisplayName');
     }).catch((error) => {
       if (error.code === 'auth/credential-already-in-use') {
         // Google account already exists; sign in normally (messages stay under anonymous UID until 24h expiry)
@@ -1606,6 +1606,7 @@ function signIn() {
 
 function signOut() {
   guestDisplayName = null;
+  sessionStorage.removeItem('guestDisplayName');
   auth.signOut().catch((error) => {
     console.error('Sign-out error:', error.message);
   });
@@ -1614,7 +1615,6 @@ function signOut() {
 function openGuestNameModal() {
   if (!guestNameModal || !guestNameBackdrop) return;
   if (guestNameInput) guestNameInput.value = '';
-  if (guestNameError) guestNameError.style.display = 'none';
   guestNameBackdrop.style.display = '';
   guestNameModal.style.display = '';
   void guestNameModal.offsetWidth;
@@ -1647,6 +1647,7 @@ function confirmGuestName() {
   if (!guestNameInput) return;
   const rawName = guestNameInput.value.trim();
   guestDisplayName = rawName || 'Anonymous';
+  sessionStorage.setItem('guestDisplayName', guestDisplayName);
   closeGuestNameModal();
   if (postSection) postSection.style.display = 'block';
   if (userName) userName.textContent = guestDisplayName;
@@ -1687,6 +1688,7 @@ auth.onAuthStateChanged(async (user) => {
   // Clean up on full sign-out from any state
   if (!user) {
     guestDisplayName = null;
+    sessionStorage.removeItem('guestDisplayName');
   }
 
   currentUser = user;
@@ -1715,8 +1717,11 @@ auth.onAuthStateChanged(async (user) => {
     userInfo.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'none';
-    // postSection shown after name prompt is confirmed (handled in confirmGuestName)
-    // If guestDisplayName already set (e.g. page re-init), show post section immediately
+    // Restore guest name from sessionStorage if page was refreshed (guestDisplayName is reset on each load)
+    if (!guestDisplayName) {
+      guestDisplayName = sessionStorage.getItem('guestDisplayName');
+    }
+    // If name is known (first open or page refresh), show post section immediately
     if (guestDisplayName) {
       postSection.style.display = 'block';
       if (userName) userName.textContent = guestDisplayName;
