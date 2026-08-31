@@ -7,7 +7,15 @@
 // --- HTML fixture — mirrors the DOM elements app.js grabs at load time ---
 const APP_HTML = `
   <button id="login-btn-header" style="display:none"></button>
+  <button id="post-as-guest-btn-header" style="display:none"></button>
   <button id="login-btn-main"></button>
+  <button id="post-as-guest-btn-main"></button>
+  <div id="guest-name-backdrop" style="display:none;"></div>
+  <div id="guest-name-modal" style="display:none;">
+    <input id="guest-name-input" type="text" maxlength="40" />
+    <p id="guest-name-error" style="display:none;"></p>
+    <button id="guest-name-confirm"></button>
+  </div>
   <button id="logout-btn"></button>
   <div id="user-info" style="display:none">
     <button id="edit-bio-btn"></button>
@@ -150,7 +158,9 @@ function makeFirebaseMock() {
     useEmulator: jest.fn(),
     onAuthStateChanged: jest.fn(),
     signInWithPopup: jest.fn().mockResolvedValue({}),
+    signInAnonymously: jest.fn().mockResolvedValue({}),
     signOut: jest.fn().mockResolvedValue({}),
+    currentUser: null,
   };
 
   const GoogleAuthProvider = jest.fn().mockReturnValue({});
@@ -1468,6 +1478,179 @@ describe('unauthenticated visitor', () => {
     authStateCallback({ uid: 'uid-test', displayName: 'Tester', photoURL: '' });
 
     expect(document.getElementById('login-btn-header').style.display).toBe('none');
+  });
+});
+
+// --- guest posting ---
+describe('guest posting', () => {
+  let mocks;
+  let authStateCallback;
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
+      authStateCallback = cb;
+    });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.firebase = mocks.firebase;
+
+    require('../public/app.js');
+  }
+
+  beforeEach(setupModule);
+
+  function simulateAnonymousSignIn() {
+    authStateCallback({ uid: 'uid-anon', displayName: null, photoURL: '', isAnonymous: true });
+  }
+
+  test('onAuthStateChanged: anonymous user hides post section until name is confirmed', () => {
+    simulateAnonymousSignIn();
+    expect(document.getElementById('post-section').style.display).toBe('none');
+  });
+
+  test('onAuthStateChanged: anonymous user hides poll/gif/image toggles', () => {
+    simulateAnonymousSignIn();
+    expect(document.getElementById('poll-toggle-btn').style.display).toBe('none');
+    expect(document.getElementById('gif-toggle-btn').style.display).toBe('none');
+    expect(document.getElementById('image-toggle-btn').style.display).toBe('none');
+  });
+
+  test('onAuthStateChanged: anonymous user shows login-btn-header for account upgrade', () => {
+    simulateAnonymousSignIn();
+    expect(document.getElementById('login-btn-header').style.display).toBe('inline-flex');
+  });
+
+  test('confirmGuestName shows post section and sets user-name display', () => {
+    simulateAnonymousSignIn();
+    const nameInput = document.getElementById('guest-name-input');
+    const confirmBtn = document.getElementById('guest-name-confirm');
+    nameInput.value = 'Bob';
+    confirmBtn.click();
+    expect(document.getElementById('post-section').style.display).toBe('block');
+    expect(document.getElementById('user-name').textContent).toBe('Bob');
+  });
+
+  test('confirmGuestName defaults to "Anonymous" when input is blank', () => {
+    simulateAnonymousSignIn();
+    const nameInput = document.getElementById('guest-name-input');
+    const confirmBtn = document.getElementById('guest-name-confirm');
+    nameInput.value = '';
+    confirmBtn.click();
+    expect(document.getElementById('user-name').textContent).toBe('Anonymous');
+  });
+
+  test('post payload sets isGuest:true for anonymous user', async () => {
+    simulateAnonymousSignIn();
+    // Confirm guest name so post section is shown
+    document.getElementById('guest-name-input').value = 'Alice';
+    document.getElementById('guest-name-confirm').click();
+
+    const form = document.getElementById('post-form');
+    const input = document.getElementById('message-input');
+    input.value = 'Hello as guest!';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateCalls = mocks.dbRef.update.mock.calls;
+    expect(updateCalls.length).toBeGreaterThan(0);
+    const payload = Object.values(updateCalls[0][0]).find(v => v && v.text !== undefined);
+    expect(payload).toBeDefined();
+    expect(payload.isGuest).toBe(true);
+  });
+
+  test('post payload uses guestDisplayName as author for anonymous user', async () => {
+    simulateAnonymousSignIn();
+    document.getElementById('guest-name-input').value = 'Carol';
+    document.getElementById('guest-name-confirm').click();
+
+    const form = document.getElementById('post-form');
+    const input = document.getElementById('message-input');
+    input.value = 'Hello from Carol!';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateCalls = mocks.dbRef.update.mock.calls;
+    const payload = Object.values(updateCalls[0][0]).find(v => v && v.text !== undefined);
+    expect(payload.author).toBe('Carol');
+  });
+
+  test('createMessageCard renders guest-badge for isGuest messages', () => {
+    const utils = require('../public/utils');
+    const { createMessageCard } = require('../public/app.js');
+
+    const msg = {
+      id: 'g1',
+      author: 'Alice',
+      text: 'Guest message',
+      timestamp: Date.now(),
+      authorId: 'uid-anon',
+      isGuest: true,
+    };
+    const card = createMessageCard(msg, null, false);
+    const badge = card.querySelector('.guest-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toBe('Guest');
+  });
+
+  test('createMessageCard does not render guest-badge for non-guest messages', () => {
+    const { createMessageCard } = require('../public/app.js');
+
+    const msg = {
+      id: 'g2',
+      author: 'Bob',
+      text: 'Normal message',
+      timestamp: Date.now(),
+      authorId: 'uid-bob',
+    };
+    const card = createMessageCard(msg, null, false);
+    expect(card.querySelector('.guest-badge')).toBeNull();
+  });
+
+  test('createMessageCard: guest messages do not add author-avatar-btn class', () => {
+    const { createMessageCard } = require('../public/app.js');
+
+    const msg = {
+      id: 'g3',
+      author: 'Gus',
+      text: 'Guest post',
+      timestamp: Date.now(),
+      authorId: 'uid-gus',
+      isGuest: true,
+    };
+    const card = createMessageCard(msg, null, false);
+    expect(card.querySelector('.author-avatar-btn')).toBeNull();
+  });
+
+  test('unauthenticated state shows post-as-guest-btn-header', () => {
+    authStateCallback(null);
+    expect(document.getElementById('post-as-guest-btn-header').style.display).toBe('inline-flex');
   });
 });
 

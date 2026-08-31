@@ -545,6 +545,17 @@ body {
   background: var(--bg-subtle);
 }
 
+.btn-post-as-guest {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+}
+
+.btn-post-as-guest:hover {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
 .btn-logout {
   background: transparent;
   color: var(--text-secondary);
@@ -1390,6 +1401,20 @@ body {
 .login-card .btn-login {
   width: 100%;
   padding: 12px 24px;
+}
+
+.login-btn-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.login-btn-row .btn-login,
+.login-btn-row .btn-post-as-guest {
+  flex: 1;
+  min-width: 140px;
+  padding: 12px 16px;
 }
 
 /* ========================================
@@ -3280,4 +3305,96 @@ body {
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* ========================================
+   Guest Badge
+   ======================================== */
+.guest-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  margin-left: 4px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* ========================================
+   Guest Name Prompt Modal
+   ======================================== */
+.guest-name-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 900;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.guest-name-backdrop--visible {
+  opacity: 1;
+}
+
+.guest-name-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%) scale(0.97);
+  z-index: 901;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 28px 24px 24px;
+  width: min(360px, calc(100vw - 32px));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.guest-name-modal--open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.guest-name-modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.guest-name-input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-primary);
+  box-sizing: border-box;
+  margin-bottom: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.guest-name-input:focus {
+  border-color: var(--accent);
+}
+
+.guest-name-error {
+  color: var(--danger);
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.guest-name-confirm-btn {
+  width: 100%;
+  padding: 12px;
 }
