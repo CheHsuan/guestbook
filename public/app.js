@@ -152,6 +152,7 @@ let imagePreviewObjectUrl = null;
 let imageUploadTask = null;
 let userBio = null;
 let userWebsite = null;
+let userAvatarUrl = null;
 let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
@@ -558,6 +559,14 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
 
     // Display bio if set
     const profileData = (profileSnap.exists() && typeof profileSnap.val === 'function') ? profileSnap.val() : null;
+
+    // Update panel avatar if a custom avatarUrl is stored in profile
+    if (profileData && profileData.avatarUrl) {
+      authorPanelAvatarEl.innerHTML = '';
+      const updatedAvatar = createAvatarElement(profileData.avatarUrl, authorName);
+      authorPanelAvatarEl.appendChild(updatedAvatar);
+    }
+
     const bio = profileData && profileData.bio ? profileData.bio : null;
     if (bio) {
       authorPanelBioEl.textContent = bio; // textContent — XSS safe
@@ -1262,15 +1271,18 @@ async function loadUserAlias(user) {
       userAlias = profile.displayName || null;
       userBio = profile.bio || null;
       userWebsite = profile.website || null;
+      userAvatarUrl = profile.avatarUrl || null;
     } else {
       userAlias = null;
       userBio = null;
       userWebsite = null;
+      userAvatarUrl = null;
     }
   } catch (e) {
     userAlias = null;
     userBio = null;
     userWebsite = null;
+    userAvatarUrl = null;
   }
 }
 
@@ -1701,6 +1713,7 @@ auth.onAuthStateChanged(async (user) => {
     // Fully authenticated Google user
     userInfo.style.display = 'flex';
     userAvatar.src = user.photoURL || '';
+    userAvatarUrl = null;
     userName.textContent = user.displayName || 'User';
     postSection.style.display = 'block';
     loginBtnHeader.style.display = 'none';
@@ -1761,6 +1774,9 @@ auth.onAuthStateChanged(async (user) => {
   if (user && !user.isAnonymous) {
     await loadUserAlias(user);
     userName.textContent = userAlias || user.displayName || 'User';
+    userAvatar.src = userAvatarUrl || user.photoURL || '';
+    const removeAvatarBtn = document.getElementById('remove-avatar-btn');
+    if (removeAvatarBtn) removeAvatarBtn.style.display = userAvatarUrl ? '' : 'none';
   }
 });
 
@@ -4223,6 +4239,7 @@ if (gifSearchInput) {
 
 const IMAGE_MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const IMAGE_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const AVATAR_MAX_SIZE = 2 * 1024 * 1024; // 2 MB
 
 function validateImageFile(file) {
   if (!file) return { valid: false, error: 'No file selected.' };
@@ -4611,7 +4628,7 @@ postForm.addEventListener('submit', async (e) => {
         author: userAlias || currentUser.displayName || 'Anonymous',
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
-        photoURL: currentUser.photoURL || '',
+        photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
@@ -4662,7 +4679,7 @@ postForm.addEventListener('submit', async (e) => {
         author: userAlias || currentUser.displayName || 'Anonymous',
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
-        photoURL: currentUser.photoURL || '',
+        photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
@@ -4750,7 +4767,7 @@ postForm.addEventListener('submit', async (e) => {
         author: displayName,
         authorId: currentUser.uid,
         timestamp: firebase.database.ServerValue.TIMESTAMP,
-        photoURL: currentUser.photoURL || '',
+        photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
@@ -4862,7 +4879,147 @@ postForm.addEventListener('submit', async (e) => {
   }
 });
 
+// ========================================
+// Custom Profile Avatar
+// ========================================
+
+function refreshAllUserAvatars(newPhotoURL) {
+  if (!currentUser) return;
+  const authorName = userAlias || currentUser.displayName || '';
+  document.querySelectorAll(`.message-card[data-author-id="${currentUser.uid}"]`).forEach(card => {
+    const msgHeader = card.querySelector('.message-header');
+    if (!msgHeader) return;
+    const oldAvatar = msgHeader.querySelector('.message-avatar, .avatar-fallback');
+    if (!oldAvatar) return;
+    const hadClickClass = oldAvatar.classList.contains('author-avatar-btn');
+    const newAvatar = createAvatarElement(newPhotoURL, authorName);
+    if (hadClickClass) {
+      newAvatar.classList.add('author-avatar-btn');
+      const capturedPhotoURL = newPhotoURL;
+      const capturedName = authorName;
+      const capturedUid = currentUser.uid;
+      newAvatar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openAuthorPanel(capturedUid, capturedName, capturedPhotoURL);
+      });
+    }
+    msgHeader.replaceChild(newAvatar, oldAvatar);
+  });
+}
+
+async function handleAvatarUpload(file) {
+  if (!currentUser || currentUser.isAnonymous) return;
+
+  if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+    showToast('Only JPEG, PNG, or WebP images are allowed.');
+    return;
+  }
+  if (file.size > AVATAR_MAX_SIZE) {
+    showToast('Profile photo must be 2 MB or smaller.');
+    return;
+  }
+
+  const avatarWrap = document.getElementById('user-avatar-wrap');
+  const uploadBtn = document.getElementById('avatar-upload-btn');
+  if (!avatarWrap || !uploadBtn) return;
+
+  uploadBtn.disabled = true;
+  userAvatar.style.display = 'none';
+
+  const spinnerDiv = document.createElement('div');
+  spinnerDiv.className = 'avatar-upload-spinner';
+  spinnerDiv.id = 'avatar-upload-spinner-el';
+  const spinnerEl = document.createElement('div');
+  spinnerEl.className = 'spinner';
+  spinnerDiv.appendChild(spinnerEl);
+  avatarWrap.appendChild(spinnerDiv);
+
+  try {
+    const storageRef = storage.ref(`avatars/${currentUser.uid}`);
+    const uploadTask = storageRef.put(file);
+    const downloadUrl = await new Promise((resolve, reject) => {
+      uploadTask.on('state_changed', null, reject, async () => {
+        try {
+          const url = await uploadTask.snapshot.ref.getDownloadURL();
+          resolve(url);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    await db.ref(`users/${currentUser.uid}/profile/avatarUrl`).set(downloadUrl);
+    userAvatarUrl = downloadUrl;
+
+    userAvatar.src = downloadUrl;
+
+    const removeBtn = document.getElementById('remove-avatar-btn');
+    if (removeBtn) removeBtn.style.display = '';
+
+    refreshAllUserAvatars(downloadUrl);
+    showToast('Profile photo updated');
+  } catch (err) {
+    console.error('Avatar upload failed:', err);
+    showToast('Failed to upload profile photo. Please try again.');
+  } finally {
+    const spinner = document.getElementById('avatar-upload-spinner-el');
+    if (spinner) spinner.remove();
+    userAvatar.style.display = '';
+    uploadBtn.disabled = false;
+  }
+}
+
+async function handleAvatarRemove() {
+  if (!currentUser || !userAvatarUrl) return;
+
+  try {
+    try {
+      await storage.ref(`avatars/${currentUser.uid}`).delete();
+    } catch (storageErr) {
+      if (storageErr.code !== 'storage/object-not-found') throw storageErr;
+    }
+
+    await db.ref(`users/${currentUser.uid}/profile/avatarUrl`).remove();
+    userAvatarUrl = null;
+
+    userAvatar.src = currentUser.photoURL || '';
+
+    const removeBtn = document.getElementById('remove-avatar-btn');
+    if (removeBtn) removeBtn.style.display = 'none';
+
+    refreshAllUserAvatars(currentUser.photoURL || '');
+    showToast('Profile photo removed');
+  } catch (err) {
+    console.error('Failed to remove avatar:', err);
+    showToast('Failed to remove profile photo. Please try again.');
+  }
+}
+
+(function wireAvatarUpload() {
+  const avatarUploadBtn = document.getElementById('avatar-upload-btn');
+  const avatarFileInput = document.getElementById('avatar-file-input');
+  const removeAvatarBtn = document.getElementById('remove-avatar-btn');
+
+  if (avatarUploadBtn && avatarFileInput) {
+    avatarUploadBtn.addEventListener('click', () => {
+      if (!currentUser || currentUser.isAnonymous) return;
+      avatarFileInput.value = '';
+      avatarFileInput.click();
+    });
+
+    avatarFileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleAvatarUpload(file);
+      avatarFileInput.value = '';
+    });
+  }
+
+  if (removeAvatarBtn) {
+    removeAvatarBtn.addEventListener('click', () => handleAvatarRemove());
+  }
+}());
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox };
+  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
 }

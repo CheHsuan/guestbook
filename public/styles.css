@@ -183,6 +183,106 @@ body {
   border: 1px solid var(--border-strong);
 }
 
+/* ========================================
+   Avatar Upload Overlay
+   ======================================== */
+.user-avatar-wrap {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.avatar-upload-btn {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 0;
+}
+
+.user-avatar-wrap:hover .avatar-upload-btn,
+.user-avatar-wrap:focus-within .avatar-upload-btn {
+  opacity: 1;
+}
+
+.avatar-upload-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  opacity: 1;
+}
+
+.avatar-upload-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke: #fff;
+}
+
+.avatar-upload-spinner {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-upload-spinner .spinner {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  border-width: 2px;
+}
+
+@media (hover: none) {
+  .avatar-upload-btn {
+    opacity: 0.7;
+  }
+}
+
+.btn-remove-avatar {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+  white-space: nowrap;
+}
+
+#user-info:hover .btn-remove-avatar,
+#user-info:focus-within .btn-remove-avatar {
+  opacity: 1;
+}
+
+.btn-remove-avatar:hover {
+  color: var(--text-primary);
+}
+
+.btn-remove-avatar:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .btn-remove-avatar {
+    opacity: 1;
+  }
+}
+
 .user-name {
   font-size: 0.9rem;
   font-weight: 600;
