@@ -1657,6 +1657,52 @@ body {
   padding: 8px 8px 8px 12px;
 }
 
+/* ========================================
+   Reply Thread Toggle Button
+   ======================================== */
+.btn-replies-toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  min-height: 44px;
+  min-width: 44px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+
+.btn-replies-toggle:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-replies-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Entrance animation for overflow reply cards when thread is expanded */
+@keyframes reply-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reply-card--appearing {
+  animation: reply-appear 0.22s ease-out forwards;
+}
+
 .reply-header {
   display: flex;
   align-items: center;

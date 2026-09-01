@@ -1846,6 +1846,192 @@ describe('reply feature', () => {
   });
 });
 
+// --- collapsible reply threads ---
+describe('collapsible reply threads', () => {
+  let createMessageCard;
+  let REPLIES_COLLAPSE_THRESHOLD;
+  let replyAddedCallback;
+  let replyRemovedCallback;
+
+  const baseMsg = {
+    id: 'collapse-msg-1',
+    author: 'Alice',
+    text: 'Hello',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function makeReplySnap(id, overrides = {}) {
+    return {
+      key: id,
+      val: () => ({
+        author: 'Bob',
+        text: `Reply ${id}`,
+        timestamp: Date.now(),
+        authorId: 'uid-bob',
+        ...overrides,
+      }),
+    };
+  }
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance, dbRef } = makeFirebaseMock();
+
+    // Capture child_added and child_removed callbacks so tests can simulate events
+    dbRef.on.mockImplementation((event, callback) => {
+      if (event === 'child_added') replyAddedCallback = callback;
+      if (event === 'child_removed') replyRemovedCallback = callback;
+      return 'listener-token';
+    });
+
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, REPLIES_COLLAPSE_THRESHOLD } = require('../public/app.js'));
+  });
+
+  beforeEach(() => {
+    replyAddedCallback = null;
+    replyRemovedCallback = null;
+  });
+
+  test('REPLIES_COLLAPSE_THRESHOLD equals 3', () => {
+    expect(REPLIES_COLLAPSE_THRESHOLD).toBe(3);
+  });
+
+  test('toggle button is hidden when replies at or below threshold', () => {
+    const card = createMessageCard(baseMsg, null);
+    // Simulate 3 replies arriving
+    for (let i = 1; i <= 3; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const toggle = card.querySelector('.btn-replies-toggle');
+    expect(!toggle || toggle.style.display === 'none').toBe(true);
+  });
+
+  test('toggle button appears when replies exceed threshold', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-2' }, null);
+    for (let i = 1; i <= 4; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const toggle = card.querySelector('.btn-replies-toggle');
+    expect(toggle).not.toBeNull();
+    expect(toggle.style.display).not.toBe('none');
+  });
+
+  test('toggle button label shows overflow count when collapsed', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-3' }, null);
+    for (let i = 1; i <= 5; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const toggle = card.querySelector('.btn-replies-toggle');
+    // 5 total - 3 threshold = 2 more
+    expect(toggle.textContent).toContain('2');
+    expect(toggle.textContent).toContain('more');
+  });
+
+  test('only REPLIES_COLLAPSE_THRESHOLD reply cards in DOM when collapsed', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-4' }, null);
+    for (let i = 1; i <= 5; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const replyCards = card.querySelectorAll('.reply-card');
+    expect(replyCards.length).toBe(REPLIES_COLLAPSE_THRESHOLD);
+  });
+
+  test('clicking toggle reveals all reply cards', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-5' }, null);
+    for (let i = 1; i <= 5; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    card.querySelector('.btn-replies-toggle').click();
+    expect(card.querySelectorAll('.reply-card').length).toBe(5);
+  });
+
+  test('toggle button shows "Hide replies" when expanded', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-6' }, null);
+    for (let i = 1; i <= 4; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    card.querySelector('.btn-replies-toggle').click();
+    expect(card.querySelector('.btn-replies-toggle').textContent).toContain('Hide replies');
+  });
+
+  test('clicking toggle again re-collapses to threshold', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-7' }, null);
+    for (let i = 1; i <= 5; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const toggle = card.querySelector('.btn-replies-toggle');
+    toggle.click(); // expand
+    toggle.click(); // collapse
+    expect(card.querySelectorAll('.reply-card').length).toBe(REPLIES_COLLAPSE_THRESHOLD);
+  });
+
+  test('new reply while collapsed updates toggle count but does not inject card', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-8' }, null);
+    // Load 4 replies — collapses with toggle showing "1 more reply"
+    for (let i = 1; i <= 4; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const toggle = card.querySelector('.btn-replies-toggle');
+    expect(toggle.textContent).toContain('1');
+
+    // New real-time reply arrives while collapsed
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r5'));
+    // Total 5 - 3 threshold = 2 more
+    expect(toggle.textContent).toContain('2');
+    // Still only threshold cards in DOM
+    expect(card.querySelectorAll('.reply-card').length).toBe(REPLIES_COLLAPSE_THRESHOLD);
+  });
+
+  test('new reply while expanded is appended to DOM', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-9' }, null);
+    for (let i = 1; i <= 4; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    card.querySelector('.btn-replies-toggle').click(); // expand
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r5'));
+    expect(card.querySelectorAll('.reply-card').length).toBe(5);
+  });
+
+  test('deleting reply below threshold removes toggle when count drops to threshold', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-10' }, null);
+    for (let i = 1; i <= 4; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    // Delete the 4th reply (hidden one)
+    if (replyRemovedCallback) replyRemovedCallback({ key: 'r4' });
+    // Now 3 replies — toggle should be hidden
+    const toggle = card.querySelector('.btn-replies-toggle');
+    expect(!toggle || toggle.style.display === 'none').toBe(true);
+    expect(card.querySelectorAll('.reply-card').length).toBe(3);
+  });
+
+  test('reply count badge always reflects true total', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'collapse-msg-11' }, null);
+    for (let i = 1; i <= 5; i++) {
+      if (replyAddedCallback) replyAddedCallback(makeReplySnap(`r${i}`));
+    }
+    const badge = card.querySelector('.reply-count');
+    expect(badge.textContent).toContain('5');
+  });
+});
+
 // --- share button ---
 describe('share button', () => {
   let createMessageCard;

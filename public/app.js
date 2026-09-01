@@ -157,11 +157,17 @@ let messagesListener = null;
 let searchDebounceTimer = null;
 const replyCountMap = new Map(); // msgId -> current reply count (for delete warning)
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
+const replyExpandMap = new Map(); // msgId -> expand function (for deep-link auto-expand)
 const pollVoteListenerMap = new Map(); // msgId -> db ref (for cleanup)
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
+
+// ========================================
+// Reply Collapse Threshold
+// ========================================
+const REPLIES_COLLAPSE_THRESHOLD = 3;
 
 // ========================================
 // Sort Order (localStorage)
@@ -1048,6 +1054,10 @@ function handleDeepLink() {
   const targetEl = document.getElementById(hash.slice(1));
   if (targetEl) {
     deepLinkHandled = true;
+    // Auto-expand reply thread so no replies are hidden behind the toggle
+    const msgId = hash.slice(5); // strips leading '#msg-'
+    const expandFn = replyExpandMap.get(msgId);
+    if (expandFn) expandFn();
     targetEl.scrollIntoView({ behavior: 'smooth' });
     targetEl.classList.add('permalink-highlight');
     setTimeout(() => targetEl.classList.remove('permalink-highlight'), 2000);
@@ -1957,6 +1967,7 @@ async function startListeningMessages() {
           replyListenerMap.delete(msgId);
         }
         replyCountMap.delete(msgId);
+        replyExpandMap.delete(msgId);
         const pollRef = pollVoteListenerMap.get(msgId);
         if (pollRef) {
           pollRef.off();
@@ -2143,6 +2154,7 @@ function stopListeningMessages() {
   replyListenerMap.forEach(ref => ref.off());
   replyListenerMap.clear();
   replyCountMap.clear();
+  replyExpandMap.clear();
 
   pollVoteListenerMap.forEach(ref => ref.off());
   pollVoteListenerMap.clear();
@@ -2211,6 +2223,7 @@ function tickExpiryLabels() {
           replyListenerMap.delete(msgId);
         }
         replyCountMap.delete(msgId);
+        replyExpandMap.delete(msgId);
         card.remove();
       }
     } else {
@@ -3451,15 +3464,59 @@ function createMessageCard(msg, user, isNew) {
   card.appendChild(repliesSection);
 
   // Set up real-time listeners for replies
+  const allRepliesData = []; // ordered buffer of all reply objects (source of truth for DOM sync)
   let localReplyCount = 0;
+  let isExpanded = false; // collapse/expand state for overflow replies
   let initialReplyLoadComplete = false;
   const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
+
+  // Toggle button — reveals or hides overflow replies beyond the threshold
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'btn-replies-toggle';
+  toggleBtn.style.display = 'none';
+  repliesSection.appendChild(toggleBtn);
+
+  function updateToggleBtn() {
+    const overflow = localReplyCount - REPLIES_COLLAPSE_THRESHOLD;
+    if (overflow <= 0) {
+      toggleBtn.style.display = 'none';
+      return;
+    }
+    toggleBtn.style.display = '';
+    toggleBtn.textContent = isExpanded
+      ? '▴ Hide replies'
+      : `▾ ${overflow} more ${overflow === 1 ? 'reply' : 'replies'}`;
+  }
+
+  function syncReplyDOM() {
+    Array.from(repliesSection.querySelectorAll('.reply-card')).forEach(el => el.remove());
+    const visible = isExpanded ? allRepliesData : allRepliesData.slice(0, REPLIES_COLLAPSE_THRESHOLD);
+    visible.forEach(reply => {
+      const replyCard = createReplyCard(reply, user, msg.id);
+      repliesSection.insertBefore(replyCard, toggleBtn);
+    });
+    updateToggleBtn();
+  }
+
+  toggleBtn.addEventListener('click', () => {
+    isExpanded = !isExpanded;
+    syncReplyDOM();
+  });
+
+  // Store expand function so handleDeepLink can auto-expand this card's thread
+  replyExpandMap.set(msg.id, () => {
+    if (!isExpanded && localReplyCount > REPLIES_COLLAPSE_THRESHOLD) {
+      isExpanded = true;
+      syncReplyDOM();
+    }
+  });
 
   // child_added fires synchronously for pre-existing replies; mark them done after
   Promise.resolve().then(() => { initialReplyLoadComplete = true; });
 
   repliesRef.on('child_added', (snap) => {
     const reply = { id: snap.key, ...snap.val() };
+    allRepliesData.push(reply);
     localReplyCount++;
     replyCountMap.set(msg.id, localReplyCount);
     card.dataset.replyCount = String(localReplyCount);
@@ -3469,8 +3526,21 @@ function createMessageCard(msg, user, isNew) {
     repliesSection.style.display = '';
     cardFooter.style.display = '';
 
-    const replyCard = createReplyCard(reply, user, msg.id);
-    repliesSection.appendChild(replyCard);
+    if (localReplyCount <= REPLIES_COLLAPSE_THRESHOLD) {
+      // Within visible threshold — always render in DOM
+      const replyCard = createReplyCard(reply, user, msg.id);
+      repliesSection.insertBefore(replyCard, toggleBtn);
+      updateToggleBtn();
+    } else if (isExpanded) {
+      // Thread is expanded — append new card with entrance animation
+      const replyCard = createReplyCard(reply, user, msg.id);
+      replyCard.classList.add('reply-card--appearing');
+      repliesSection.insertBefore(replyCard, toggleBtn);
+      updateToggleBtn();
+    } else {
+      // Collapsed and over threshold — update toggle count, don't inject card
+      updateToggleBtn();
+    }
 
     if (initialReplyLoadComplete) {
       maybeFireReplyNotification(msg, reply);
@@ -3480,8 +3550,9 @@ function createMessageCard(msg, user, isNew) {
   });
 
   repliesRef.on('child_removed', (snap) => {
-    const replyEl = document.getElementById(`reply-${snap.key}`);
-    if (replyEl) replyEl.remove();
+    const removedIdx = allRepliesData.findIndex(r => r.id === snap.key);
+    if (removedIdx !== -1) allRepliesData.splice(removedIdx, 1);
+
     localReplyCount = Math.max(0, localReplyCount - 1);
     replyCountMap.set(msg.id, localReplyCount);
     card.dataset.replyCount = String(localReplyCount);
@@ -3489,8 +3560,11 @@ function createMessageCard(msg, user, isNew) {
     if (localReplyCount === 0) {
       replyCountEl.style.display = 'none';
       repliesSection.style.display = 'none';
+      Array.from(repliesSection.querySelectorAll('.reply-card')).forEach(el => el.remove());
+      toggleBtn.style.display = 'none';
     } else {
       replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+      syncReplyDOM();
     }
     if (currentSort === SORT_ACTIVE) applySortOrder();
   });
@@ -5021,5 +5095,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
 }
