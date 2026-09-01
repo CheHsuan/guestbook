@@ -7869,3 +7869,285 @@ describe('Daily Writing Prompt', () => {
     expect(document.getElementById('prompt-card').style.display).toBe('none');
   });
 });
+
+// ========================================
+// Custom Profile Avatar — handleAvatarUpload
+// ========================================
+describe('avatar — handleAvatarUpload', () => {
+  let mocks, authStateCallback, handleAvatarUpload;
+
+  const AVATAR_HTML = [
+    '<div id="user-avatar-wrap">',
+    '<button id="avatar-upload-btn"></button>',
+    '<input type="file" id="avatar-file-input" style="display:none;" />',
+    '<button id="remove-avatar-btn" style="display:none;"></button>',
+    '</div>',
+  ].join('');
+
+  function setupGlobals() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true, text: '' }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: false }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.wrapSelection = utils.wrapSelection || (() => {});
+    global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
+  }
+
+  beforeEach(async () => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    document.body.insertAdjacentHTML('beforeend', AVATAR_HTML);
+
+    mocks = makeFirebaseMock();
+    mocks.dbRef.set = jest.fn().mockResolvedValue(undefined);
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => { authStateCallback = cb; });
+
+    setupGlobals();
+    global.firebase = mocks.firebase;
+
+    ({ handleAvatarUpload } = require('../public/app.js'));
+
+    // Sign in as a non-anonymous user; loadUserAlias returns no profile (no existing avatarUrl)
+    mocks.dbRef.once
+      .mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 })
+      .mockResolvedValueOnce({ exists: () => false });
+    authStateCallback({ uid: 'uid-me', displayName: 'Alice', photoURL: '', isAnonymous: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  test('rejects disallowed MIME type (gif) — shows toast, no storage call', async () => {
+    await handleAvatarUpload({ type: 'image/gif', size: 100 });
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toMatch(/jpeg|png|webp/i);
+    expect(mocks.storageRef.put).not.toHaveBeenCalled();
+  });
+
+  test('rejects file exceeding 2 MB — shows toast, no storage call', async () => {
+    await handleAvatarUpload({ type: 'image/jpeg', size: 2 * 1024 * 1024 + 1 });
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toMatch(/2 mb/i);
+    expect(mocks.storageRef.put).not.toHaveBeenCalled();
+  });
+
+  test('valid file triggers storage.ref().put() and writes download URL to db', async () => {
+    const downloadUrl = 'https://example.com/new-avatar.jpg';
+    mocks.storageRef.put.mockReturnValue({
+      on: jest.fn((evt, onProgress, onError, onComplete) => { onComplete(); }),
+      cancel: jest.fn(),
+      snapshot: { ref: { getDownloadURL: jest.fn().mockResolvedValue(downloadUrl) } },
+    });
+
+    const file = { type: 'image/jpeg', size: 512 };
+    await handleAvatarUpload(file);
+
+    expect(mocks.storageRef.put).toHaveBeenCalledWith(file);
+    expect(mocks.dbRef.set).toHaveBeenCalledWith(downloadUrl);
+  });
+});
+
+// ========================================
+// Custom Profile Avatar — handleAvatarRemove
+// ========================================
+describe('avatar — handleAvatarRemove', () => {
+  let mocks, authStateCallback, handleAvatarRemove;
+
+  const AVATAR_HTML = [
+    '<div id="user-avatar-wrap">',
+    '<button id="avatar-upload-btn"></button>',
+    '<input type="file" id="avatar-file-input" style="display:none;" />',
+    '<button id="remove-avatar-btn" style="display:none;"></button>',
+    '</div>',
+  ].join('');
+
+  function setupGlobals() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true, text: '' }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: false }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.wrapSelection = utils.wrapSelection || (() => {});
+    global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
+  }
+
+  beforeEach(async () => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    document.body.insertAdjacentHTML('beforeend', AVATAR_HTML);
+
+    mocks = makeFirebaseMock();
+    mocks.dbRef.set = jest.fn().mockResolvedValue(undefined);
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => { authStateCallback = cb; });
+
+    setupGlobals();
+    global.firebase = mocks.firebase;
+
+    ({ handleAvatarRemove } = require('../public/app.js'));
+
+    // Sign in with a profile that has an existing avatarUrl so userAvatarUrl is set
+    mocks.dbRef.once
+      .mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        val: () => ({ avatarUrl: 'https://example.com/old-avatar.jpg' }),
+      });
+    authStateCallback({
+      uid: 'uid-me',
+      displayName: 'Alice',
+      photoURL: 'https://google.com/g-photo.jpg',
+      isAnonymous: false,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  test('calls storage.ref().delete() and db.ref().remove() on success', async () => {
+    mocks.dbRef.remove.mockClear();
+    await handleAvatarRemove();
+
+    expect(mocks.storageRef.delete).toHaveBeenCalled();
+    expect(mocks.dbRef.remove).toHaveBeenCalled();
+  });
+
+  test('swallows storage/object-not-found — still removes DB key, no failure toast', async () => {
+    const notFoundErr = Object.assign(new Error('not found'), { code: 'storage/object-not-found' });
+    mocks.storageRef.delete.mockRejectedValueOnce(notFoundErr);
+    mocks.dbRef.remove.mockClear();
+
+    await handleAvatarRemove();
+
+    expect(mocks.dbRef.remove).toHaveBeenCalled();
+    // The not-found error must not surface as a failure toast
+    const toasts = Array.from(document.querySelectorAll('.permalink-toast'));
+    const failureToast = toasts.find(t => /failed/i.test(t.textContent));
+    expect(failureToast).toBeUndefined();
+  });
+
+  test('other storage errors surface a failure toast', async () => {
+    const storageErr = Object.assign(new Error('network'), { code: 'storage/server-file-wrong-size' });
+    mocks.storageRef.delete.mockRejectedValueOnce(storageErr);
+
+    await handleAvatarRemove();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toMatch(/failed/i);
+  });
+});
+
+// ========================================
+// Custom Profile Avatar — refreshAllUserAvatars
+// ========================================
+describe('avatar — refreshAllUserAvatars', () => {
+  let mocks, authStateCallback, refreshAllUserAvatars;
+
+  beforeAll(async () => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => { authStateCallback = cb; });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true, text: '' }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: false }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.wrapSelection = utils.wrapSelection || (() => {});
+    global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
+    global.firebase = mocks.firebase;
+
+    ({ refreshAllUserAvatars } = require('../public/app.js'));
+
+    // Sign in as non-anonymous user (no existing avatarUrl needed for this function)
+    mocks.dbRef.once
+      .mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 })
+      .mockResolvedValueOnce({ exists: () => false });
+    authStateCallback({ uid: 'uid-me', displayName: 'Alice', photoURL: '', isAnonymous: false });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  function addMessageCard(container, { authorId }) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.setAttribute('data-author-id', authorId);
+
+    const header = document.createElement('div');
+    header.className = 'message-header';
+
+    const avatar = document.createElement('img');
+    avatar.className = 'message-avatar';
+    avatar.src = 'https://example.com/old.jpg';
+    header.appendChild(avatar);
+    card.appendChild(header);
+    container.appendChild(card);
+    return card;
+  }
+
+  beforeEach(() => {
+    const container = document.getElementById('messages-container');
+    container.querySelectorAll('.message-card').forEach(c => c.remove());
+  });
+
+  test('replaces avatar elements in matching cards', () => {
+    const container = document.getElementById('messages-container');
+    const ownCard = addMessageCard(container, { authorId: 'uid-me' });
+
+    refreshAllUserAvatars('https://example.com/new-avatar.jpg');
+
+    const header = ownCard.querySelector('.message-header');
+    expect(header.querySelector('img[src="https://example.com/old.jpg"]')).toBeNull();
+    expect(header.querySelector('.message-avatar, .avatar-fallback')).not.toBeNull();
+  });
+
+  test('leaves cards for other users untouched', () => {
+    const container = document.getElementById('messages-container');
+    addMessageCard(container, { authorId: 'uid-me' });
+    const otherCard = addMessageCard(container, { authorId: 'uid-other' });
+
+    refreshAllUserAvatars('https://example.com/new-avatar.jpg');
+
+    const otherAvatar = otherCard.querySelector('.message-header img');
+    expect(otherAvatar).not.toBeNull();
+    expect(otherAvatar.src).toContain('old.jpg');
+  });
+});
