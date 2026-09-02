@@ -60,7 +60,7 @@ const APP_HTML = `
   </div>
   <div id="messages-container">
     <div id="empty-state" style="display:none"></div>
-    <div id="search-empty-state" style="display:none"></div>
+    <div id="search-empty-state" style="display:none"><p>No messages match your search.</p></div>
     <div id="loading-state" style="display:none"></div>
   </div>
   <span id="message-count">0</span>
@@ -74,6 +74,7 @@ const APP_HTML = `
   </div>
   <p id="sort-disclaimer" style="display:none;"></p>
   <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
+  <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
@@ -1196,6 +1197,200 @@ describe('search / filter', () => {
     filterMessages();
     expect(c1.style.display).not.toBe('none');
     expect(c2.style.display).not.toBe('none');
+  });
+});
+
+// --- type filter ---
+describe('type filter', () => {
+  let filterMessages, updateTypeFilterRow;
+
+  function addCard(container, { id = 'c1', type = 'text', author = 'Alice', text = 'Hello' } = {}) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.id = `msg-${id}`;
+    card.dataset.type = type;
+    card.dataset.authorId = 'uid-alice';
+    const authorEl = document.createElement('span');
+    authorEl.className = 'message-author';
+    authorEl.textContent = author;
+    const textEl = document.createElement('p');
+    textEl.className = 'message-text';
+    textEl.textContent = text;
+    card.appendChild(authorEl);
+    card.appendChild(textEl);
+    container.appendChild(card);
+    return card;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    ({ filterMessages, updateTypeFilterRow } = require('../public/app.js'));
+  });
+
+  test('createMessageCard sets data-type from msg.type', () => {
+    const { createMessageCard } = require('../public/app.js');
+    const pollCard = createMessageCard({ id: 'p1', type: 'poll', text: 'Poll?', author: 'Alice', authorId: 'u1', timestamp: Date.now(), poll: { options: { '0': 'Yes', '1': 'No' } } }, null);
+    expect(pollCard.dataset.type).toBe('poll');
+  });
+
+  test('createMessageCard defaults data-type to text when msg.type is absent', () => {
+    const { createMessageCard } = require('../public/app.js');
+    const card = createMessageCard({ id: 't1', text: 'Hi', author: 'Alice', authorId: 'u1', timestamp: Date.now() }, null);
+    expect(card.dataset.type).toBe('text');
+  });
+
+  test('type-filter-row is hidden when all cards are text-only', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'text' });
+    filterMessages();
+    expect(document.getElementById('type-filter-row').style.display).toBe('none');
+  });
+
+  test('type-filter-row is visible when multiple types are present', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'poll' });
+    filterMessages();
+    expect(document.getElementById('type-filter-row').style.display).not.toBe('none');
+  });
+
+  test('type-filter-row shows chips only for types present', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'gif' });
+    updateTypeFilterRow();
+    const row = document.getElementById('type-filter-row');
+    const btns = Array.from(row.querySelectorAll('button'));
+    const labels = btns.map(b => b.dataset.typeFilter);
+    expect(labels).toContain('all');
+    expect(labels).toContain('text');
+    expect(labels).toContain('gif');
+    expect(labels).not.toContain('poll');
+    expect(labels).not.toContain('image');
+  });
+
+  test('filterMessages hides non-matching type cards when type filter active', () => {
+    const container = document.getElementById('messages-container');
+    const textCard = addCard(container, { id: '1', type: 'text' });
+    const pollCard = addCard(container, { id: '2', type: 'poll' });
+    updateTypeFilterRow();
+
+    // Click the poll chip
+    const row = document.getElementById('type-filter-row');
+    const pollBtn = Array.from(row.querySelectorAll('button')).find(b => b.dataset.typeFilter === 'poll');
+    pollBtn.click();
+
+    expect(pollCard.style.display).not.toBe('none');
+    expect(textCard.style.display).toBe('none');
+  });
+
+  test('clicking All chip restores all cards', () => {
+    const container = document.getElementById('messages-container');
+    const textCard = addCard(container, { id: '1', type: 'text' });
+    const pollCard = addCard(container, { id: '2', type: 'poll' });
+    updateTypeFilterRow();
+
+    // Activate poll filter
+    const row = document.getElementById('type-filter-row');
+    const pollBtn = Array.from(row.querySelectorAll('button')).find(b => b.dataset.typeFilter === 'poll');
+    pollBtn.click();
+    expect(textCard.style.display).toBe('none');
+
+    // Click All
+    updateTypeFilterRow(); // re-render chips with updated active state
+    const allBtn = Array.from(document.getElementById('type-filter-row').querySelectorAll('button')).find(b => b.dataset.typeFilter === 'all');
+    allBtn.click();
+
+    expect(textCard.style.display).not.toBe('none');
+    expect(pollCard.style.display).not.toBe('none');
+  });
+
+  test('active chip has aria-pressed=true', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'gif' });
+    updateTypeFilterRow();
+
+    const row = document.getElementById('type-filter-row');
+    const allBtn = Array.from(row.querySelectorAll('button')).find(b => b.dataset.typeFilter === 'all');
+    expect(allBtn.getAttribute('aria-pressed')).toBe('true');
+    const gifBtn = Array.from(row.querySelectorAll('button')).find(b => b.dataset.typeFilter === 'gif');
+    expect(gifBtn.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('type filter persists to localStorage', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'image' });
+    updateTypeFilterRow();
+
+    const row = document.getElementById('type-filter-row');
+    const imageBtn = Array.from(row.querySelectorAll('button')).find(b => b.dataset.typeFilter === 'image');
+    imageBtn.click();
+
+    expect(localStorage.getItem('guestbook_type_filter')).toBe('image');
+  });
+
+  test('shows search-empty-state with type-specific message when type filter yields no results', () => {
+    const container = document.getElementById('messages-container');
+    addCard(container, { id: '1', type: 'text' });
+    addCard(container, { id: '2', type: 'poll' });
+    updateTypeFilterRow();
+
+    // Activate gif filter (no GIF cards present but we set it manually)
+    // Simulate selecting gif filter
+    const row = document.getElementById('type-filter-row');
+    // Manually add a gif card then activate gif filter, then remove the gif card
+    const gifCard = addCard(container, { id: '3', type: 'gif' });
+    updateTypeFilterRow();
+    const gifBtn = Array.from(document.getElementById('type-filter-row').querySelectorAll('button')).find(b => b.dataset.typeFilter === 'gif');
+    gifBtn.click(); // now gif is active filter
+    gifCard.remove(); // remove the gif card
+    filterMessages(); // re-filter with gif active but no gif cards
+
+    const emptyState = document.getElementById('search-empty-state');
+    expect(emptyState.style.display).toBe('block');
+    expect(emptyState.querySelector('p').textContent).toContain('GIF');
+  });
+
+  test('type filter composes with search — hides cards that fail either check', () => {
+    const container = document.getElementById('messages-container');
+    const t1 = addCard(container, { id: '1', type: 'text', author: 'Alice', text: 'hello' });
+    const t2 = addCard(container, { id: '2', type: 'text', author: 'Bob', text: 'world' });
+    const p1 = addCard(container, { id: '3', type: 'poll', author: 'Alice', text: 'vote' });
+    updateTypeFilterRow();
+
+    // Activate poll filter
+    const pollBtn = Array.from(document.getElementById('type-filter-row').querySelectorAll('button')).find(b => b.dataset.typeFilter === 'poll');
+    pollBtn.click();
+
+    // Now search for 'alice' — only Alice's poll should be visible
+    document.getElementById('search-input').value = 'alice';
+    filterMessages();
+
+    expect(p1.style.display).not.toBe('none'); // poll + alice match
+    expect(t1.style.display).toBe('none');      // text doesn't match poll filter
+    expect(t2.style.display).toBe('none');      // text + no alice match
   });
 });
 
