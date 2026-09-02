@@ -183,6 +183,19 @@ try {
   if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE) currentSort = _savedSort;
 } catch (_) {}
 
+// ========================================
+// Type Filter (localStorage)
+// ========================================
+const TYPE_FILTER_KEY = 'guestbook_type_filter';
+const TYPE_ALL = 'all';
+const VALID_TYPES = new Set([TYPE_ALL, 'text', 'poll', 'gif', 'image']);
+
+let currentTypeFilter = TYPE_ALL;
+try {
+  const _savedType = localStorage.getItem(TYPE_FILTER_KEY);
+  if (_savedType && VALID_TYPES.has(_savedType)) currentTypeFilter = _savedType;
+} catch (_) {}
+
 function getSortComparator(sort) {
   if (sort === SORT_OLDEST) {
     return (a, b) => Number(a.dataset.timestamp) - Number(b.dataset.timestamp);
@@ -1132,8 +1145,66 @@ function normalizeStr(str) {
   return str.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+const TYPE_CHIP_CONFIG = [
+  { type: TYPE_ALL,  label: 'All' },
+  { type: 'text',   label: '📝 Text' },
+  { type: 'poll',   label: '📊 Poll' },
+  { type: 'gif',    label: 'GIF' },
+  { type: 'image',  label: '📷 Image' },
+];
+
+function updateTypeFilterRow() {
+  const row = document.getElementById('type-filter-row');
+  if (!row) return;
+
+  const cards = messagesContainer.querySelectorAll('.message-card');
+  const presentTypes = new Set();
+  cards.forEach(card => presentTypes.add(card.dataset.type || 'text'));
+
+  // Hide row when all messages are the same type (text-only or single-type feed)
+  const nonTextTypes = Array.from(presentTypes).filter(t => t !== 'text');
+  if (presentTypes.size <= 1 && nonTextTypes.length === 0) {
+    row.style.display = 'none';
+    return;
+  }
+  if (presentTypes.size === 1) {
+    // Only one type present and it's not text-only — still no filtering value
+    row.style.display = 'none';
+    return;
+  }
+
+  // Build chips for All + types that are present
+  const chips = TYPE_CHIP_CONFIG.filter(
+    cfg => cfg.type === TYPE_ALL || presentTypes.has(cfg.type)
+  );
+
+  row.innerHTML = '';
+  chips.forEach(cfg => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'type-filter-btn';
+    btn.dataset.typeFilter = cfg.type;
+    btn.textContent = cfg.label;
+    const isActive = currentTypeFilter === cfg.type;
+    btn.classList.toggle('type-filter-btn--active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+
+    btn.addEventListener('click', () => {
+      currentTypeFilter = cfg.type;
+      try { localStorage.setItem(TYPE_FILTER_KEY, currentTypeFilter); } catch (_) {}
+      updateTypeFilterRow();
+      filterMessages();
+    });
+
+    row.appendChild(btn);
+  });
+
+  row.style.display = '';
+}
+
 function filterMessages() {
   renderTrendingHashtags();
+  updateTypeFilterRow();
 
   if (myPostsActive && currentUser) {
     const cards = messagesContainer.querySelectorAll('.message-card');
@@ -1175,17 +1246,27 @@ function filterMessages() {
   const cards = messagesContainer.querySelectorAll('.message-card');
 
   if (!term) {
+    let typeMatchCount = 0;
     cards.forEach(card => {
       const msgText = card.querySelector('.message-text')?.textContent || '';
       if (isMuted(card.dataset.authorId) || isMutedByKeyword(msgText)) {
         card.style.display = 'none';
-      } else {
-        card.style.display = '';
+        return;
       }
+      const typeMatch = currentTypeFilter === TYPE_ALL || (card.dataset.type || 'text') === currentTypeFilter;
+      card.style.display = typeMatch ? '' : 'none';
+      if (typeMatch) typeMatchCount++;
     });
     searchClearBtn.style.display = 'none';
     searchResultsCount.style.display = 'none';
-    searchEmptyState.style.display = 'none';
+    if (currentTypeFilter !== TYPE_ALL && typeMatchCount === 0) {
+      const typeLabel = TYPE_CHIP_CONFIG.find(c => c.type === currentTypeFilter)?.label || currentTypeFilter;
+      const emptyP = searchEmptyState.querySelector('p');
+      if (emptyP) emptyP.textContent = `No ${typeLabel} posts in the last 24 hours.`;
+      searchEmptyState.style.display = 'block';
+    } else {
+      searchEmptyState.style.display = 'none';
+    }
     return;
   }
 
@@ -1203,6 +1284,11 @@ function filterMessages() {
     if (isMuted(card.dataset.authorId)) return; // keep muted cards hidden
     const msgText = card.querySelector('.message-text')?.textContent || '';
     if (isMutedByKeyword(msgText)) return; // keep keyword-muted cards hidden
+    const typeMatch = currentTypeFilter === TYPE_ALL || (card.dataset.type || 'text') === currentTypeFilter;
+    if (!typeMatch) {
+      card.style.display = 'none';
+      return;
+    }
     visibleTotal++;
     const author = normalizeStr(card.querySelector('.message-author')?.textContent || '');
     const text = normalizeStr(card.querySelector('.message-text')?.textContent || '');
@@ -1256,6 +1342,12 @@ if (myPostsBtn) {
     if (myPostsActive && searchInput.value) {
       searchInput.value = '';
       searchClearBtn.style.display = 'none';
+    }
+
+    if (myPostsActive && currentTypeFilter !== TYPE_ALL) {
+      currentTypeFilter = TYPE_ALL;
+      try { localStorage.setItem(TYPE_FILTER_KEY, TYPE_ALL); } catch (_) {}
+      updateTypeFilterRow();
     }
 
     filterMessages();
@@ -2847,6 +2939,7 @@ function createMessageCard(msg, user, isNew) {
   card.dataset.timestamp = String(msg.timestamp);
   card.dataset.replyCount = '0';
   card.dataset.authorId = msg.authorId || '';
+  card.dataset.type = msg.type || 'text';
 
   if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) {
     card.style.display = 'none';
@@ -5095,5 +5188,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
 }
