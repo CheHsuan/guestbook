@@ -126,6 +126,26 @@ const APP_HTML = `
     <div id="image-preview-wrap"></div>
   </div>
   <p id="image-upload-error" style="display:none;"></p>
+  <button type="button" id="voice-toggle-btn" aria-pressed="false" style="display:none;"></button>
+  <div id="voice-composer" style="display:none;">
+    <div id="voice-record-area">
+      <button type="button" id="voice-record-btn">Record</button>
+      <span class="voice-max-label">Max 60 sec</span>
+    </div>
+    <div id="voice-recording-area" style="display:none;">
+      <button type="button" id="voice-stop-btn">Stop</button>
+      <span id="voice-duration">0:00</span>
+    </div>
+    <div id="voice-preview-area" style="display:none;">
+      <audio id="voice-preview-player" controls></audio>
+      <button type="button" id="voice-rerecord-btn">Re-record</button>
+    </div>
+    <p id="voice-error-msg" style="display:none;"></p>
+    <div id="voice-upload-progress" style="display:none;">
+      <div class="voice-upload-bar"><div id="voice-upload-fill"></div></div>
+      <span id="voice-upload-label">Uploading…</span>
+    </div>
+  </div>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -8530,5 +8550,165 @@ describe('avatar — refreshAllUserAvatars', () => {
     const otherAvatar = otherCard.querySelector('.message-header img');
     expect(otherAvatar).not.toBeNull();
     expect(otherAvatar.src).toContain('old.jpg');
+  });
+});
+
+// --- Voice message feature ---
+describe('voice message — createMessageCard for audio type', () => {
+  let createMessageCard;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  const audioMsg = {
+    id: 'audio-msg-1',
+    type: 'audio',
+    text: 'Voice message',
+    audioUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/voice-messages%2Fuid%2F123.webm',
+    audioDuration: 15,
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+    photoURL: '',
+  };
+
+  test('renders audio card with class message-card', () => {
+    const card = createMessageCard(audioMsg, null);
+    expect(card.className).toBe('message-card');
+    expect(card.dataset.type).toBe('audio');
+  });
+
+  test('renders voice-card-badge in header', () => {
+    const card = createMessageCard(audioMsg, null);
+    const badge = card.querySelector('.voice-card-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toContain('Voice');
+  });
+
+  test('renders an <audio> element with the audioUrl as src', () => {
+    const card = createMessageCard(audioMsg, null);
+    const audioEl = card.querySelector('audio.voice-message-player');
+    expect(audioEl).not.toBeNull();
+    expect(audioEl.src).toBe(audioMsg.audioUrl);
+  });
+
+  test('audio player has controls attribute', () => {
+    const card = createMessageCard(audioMsg, null);
+    const audioEl = card.querySelector('audio.voice-message-player');
+    expect(audioEl.controls).toBe(true);
+  });
+
+  test('does not render message text body for audio type', () => {
+    const card = createMessageCard(audioMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent).toBe('');
+  });
+
+  test('does not render edit button for audio message', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(audioMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('renders delete button for own audio message', () => {
+    const ownUser = { uid: 'uid-alice' };
+    const card = createMessageCard(audioMsg, ownUser);
+    expect(card.querySelector('.btn-delete')).not.toBeNull();
+  });
+
+  test('does not render audio player when audioUrl is absent', () => {
+    const msgNoUrl = { ...audioMsg, audioUrl: undefined };
+    const card = createMessageCard(msgNoUrl, null);
+    expect(card.querySelector('audio.voice-message-player')).toBeNull();
+  });
+});
+
+describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
+  let enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    ({ enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration } = require('../public/app.js'));
+  });
+
+  test('enableVoiceMode hides text-composer and shows voice-composer', () => {
+    enableVoiceMode();
+    expect(document.getElementById('text-composer').style.display).toBe('none');
+    expect(document.getElementById('voice-composer').style.display).toBe('');
+  });
+
+  test('enableVoiceMode sets voice-toggle-btn aria-pressed to true', () => {
+    enableVoiceMode();
+    expect(document.getElementById('voice-toggle-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('disableVoiceMode restores text-composer and hides voice-composer', () => {
+    enableVoiceMode();
+    disableVoiceMode();
+    expect(document.getElementById('text-composer').style.display).toBe('');
+    expect(document.getElementById('voice-composer').style.display).toBe('none');
+  });
+
+  test('disableVoiceMode sets voice-toggle-btn aria-pressed to false', () => {
+    enableVoiceMode();
+    disableVoiceMode();
+    expect(document.getElementById('voice-toggle-btn').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('voiceFormatDuration formats 0 seconds as 0:00', () => {
+    expect(voiceFormatDuration(0)).toBe('0:00');
+  });
+
+  test('voiceFormatDuration formats 59 seconds as 0:59', () => {
+    expect(voiceFormatDuration(59)).toBe('0:59');
+  });
+
+  test('voiceFormatDuration formats 60 seconds as 1:00', () => {
+    expect(voiceFormatDuration(60)).toBe('1:00');
+  });
+
+  test('voiceFormatDuration formats 65 seconds as 1:05', () => {
+    expect(voiceFormatDuration(65)).toBe('1:05');
   });
 });

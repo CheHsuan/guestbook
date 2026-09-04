@@ -70,7 +70,7 @@
           ".validate": "newData.isBoolean() && newData.val() === true"
         },
         "type": {
-          ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif' || newData.val() === 'image')"
+          ".validate": "newData.isString() && (newData.val() === 'poll' || newData.val() === 'gif' || newData.val() === 'image' || newData.val() === 'audio')"
         },
         "gifUrl": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/media\\.tenor\\.com\\/.+/)"
@@ -97,6 +97,12 @@
         },
         "imageAlt": {
           ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "audioUrl": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/firebasestorage\\.googleapis\\.com\\/.+/)"
+        },
+        "audioDuration": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 60"
         },
         "countryCode": {
           ".validate": "newData.isString() && newData.val().matches(/^[A-Z]{2}$/)"

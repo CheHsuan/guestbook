@@ -3600,3 +3600,156 @@ body {
   width: 100%;
   padding: 12px;
 }
+
+/* ========================================
+   Voice Composer
+   ======================================== */
+.voice-composer {
+  padding: 12px 0 4px;
+}
+
+.voice-record-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.voice-record-btn:hover {
+  background: var(--accent-hover);
+}
+
+.voice-max-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.voice-recording-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voice-stop-btn {
+  padding: 8px 18px;
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.voice-stop-btn:hover {
+  opacity: 0.85;
+}
+
+.voice-duration {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--danger);
+  font-weight: 600;
+  min-width: 36px;
+}
+
+.voice-preview-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.voice-preview-player {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  height: 36px;
+  accent-color: var(--link);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.voice-rerecord-btn {
+  background: none;
+  border: none;
+  color: var(--link);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.voice-error-msg {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+.voice-upload-progress {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-upload-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.voice-upload-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--link);
+  border-radius: 2px;
+  transition: width 0.15s ease;
+}
+
+.voice-upload-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ========================================
+   Voice message card
+   ======================================== */
+.voice-message-player {
+  width: 100%;
+  margin-top: 10px;
+  accent-color: var(--link);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.voice-card-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  margin-left: 4px;
+  vertical-align: middle;
+}
