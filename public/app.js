@@ -4637,7 +4637,7 @@ function enableVoiceMode() {
 }
 
 function disableVoiceMode() {
-  stopVoiceRecording();
+  stopVoiceRecording(true);
   voiceMode = false;
   voiceBlob = null;
   if (textComposer) textComposer.style.display = '';
@@ -4671,10 +4671,11 @@ function resetVoiceComposer() {
   }
 }
 
-function stopVoiceRecording() {
+function stopVoiceRecording(cancelled = false) {
   clearInterval(voiceRecordingTimer);
   voiceRecordingTimer = null;
   if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    voiceMediaRecorder._cancelled = cancelled;
     voiceMediaRecorder.stop();
   }
   voiceMediaRecorder = null;
@@ -4705,8 +4706,9 @@ async function startVoiceRecording() {
     if (e.data && e.data.size > 0) chunks.push(e.data);
   });
 
-  voiceMediaRecorder.addEventListener('stop', () => {
+  voiceMediaRecorder.addEventListener('stop', (e) => {
     stream.getTracks().forEach(t => t.stop());
+    if (e.target._cancelled) return;
     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
     voiceBlob = blob;
 
@@ -5194,7 +5196,7 @@ postForm.addEventListener('submit', async (e) => {
 
     try {
       const blobToUpload = voiceBlob;
-      const ext = blobToUpload.type.includes('webm') ? 'webm' : 'webm';
+      const ext = blobToUpload.type.includes('webm') ? 'webm' : 'ogg';
       const storagePath = `voice-messages/${currentUser.uid}/${Date.now()}.${ext}`;
       const storageRef = storage.ref(storagePath);
       const uploadTask = storageRef.put(blobToUpload, { contentType: blobToUpload.type || 'audio/webm' });
