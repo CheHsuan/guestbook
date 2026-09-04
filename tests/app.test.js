@@ -8711,4 +8711,150 @@ describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
   test('voiceFormatDuration formats 65 seconds as 1:05', () => {
     expect(voiceFormatDuration(65)).toBe('1:05');
   });
+
+  test('voiceFormatDuration formats 3600 seconds as 60:00', () => {
+    expect(voiceFormatDuration(3600)).toBe('60:00');
+  });
+});
+
+describe('voice recording — resetVoiceComposer, startVoiceRecording, stopVoiceRecording', () => {
+  let startVoiceRecording, stopVoiceRecording, resetVoiceComposer, enableVoiceMode;
+  let mockRecorder, mediaDevicesMock;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    jest.useFakeTimers();
+
+    const mockStream = { getTracks: jest.fn().mockReturnValue([{ stop: jest.fn() }]) };
+    mediaDevicesMock = { getUserMedia: jest.fn().mockResolvedValue(mockStream) };
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      configurable: true,
+      value: mediaDevicesMock,
+    });
+
+    const listeners = {};
+    mockRecorder = {
+      _listeners: listeners,
+      state: 'inactive',
+      addEventListener: jest.fn().mockImplementation((event, fn) => {
+        listeners[event] = listeners[event] || [];
+        listeners[event].push(fn);
+      }),
+      start: jest.fn().mockImplementation(function () { this.state = 'recording'; }),
+      stop: jest.fn().mockImplementation(function () {
+        this.state = 'inactive';
+        (this._listeners.stop || []).forEach(fn => fn({ target: this }));
+      }),
+    };
+    const MockMediaRecorder = jest.fn().mockImplementation(() => mockRecorder);
+    MockMediaRecorder.isTypeSupported = jest.fn().mockReturnValue(false);
+    global.MediaRecorder = MockMediaRecorder;
+
+    global.URL.createObjectURL = jest.fn().mockReturnValue('blob:mock-url');
+    global.URL.revokeObjectURL = jest.fn();
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    ({ startVoiceRecording, stopVoiceRecording, resetVoiceComposer, enableVoiceMode } =
+      require('../public/app.js'));
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('resetVoiceComposer hides voice-preview-area', () => {
+    enableVoiceMode();
+    document.getElementById('voice-preview-area').style.display = '';
+    resetVoiceComposer();
+    expect(document.getElementById('voice-preview-area').style.display).toBe('none');
+  });
+
+  test('resetVoiceComposer shows voice-record-area', () => {
+    enableVoiceMode();
+    document.getElementById('voice-record-area').style.display = 'none';
+    resetVoiceComposer();
+    expect(document.getElementById('voice-record-area').style.display).toBe('');
+  });
+
+  test('resetVoiceComposer hides voice-error-msg', () => {
+    enableVoiceMode();
+    document.getElementById('voice-error-msg').style.display = '';
+    resetVoiceComposer();
+    expect(document.getElementById('voice-error-msg').style.display).toBe('none');
+  });
+
+  test('startVoiceRecording calls getUserMedia with audio:true', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({ audio: true });
+  });
+
+  test('startVoiceRecording starts the MediaRecorder', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    expect(mockRecorder.start).toHaveBeenCalled();
+  });
+
+  test('startVoiceRecording shows voice-recording-area and hides voice-record-area', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    expect(document.getElementById('voice-record-area').style.display).toBe('none');
+    expect(document.getElementById('voice-recording-area').style.display).toBe('');
+  });
+
+  test('startVoiceRecording timer increments voice-duration display', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    jest.advanceTimersByTime(3000);
+    expect(document.getElementById('voice-duration').textContent).toBe('0:03');
+  });
+
+  test('stopVoiceRecording calls MediaRecorder.stop()', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    stopVoiceRecording();
+    expect(mockRecorder.stop).toHaveBeenCalled();
+  });
+
+  test('stopVoiceRecording shows voice-preview-area and hides voice-recording-area when not cancelled', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    stopVoiceRecording(false);
+    expect(document.getElementById('voice-preview-area').style.display).toBe('');
+    expect(document.getElementById('voice-recording-area').style.display).toBe('none');
+  });
+
+  test('stopVoiceRecording with cancelled=true does not show voice-preview-area', async () => {
+    enableVoiceMode();
+    await startVoiceRecording();
+    stopVoiceRecording(true);
+    expect(document.getElementById('voice-preview-area').style.display).toBe('none');
+  });
+
+  test('startVoiceRecording shows voice-error-msg when getUserMedia is denied', async () => {
+    enableVoiceMode();
+    mediaDevicesMock.getUserMedia = jest.fn().mockRejectedValue(new Error('NotAllowedError'));
+    await startVoiceRecording();
+    const errEl = document.getElementById('voice-error-msg');
+    expect(errEl.style.display).toBe('');
+    expect(errEl.textContent).toMatch(/denied|access/i);
+  });
 });
