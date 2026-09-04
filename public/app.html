@@ -113,8 +113,31 @@
               <button type="button" id="poll-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Switch to poll mode">&#x1F4CA; Poll</button>
               <button type="button" id="gif-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Post a GIF">GIF</button>
               <button type="button" id="image-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach an image">&#x1F4F7; Image</button>
+              <button type="button" id="voice-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Record a voice message" style="display:none;">&#x1F399;&#xFE0F; Voice</button>
             </div>
             <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp" style="display:none;" aria-hidden="true">
+            <div id="voice-composer" class="voice-composer" style="display:none;">
+              <div id="voice-record-area" class="voice-record-area">
+                <button type="button" id="voice-record-btn" class="voice-record-btn" aria-label="Start recording">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+                  Record
+                </button>
+                <span class="voice-max-label">Max 60 sec</span>
+              </div>
+              <div id="voice-recording-area" class="voice-recording-area" style="display:none;">
+                <button type="button" id="voice-stop-btn" class="voice-stop-btn" aria-label="Stop recording">Stop</button>
+                <span id="voice-duration" class="voice-duration">0:00</span>
+              </div>
+              <div id="voice-preview-area" class="voice-preview-area" style="display:none;">
+                <audio id="voice-preview-player" class="voice-preview-player" controls></audio>
+                <button type="button" id="voice-rerecord-btn" class="voice-rerecord-btn">Re-record</button>
+              </div>
+              <p id="voice-error-msg" class="voice-error-msg" style="display:none;"></p>
+              <div id="voice-upload-progress" class="voice-upload-progress" style="display:none;">
+                <div class="voice-upload-bar"><div id="voice-upload-fill" class="voice-upload-fill"></div></div>
+                <span id="voice-upload-label" class="voice-upload-label">Uploading…</span>
+              </div>
+            </div>
             <div id="text-composer" class="textarea-wrapper">
               <textarea id="message-input" placeholder="Write something nice..." maxlength="250" rows="3"></textarea>
               <span id="char-counter" class="char-counter">0 / 250</span>

@@ -134,6 +134,17 @@ const imageComposer = document.getElementById('image-composer');
 const imagePreviewWrap = document.getElementById('image-preview-wrap');
 const imageFileInput = document.getElementById('image-file-input');
 const imageUploadError = document.getElementById('image-upload-error');
+const voiceToggleBtn = document.getElementById('voice-toggle-btn');
+const voiceComposer = document.getElementById('voice-composer');
+const voiceRecordBtn = document.getElementById('voice-record-btn');
+const voiceStopBtn = document.getElementById('voice-stop-btn');
+const voiceDurationEl = document.getElementById('voice-duration');
+const voicePreviewPlayer = document.getElementById('voice-preview-player');
+const voiceRerecordBtn = document.getElementById('voice-rerecord-btn');
+const voiceErrorMsg = document.getElementById('voice-error-msg');
+const voiceUploadProgress = document.getElementById('voice-upload-progress');
+const voiceUploadFill = document.getElementById('voice-upload-fill');
+const voiceUploadLabel = document.getElementById('voice-upload-label');
 
 // ========================================
 // State
@@ -150,6 +161,11 @@ let imageMode = false;
 let selectedImageFile = null;
 let imagePreviewObjectUrl = null;
 let imageUploadTask = null;
+let voiceMode = false;
+let voiceBlob = null;
+let voiceMediaRecorder = null;
+let voiceRecordingTimer = null;
+let voiceRecordingSeconds = 0;
 let userBio = null;
 let userWebsite = null;
 let userAvatarUrl = null;
@@ -188,7 +204,7 @@ try {
 // ========================================
 const TYPE_FILTER_KEY = 'guestbook_type_filter';
 const TYPE_ALL = 'all';
-const VALID_TYPES = new Set([TYPE_ALL, 'text', 'poll', 'gif', 'image']);
+const VALID_TYPES = new Set([TYPE_ALL, 'text', 'poll', 'gif', 'image', 'audio']);
 
 let currentTypeFilter = TYPE_ALL;
 try {
@@ -1151,6 +1167,7 @@ const TYPE_CHIP_CONFIG = [
   { type: 'poll',   label: '📊 Poll' },
   { type: 'gif',    label: 'GIF' },
   { type: 'image',  label: '📷 Image' },
+  { type: 'audio',  label: '🎙️ Voice' },
 ];
 
 function updateTypeFilterRow() {
@@ -1824,6 +1841,7 @@ auth.onAuthStateChanged(async (user) => {
     if (pollToggleBtn) pollToggleBtn.style.display = '';
     if (gifToggleBtn) gifToggleBtn.style.display = '';
     if (imageToggleBtn) imageToggleBtn.style.display = '';
+    if (voiceToggleBtn) voiceToggleBtn.style.display = typeof MediaRecorder !== 'undefined' ? '' : 'none';
     restoreDraft();
     initPromptCard();
     updateMyPostsBtnVisibility();
@@ -1845,6 +1863,7 @@ auth.onAuthStateChanged(async (user) => {
     if (pollToggleBtn) pollToggleBtn.style.display = 'none';
     if (gifToggleBtn) gifToggleBtn.style.display = 'none';
     if (imageToggleBtn) imageToggleBtn.style.display = 'none';
+    if (voiceToggleBtn) voiceToggleBtn.style.display = 'none';
     hidePromptCard();
     if (myPostsBtn) myPostsBtn.style.display = 'none';
   } else {
@@ -2941,7 +2960,7 @@ function createMessageCard(msg, user, isNew) {
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
 
-  if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) {
+  if (isMuted(msg.authorId) || (msg.type !== 'audio' && isMutedByKeyword(msg.text))) {
     card.style.display = 'none';
   }
 
@@ -3033,9 +3052,16 @@ function createMessageCard(msg, user, isNew) {
     header.appendChild(imageBadge);
   }
 
+  if (msg.type === 'audio') {
+    const audioBadge = document.createElement('span');
+    audioBadge.className = 'voice-card-badge';
+    audioBadge.textContent = '🎙️ Voice';
+    header.appendChild(audioBadge);
+  }
+
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  if (msg.type !== 'gif' && msg.type !== 'image') {
+  if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio') {
     renderMessageText(textEl, msg.text);
   }
 
@@ -3067,6 +3093,16 @@ function createMessageCard(msg, user, isNew) {
     card.appendChild(imageImg);
   }
 
+  // Render audio player for voice messages
+  if (msg.type === 'audio' && msg.audioUrl) {
+    const audioEl = document.createElement('audio');
+    audioEl.className = 'voice-message-player';
+    audioEl.controls = true;
+    audioEl.src = msg.audioUrl;
+    audioEl.setAttribute('preload', 'metadata');
+    card.appendChild(audioEl);
+  }
+
   // Render poll body for poll messages
   if (msg.type === 'poll' && msg.poll && msg.poll.options) {
     const options = Object.values(msg.poll.options);
@@ -3082,8 +3118,8 @@ function createMessageCard(msg, user, isNew) {
     card.classList.add('has-actions');
 
     const elapsedMs = Date.now() - msg.timestamp;
-    // Polls, GIFs, and images cannot be edited
-    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && elapsedMs < EDIT_WINDOW_MS;
+    // Polls, GIFs, images, and audio cannot be edited
+    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && elapsedMs < EDIT_WINDOW_MS;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -3114,6 +3150,13 @@ function createMessageCard(msg, user, isNew) {
             await storage.refFromURL(msg.imageUrl).delete();
           } catch (storageErr) {
             console.error('Failed to delete image from Storage:', storageErr);
+          }
+        }
+        if (msg.type === 'audio' && msg.audioUrl) {
+          try {
+            await storage.refFromURL(msg.audioUrl).delete();
+          } catch (storageErr) {
+            console.error('Failed to delete voice message from Storage:', storageErr);
           }
         }
         await db.ref(`messages/${msg.id}`).remove();
@@ -4567,6 +4610,169 @@ if (imageFileInput) {
   });
 }
 
+// ========================================
+// Voice Recording Feature
+// ========================================
+const VOICE_MAX_SECONDS = 60;
+
+function voiceFormatDuration(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function enableVoiceMode() {
+  voiceMode = true;
+  voiceBlob = null;
+  hidePromptCard();
+  if (textComposer) textComposer.style.display = 'none';
+  if (pollComposer) pollComposer.style.display = 'none';
+  if (gifComposer) gifComposer.style.display = 'none';
+  if (imageComposer) imageComposer.style.display = 'none';
+  if (voiceComposer) voiceComposer.style.display = '';
+  if (voiceToggleBtn) voiceToggleBtn.setAttribute('aria-pressed', 'true');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Voice';
+  resetVoiceComposer();
+}
+
+function disableVoiceMode() {
+  stopVoiceRecording();
+  voiceMode = false;
+  voiceBlob = null;
+  if (textComposer) textComposer.style.display = '';
+  if (voiceComposer) voiceComposer.style.display = 'none';
+  if (voiceToggleBtn) voiceToggleBtn.setAttribute('aria-pressed', 'false');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Message';
+  maybeShowPromptCard();
+}
+
+function resetVoiceComposer() {
+  voiceBlob = null;
+  voiceRecordingSeconds = 0;
+  if (voiceRecordBtn) {
+    const area = document.getElementById('voice-record-area');
+    const recArea = document.getElementById('voice-recording-area');
+    const prevArea = document.getElementById('voice-preview-area');
+    if (area) area.style.display = '';
+    if (recArea) recArea.style.display = 'none';
+    if (prevArea) prevArea.style.display = 'none';
+  }
+  if (voiceErrorMsg) voiceErrorMsg.style.display = 'none';
+  if (voiceUploadProgress) voiceUploadProgress.style.display = 'none';
+  if (voiceDurationEl) voiceDurationEl.textContent = '0:00';
+  if (voicePreviewPlayer) {
+    voicePreviewPlayer.src = '';
+    if (voicePreviewPlayer._blobUrl) {
+      URL.revokeObjectURL(voicePreviewPlayer._blobUrl);
+      voicePreviewPlayer._blobUrl = null;
+    }
+  }
+}
+
+function stopVoiceRecording() {
+  clearInterval(voiceRecordingTimer);
+  voiceRecordingTimer = null;
+  if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    voiceMediaRecorder.stop();
+  }
+  voiceMediaRecorder = null;
+}
+
+async function startVoiceRecording() {
+  if (voiceErrorMsg) voiceErrorMsg.style.display = 'none';
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    if (voiceErrorMsg) {
+      voiceErrorMsg.textContent = 'Microphone access denied. Please allow microphone access in your browser settings.';
+      voiceErrorMsg.style.display = '';
+    }
+    return;
+  }
+
+  const chunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus'
+    : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+
+  voiceMediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+
+  voiceMediaRecorder.addEventListener('dataavailable', (e) => {
+    if (e.data && e.data.size > 0) chunks.push(e.data);
+  });
+
+  voiceMediaRecorder.addEventListener('stop', () => {
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+    voiceBlob = blob;
+
+    const blobUrl = URL.createObjectURL(blob);
+    if (voicePreviewPlayer) {
+      if (voicePreviewPlayer._blobUrl) URL.revokeObjectURL(voicePreviewPlayer._blobUrl);
+      voicePreviewPlayer._blobUrl = blobUrl;
+      voicePreviewPlayer.src = blobUrl;
+    }
+
+    const recArea = document.getElementById('voice-recording-area');
+    const prevArea = document.getElementById('voice-preview-area');
+    if (recArea) recArea.style.display = 'none';
+    if (prevArea) prevArea.style.display = '';
+  });
+
+  voiceMediaRecorder.start();
+
+  // Update UI
+  voiceRecordingSeconds = 0;
+  if (voiceDurationEl) voiceDurationEl.textContent = '0:00';
+  const area = document.getElementById('voice-record-area');
+  const recArea = document.getElementById('voice-recording-area');
+  if (area) area.style.display = 'none';
+  if (recArea) recArea.style.display = '';
+
+  voiceRecordingTimer = setInterval(() => {
+    voiceRecordingSeconds++;
+    if (voiceDurationEl) voiceDurationEl.textContent = voiceFormatDuration(voiceRecordingSeconds);
+    if (voiceRecordingSeconds >= VOICE_MAX_SECONDS) {
+      stopVoiceRecording();
+    }
+  }, 1000);
+}
+
+if (voiceRecordBtn) {
+  voiceRecordBtn.addEventListener('click', () => {
+    startVoiceRecording();
+  });
+}
+
+if (voiceStopBtn) {
+  voiceStopBtn.addEventListener('click', () => {
+    stopVoiceRecording();
+  });
+}
+
+if (voiceRerecordBtn) {
+  voiceRerecordBtn.addEventListener('click', () => {
+    resetVoiceComposer();
+  });
+}
+
+if (voiceToggleBtn) {
+  voiceToggleBtn.addEventListener('click', () => {
+    if (voiceMode) {
+      disableVoiceMode();
+    } else {
+      if (pollMode) disablePollMode();
+      if (gifMode) disableGifMode();
+      if (imageMode) disableImageMode();
+      enableVoiceMode();
+    }
+  });
+}
+
 // Wire up typing indicator listeners
 setupTypingInputListeners();
 
@@ -4966,6 +5172,94 @@ postForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  // ---- Voice submission path ----
+  if (voiceMode) {
+    if (!voiceBlob) {
+      if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Please record a voice message before posting.'; emptyErrorMsg.style.display = 'block'; }
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.btn-text').style.display = 'none';
+    const loadingSpan = submitBtn.querySelector('.btn-loading');
+    loadingSpan.textContent = 'Uploading audio…';
+    loadingSpan.style.display = 'inline';
+    rateLimitMsg.style.display = 'none';
+    if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
+    if (voiceUploadProgress) {
+      voiceUploadProgress.style.display = '';
+      if (voiceUploadFill) voiceUploadFill.style.width = '0%';
+      if (voiceUploadLabel) voiceUploadLabel.textContent = 'Uploading…';
+    }
+
+    try {
+      const blobToUpload = voiceBlob;
+      const ext = blobToUpload.type.includes('webm') ? 'webm' : 'webm';
+      const storagePath = `voice-messages/${currentUser.uid}/${Date.now()}.${ext}`;
+      const storageRef = storage.ref(storagePath);
+      const uploadTask = storageRef.put(blobToUpload, { contentType: blobToUpload.type || 'audio/webm' });
+
+      const downloadUrl = await new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+          (snapshot) => {
+            const pct = snapshot.totalBytes > 0
+              ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
+              : 0;
+            if (voiceUploadFill) voiceUploadFill.style.width = `${pct}%`;
+            if (voiceUploadLabel) voiceUploadLabel.textContent = `Uploading… ${pct}%`;
+          },
+          reject,
+          async () => {
+            try {
+              const url = await uploadTask.snapshot.ref.getDownloadURL();
+              resolve(url);
+            } catch (e) {
+              reject(e);
+            }
+          }
+        );
+      });
+
+      const durationSec = Math.min(voiceRecordingSeconds, VOICE_MAX_SECONDS);
+      const countryData = await fetchCountryData();
+      const newMessageKey = db.ref('messages').push().key;
+      const displayName = userAlias || currentUser.displayName || 'Anonymous';
+      const updates = {};
+      updates[`/messages/${newMessageKey}`] = {
+        type: 'audio',
+        text: 'Voice message',
+        audioUrl: downloadUrl,
+        audioDuration: durationSec,
+        author: displayName,
+        authorId: currentUser.uid,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        photoURL: userAvatarUrl || currentUser.photoURL || '',
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+      };
+      updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+
+      await db.ref().update(updates);
+
+      disableVoiceMode();
+    } catch (error) {
+      console.error('Voice post error:', error);
+      if (voiceUploadProgress) voiceUploadProgress.style.display = 'none';
+      if (error.code === 'PERMISSION_DENIED') {
+        rateLimitMsg.style.display = 'block';
+        setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
+      } else {
+        showToast('Voice upload failed. Please try again.');
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.querySelector('.btn-text').style.display = 'inline';
+      const ls = submitBtn.querySelector('.btn-loading');
+      ls.textContent = 'Posting...';
+      ls.style.display = 'none';
+    }
+    return;
+  }
+
   // ---- Normal text submission path ----
   const validation = validateMessage(messageInput.value);
   if (!validation.valid) {
@@ -5188,5 +5482,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording };
 }
