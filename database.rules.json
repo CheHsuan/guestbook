@@ -110,6 +110,10 @@
         "countryName": {
           ".validate": "newData.isString() && newData.val().length <= 100"
         },
+        "views": {
+          ".write": "root.child('messages').child($message_id).exists()",
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
         "replies": {
           "$reply_id": {
             ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
