@@ -192,11 +192,12 @@ const SORT_KEY = 'guestbook_sort';
 const SORT_NEWEST = 'newest';
 const SORT_OLDEST = 'oldest';
 const SORT_ACTIVE = 'active';
+const SORT_VIEWS = 'views';
 
 let currentSort = SORT_NEWEST;
 try {
   const _savedSort = localStorage.getItem(SORT_KEY);
-  if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE) currentSort = _savedSort;
+  if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE || _savedSort === SORT_VIEWS) currentSort = _savedSort;
 } catch (_) {}
 
 // ========================================
@@ -222,6 +223,12 @@ function getSortComparator(sort) {
       return rc !== 0 ? rc : Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
     };
   }
+  if (sort === SORT_VIEWS) {
+    return (a, b) => {
+      const vc = Number(b.dataset.views) - Number(a.dataset.views);
+      return vc !== 0 ? vc : Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
+    };
+  }
   return (a, b) => Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
 }
 
@@ -230,6 +237,29 @@ function applySortOrder() {
   if (cards.length === 0) return;
   cards.sort(getSortComparator(currentSort));
   cards.forEach(card => messagesContainer.insertBefore(card, loadingState));
+}
+
+// ========================================
+// View Count — Session Deduplication
+// ========================================
+let _viewedInSessionFallback = null;
+
+function hasViewedInSession(msgId) {
+  try {
+    return !!sessionStorage.getItem('gb_viewed_' + msgId);
+  } catch (_) {
+    if (!_viewedInSessionFallback) _viewedInSessionFallback = new Set();
+    return _viewedInSessionFallback.has(msgId);
+  }
+}
+
+function markViewedInSession(msgId) {
+  try {
+    sessionStorage.setItem('gb_viewed_' + msgId, '1');
+  } catch (_) {
+    if (!_viewedInSessionFallback) _viewedInSessionFallback = new Set();
+    _viewedInSessionFallback.add(msgId);
+  }
 }
 
 // ========================================
@@ -2101,7 +2131,7 @@ async function startListeningMessages() {
       }
     });
 
-    // 4. Listen for CHANGED messages (cross-tab edit sync)
+    // 4. Listen for CHANGED messages (cross-tab edit sync + view count updates)
     realtimeChangedListener = db.ref('messages').on('child_changed', (childSnapshot) => {
       const msgId = childSnapshot.key;
       const updatedData = childSnapshot.val();
@@ -2127,6 +2157,18 @@ async function startListeningMessages() {
             timeEl.appendChild(editedLabel);
           }
         }
+      }
+
+      if (typeof updatedData.views === 'number') {
+        card.dataset.views = String(updatedData.views);
+        const viewCountEl = card.querySelector('.view-count');
+        if (viewCountEl) {
+          if (updatedData.views > 0) {
+            viewCountEl.textContent = updatedData.views === 1 ? '👁 1 view' : `👁 ${updatedData.views} views`;
+            viewCountEl.style.display = '';
+          }
+        }
+        if (currentSort === SORT_VIEWS) applySortOrder();
       }
     });
 
@@ -2957,6 +2999,7 @@ function createMessageCard(msg, user, isNew) {
   card.id = `msg-${msg.id}`;
   card.dataset.timestamp = String(msg.timestamp);
   card.dataset.replyCount = '0';
+  card.dataset.views = String(msg.views || 0);
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
 
@@ -3307,6 +3350,16 @@ function createMessageCard(msg, user, isNew) {
   // Card footer: reply count + reply button (reply button for all auth'd users)
   const cardFooter = document.createElement('div');
   cardFooter.className = 'card-footer';
+
+  const viewCountEl = document.createElement('span');
+  viewCountEl.className = 'view-count';
+  const _initialViews = msg.views || 0;
+  if (_initialViews > 0) {
+    viewCountEl.textContent = _initialViews === 1 ? '👁 1 view' : `👁 ${_initialViews} views`;
+  } else {
+    viewCountEl.style.display = 'none';
+  }
+  cardFooter.appendChild(viewCountEl);
 
   const replyCountEl = document.createElement('span');
   replyCountEl.className = 'reply-count';
@@ -3707,6 +3760,8 @@ function createMessageCard(msg, user, isNew) {
 
   replyListenerMap.set(msg.id, repliesRef);
 
+  if (viewObserver) viewObserver.observe(card);
+
   return card;
 }
 
@@ -3895,6 +3950,28 @@ function attachMentionAutocomplete(textarea, relativeParent) {
     applySortOrder();
   });
 })();
+
+// ========================================
+// View Count IntersectionObserver
+// ========================================
+const viewObserver = (typeof IntersectionObserver !== 'undefined')
+  ? new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const card = entry.target;
+        const msgId = card.id ? card.id.replace(/^msg-/, '') : null;
+        if (!msgId) return;
+        if (hasViewedInSession(msgId)) {
+          viewObserver.unobserve(card);
+          return;
+        }
+        markViewedInSession(msgId);
+        viewObserver.unobserve(card);
+        db.ref('messages/' + msgId).update({ views: firebase.database.ServerValue.increment(1) })
+          .catch(err => console.error('Failed to increment view count:', err));
+      });
+    }, { threshold: 0.5 })
+  : null;
 
 // ========================================
 // Daily Writing Prompt
@@ -5484,5 +5561,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
 }

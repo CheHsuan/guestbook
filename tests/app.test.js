@@ -69,6 +69,7 @@ const APP_HTML = `
       <button class="sort-btn sort-btn--active" data-sort="newest" aria-pressed="true">Newest</button>
       <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
       <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
+      <button class="sort-btn" data-sort="views" aria-pressed="false">Most Viewed</button>
     </div>
     <button id="my-posts-btn" class="my-posts-btn" aria-pressed="false" style="display:none;">My Posts</button>
   </div>
@@ -6325,6 +6326,169 @@ describe('sort comparators (getSortComparator)', () => {
     const a = makeCardEl(1500, 0);
     const b = makeCardEl(1500, 0);
     expect(cmp(a, b)).toBe(0);
+  });
+
+  function makeCardElWithViews(timestamp, views) {
+    const el = makeCardEl(timestamp, 0);
+    el.dataset.views = String(views);
+    return el;
+  }
+
+  test('views comparator sorts by descending view count', () => {
+    const cmp = getSortComparator('views');
+    const a = makeCardElWithViews(1000, 10);
+    const b = makeCardElWithViews(2000, 5);
+    expect(cmp(a, b)).toBeLessThan(0);
+    expect(cmp(b, a)).toBeGreaterThan(0);
+  });
+
+  test('views comparator uses descending timestamp as tie-breaker when view counts are equal', () => {
+    const cmp = getSortComparator('views');
+    const a = makeCardElWithViews(1000, 7);
+    const b = makeCardElWithViews(2000, 7);
+    expect(cmp(a, b)).toBeGreaterThan(0);
+    expect(cmp(b, a)).toBeLessThan(0);
+  });
+
+  test('views comparator returns 0 for identical view count and timestamp', () => {
+    const cmp = getSortComparator('views');
+    const a = makeCardElWithViews(1000, 3);
+    const b = makeCardElWithViews(1000, 3);
+    expect(cmp(a, b)).toBe(0);
+  });
+
+  test('views comparator falls back to descending timestamp when view counts are both 0', () => {
+    const cmp = getSortComparator('views');
+    const a = makeCardElWithViews(2000, 0);
+    const b = makeCardElWithViews(1000, 0);
+    expect(cmp(a, b)).toBeLessThan(0);
+  });
+});
+
+// --- View count session deduplication ---
+describe('view count session deduplication (hasViewedInSession / markViewedInSession)', () => {
+  let hasViewedInSession, markViewedInSession;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ hasViewedInSession, markViewedInSession } = require('../public/app.js'));
+  });
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  test('hasViewedInSession returns false for an unseen message', () => {
+    expect(hasViewedInSession('msg-abc')).toBe(false);
+  });
+
+  test('markViewedInSession stores the message id so hasViewedInSession returns true', () => {
+    markViewedInSession('msg-abc');
+    expect(hasViewedInSession('msg-abc')).toBe(true);
+  });
+
+  test('marking one message does not affect a different message', () => {
+    markViewedInSession('msg-1');
+    expect(hasViewedInSession('msg-2')).toBe(false);
+  });
+
+  test('uses gb_viewed_ prefix in sessionStorage', () => {
+    markViewedInSession('msg-xyz');
+    expect(sessionStorage.getItem('gb_viewed_msg-xyz')).toBe('1');
+  });
+});
+
+// --- View count rendering in createMessageCard ---
+describe('view count display in createMessageCard', () => {
+  let createMessageCard;
+
+  const baseMsg = {
+    id: 'vc-msg-1',
+    author: 'Alice',
+    text: 'Hello',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('view-count element is hidden when views is 0', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-0', views: 0 });
+    const el = card.querySelector('.view-count');
+    expect(el).not.toBeNull();
+    expect(el.style.display).toBe('none');
+  });
+
+  test('view-count element is hidden when views is undefined', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-undef' });
+    const el = card.querySelector('.view-count');
+    expect(el).not.toBeNull();
+    expect(el.style.display).toBe('none');
+  });
+
+  test('view-count shows singular "1 view" when views is 1', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-1v', views: 1 });
+    const el = card.querySelector('.view-count');
+    expect(el.textContent).toBe('👁 1 view');
+    expect(el.style.display).not.toBe('none');
+  });
+
+  test('view-count shows plural "N views" when views > 1', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-42v', views: 42 });
+    const el = card.querySelector('.view-count');
+    expect(el.textContent).toBe('👁 42 views');
+    expect(el.style.display).not.toBe('none');
+  });
+
+  test('data-views dataset attribute is set correctly on the card', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-ds', views: 17 });
+    expect(card.dataset.views).toBe('17');
+  });
+
+  test('data-views defaults to "0" when views is not provided', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'vc-msg-ds0' });
+    expect(card.dataset.views).toBe('0');
   });
 });
 

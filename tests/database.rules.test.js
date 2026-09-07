@@ -304,3 +304,47 @@ describe('pollVotes: read access', () => {
     await assertSucceeds(get(ref(aliceDb(), 'pollVotes')));
   });
 });
+
+describe('views: write access', () => {
+  const MSG_ID = 'msg-views-test';
+
+  beforeEach(async () => {
+    await seedMessage(`messages/${MSG_ID}`, validMessage('uid-alice'));
+  });
+
+  test('unauthenticated user can increment views on an existing message', async () => {
+    await assertSucceeds(
+      set(ref(anonDb(), `messages/${MSG_ID}/views`), 1)
+    );
+  });
+
+  test('authenticated user can increment views on an existing message', async () => {
+    await assertSucceeds(
+      set(ref(aliceDb(), `messages/${MSG_ID}/views`), 5)
+    );
+  });
+
+  test('unauthenticated user cannot write views to a non-existent message', async () => {
+    await assertFails(
+      set(ref(anonDb(), 'messages/does-not-exist/views'), 1)
+    );
+  });
+
+  test('views must be a positive number — rejects zero', async () => {
+    await assertFails(
+      set(ref(anonDb(), `messages/${MSG_ID}/views`), 0)
+    );
+  });
+
+  test('views must be a positive number — rejects negative', async () => {
+    await assertFails(
+      set(ref(anonDb(), `messages/${MSG_ID}/views`), -1)
+    );
+  });
+
+  test('views must be a number — rejects string', async () => {
+    await assertFails(
+      set(ref(anonDb(), `messages/${MSG_ID}/views`), 'lots')
+    );
+  });
+});

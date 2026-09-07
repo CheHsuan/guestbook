@@ -1673,6 +1673,11 @@ body {
   color: var(--text-muted);
 }
 
+.view-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .btn-reply {
   background: none;
   border: none;
