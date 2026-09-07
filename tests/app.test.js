@@ -243,6 +243,7 @@ describe('createMessageCard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
 
@@ -589,6 +590,7 @@ describe('post form submit handler', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -714,6 +716,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -814,6 +817,7 @@ describe('sign-out behaviour', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -932,6 +936,7 @@ describe('infinite scroll / loadMoreMessages', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.isNearBottom = jest.fn().mockReturnValue(false);
     global.firebase = mocks.firebase;
@@ -1080,6 +1085,7 @@ describe('search / filter', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     ({ filterMessages } = require('../public/app.js'));
@@ -1261,6 +1267,7 @@ describe('type filter', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     ({ filterMessages, updateTypeFilterRow } = require('../public/app.js'));
@@ -1462,6 +1469,7 @@ describe('My Posts filter', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     ({ filterMessages } = require('../public/app.js'));
@@ -1629,6 +1637,7 @@ describe('unauthenticated visitor', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -1725,6 +1734,7 @@ describe('guest posting', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -1893,6 +1903,7 @@ describe('reply feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -2100,6 +2111,7 @@ describe('collapsible reply threads', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
@@ -2272,6 +2284,7 @@ describe('share button', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -2516,6 +2529,7 @@ describe('handleDeepLink', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -2607,6 +2621,7 @@ describe('renderTypingLabel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
@@ -2750,6 +2765,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -2872,6 +2888,7 @@ describe('new messages banner', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -3127,6 +3144,7 @@ describe('browser tab unread count', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -3444,6 +3462,7 @@ describe('#hashtag click-to-filter wiring', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -3521,6 +3540,7 @@ describe('@mention rendering in message cards', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -3599,6 +3619,7 @@ describe('@mention author pool', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -3675,6 +3696,7 @@ describe('getMentionPrefix', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -3752,6 +3774,7 @@ describe('bookmark feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4139,6 +4162,7 @@ describe('browser notifications — maybeFireReplyNotification', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -4309,6 +4333,7 @@ describe('browser notifications — permission request on post', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -4409,6 +4434,7 @@ describe('browser notifications — initial load gate in createMessageCard', () 
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -4474,6 +4500,7 @@ describe('formatExpiryLabel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4603,6 +4630,7 @@ describe('createMessageCard expiry label', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4673,6 +4701,7 @@ describe('tickExpiryLabels', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4761,6 +4790,7 @@ describe('truncateQuote', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4838,6 +4868,7 @@ describe('quote reply — createReplyCard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -4951,6 +4982,7 @@ describe('quote reply — composer quote preview', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -5055,6 +5087,7 @@ describe('quote reply — Firebase payload on submission', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
@@ -5182,6 +5215,7 @@ describe('draft auto-save', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -5383,6 +5417,7 @@ describe('@mention notification', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
   }
 
@@ -5612,6 +5647,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -5777,6 +5813,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
@@ -5810,6 +5847,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
@@ -5843,6 +5881,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
@@ -5880,6 +5919,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
@@ -5915,6 +5955,7 @@ describe('author profile panel', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
@@ -5956,6 +5997,7 @@ describe('bio feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = fbMocks.firebase;
   }
@@ -6212,6 +6254,7 @@ describe('sort comparators (getSortComparator)', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -6314,6 +6357,7 @@ describe('mute feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -6487,6 +6531,7 @@ describe('keyword mute feature', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -6682,6 +6727,7 @@ describe('renderTrendingHashtags', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -6839,6 +6885,7 @@ describe('thread follow — subscription localStorage helpers', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -6958,6 +7005,7 @@ describe('thread follow — follow button in createMessageCard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -7075,6 +7123,7 @@ describe('thread follow — auto-subscribe on reply post', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -7227,6 +7276,7 @@ describe('thread follow — maybeFireSubscriptionNotification', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -7377,6 +7427,7 @@ describe('poll — createMessageCard renders poll card', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -7482,6 +7533,7 @@ describe('poll — post form creates poll payload', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
@@ -7627,6 +7679,7 @@ describe('poll — vote casting and already-voted guard', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.firebase = mocks.firebase;
 
@@ -7724,6 +7777,7 @@ describe('poll — validatePoll', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -7815,6 +7869,7 @@ describe('gif — isGifUrlAllowed', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -7869,6 +7924,7 @@ describe('gif — createMessageCard renders gif card', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -7956,6 +8012,7 @@ describe('image — validateImageFile', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -8026,6 +8083,7 @@ describe('image — generateImageAlt', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -8079,6 +8137,7 @@ describe('image — createMessageCard renders image card', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -8157,6 +8216,7 @@ describe('Daily Writing Prompt', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
@@ -8298,6 +8358,7 @@ describe('avatar — handleAvatarUpload', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
@@ -8390,6 +8451,7 @@ describe('avatar — handleAvatarRemove', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
@@ -8488,6 +8550,7 @@ describe('avatar — refreshAllUserAvatars', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
@@ -8568,6 +8631,7 @@ describe('voice message — createMessageCard for audio type', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
 
@@ -8665,6 +8729,7 @@ describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
@@ -8768,6 +8833,7 @@ describe('voice recording — resetVoiceComposer, startVoiceRecording, stopVoice
     global.parseTextSegments = utils.parseTextSegments;
     global.renderTextWithLinks = utils.renderTextWithLinks;
     global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
@@ -8858,3 +8924,125 @@ describe('voice recording — resetVoiceComposer, startVoiceRecording, stopVoice
     expect(errEl.textContent).toMatch(/denied|access/i);
   });
 });
+
+// ========================================
+// linkifyText (DOM utility)
+// ========================================
+describe('linkifyText', () => {
+  let linkifyText;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    linkifyText = utils.linkifyText;
+  });
+
+  test('returns a DocumentFragment', () => {
+    const frag = linkifyText('hello');
+    expect(frag).toBeInstanceOf(DocumentFragment);
+  });
+
+  test('plain URL only — renders a single anchor', () => {
+    const frag = linkifyText('https://example.com');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const a = div.querySelector('a');
+    expect(a).not.toBeNull();
+    expect(a.href).toBe('https://example.com/');
+    expect(a.target).toBe('_blank');
+    expect(a.rel).toBe('noopener noreferrer');
+  });
+
+  test('URL mid-sentence — text nodes flank the anchor', () => {
+    const frag = linkifyText('visit https://example.com today');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelector('a')).not.toBeNull();
+    expect(div.textContent).toBe('visit https://example.com today');
+  });
+
+  test('URL with trailing period — anchor excludes the period', () => {
+    const frag = linkifyText('see https://example.com.');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const a = div.querySelector('a');
+    expect(a.href).toBe('https://example.com/');
+    expect(div.textContent).toContain('.');
+  });
+
+  test('multiple URLs — all become anchors', () => {
+    const frag = linkifyText('https://a.com and https://b.com');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const anchors = div.querySelectorAll('a');
+    expect(anchors).toHaveLength(2);
+    expect(anchors[0].href).toContain('a.com');
+    expect(anchors[1].href).toContain('b.com');
+  });
+
+  test('non-http scheme (ftp://) — NOT converted to a link', () => {
+    const frag = linkifyText('ftp://example.com');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelector('a')).toBeNull();
+    expect(div.textContent).toBe('ftp://example.com');
+  });
+
+  test('XSS probe (javascript:alert(1)) — NOT converted to a link', () => {
+    const frag = linkifyText('javascript:alert(1)');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelector('a')).toBeNull();
+    expect(div.textContent).toBe('javascript:alert(1)');
+  });
+
+  test('empty string — returns empty DocumentFragment', () => {
+    const frag = linkifyText('');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.textContent).toBe('');
+    expect(div.childNodes).toHaveLength(0);
+  });
+
+  test('message that is only a URL — no extra text nodes', () => {
+    const frag = linkifyText('https://example.com');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelectorAll('a')).toHaveLength(1);
+    expect(div.textContent.trim()).toBe('https://example.com');
+  });
+
+  test('5 URLs in one message — all become anchors', () => {
+    const urls = Array.from({ length: 5 }, (_, i) => `https://site${i}.com`);
+    const frag = linkifyText(urls.join(' '));
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelectorAll('a')).toHaveLength(5);
+  });
+
+  test('long URL display is truncated to 60 chars with ellipsis', () => {
+    const longUrl = 'https://example.com/' + 'a'.repeat(60);
+    const frag = linkifyText(longUrl);
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const a = div.querySelector('a');
+    expect(a.textContent).toBe(longUrl.slice(0, 60) + '…');
+    expect(a.href).toContain('example.com');
+  });
+
+  test('trailing exclamation mark stripped from URL', () => {
+    const frag = linkifyText('Great https://example.com!');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const a = div.querySelector('a');
+    expect(a.href).toBe('https://example.com/');
+    expect(div.textContent).toContain('!');
+  });
+
+  test('data: scheme — NOT converted to a link', () => {
+    const frag = linkifyText('data:text/html,<h1>hi</h1>');
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    expect(div.querySelector('a')).toBeNull();
+  });
+});
+

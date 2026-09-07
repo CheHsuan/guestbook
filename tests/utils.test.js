@@ -429,12 +429,26 @@ describe('parseTextSegments', () => {
         expect(segs.every(s => s.type === 'text')).toBe(true);
     });
 
-    test('long URL display label is truncated to 50 chars + ellipsis', () => {
+    test('long URL display label is truncated to 60 chars + ellipsis', () => {
         const longUrl = 'https://example.com/' + 'a'.repeat(60);
         const segs = parseTextSegments(longUrl);
         expect(segs[0].type).toBe('url');
         expect(segs[0].value).toBe(longUrl);
-        expect(segs[0].display).toBe(longUrl.slice(0, 50) + '…');
+        expect(segs[0].display).toBe(longUrl.slice(0, 60) + '…');
+    });
+
+    test('trailing exclamation mark stripped from URL', () => {
+        const segs = parseTextSegments('Wow https://example.com!');
+        const urlSeg = segs.find(s => s.type === 'url');
+        expect(urlSeg.value).toBe('https://example.com');
+        expect(segs.some(s => s.type === 'text' && s.value === '!')).toBe(true);
+    });
+
+    test('trailing question mark stripped from URL', () => {
+        const segs = parseTextSegments('see https://example.com?');
+        const urlSeg = segs.find(s => s.type === 'url');
+        expect(urlSeg.value).toBe('https://example.com');
+        expect(segs.some(s => s.type === 'text' && s.value === '?')).toBe(true);
     });
 
     test('trailing period stripped from URL', () => {
@@ -804,6 +818,20 @@ describe('parseMessageSegments', () => {
         const segs = parseMessageSegments('email me @ later');
         const mentions = segs.filter(s => s.type === 'mention');
         expect(mentions).toHaveLength(0);
+    });
+
+    test('trailing exclamation mark stripped from URL', () => {
+        const segs = parseMessageSegments('check https://example.com!');
+        const urlSeg = segs.find(s => s.type === 'url');
+        expect(urlSeg.value).toBe('https://example.com');
+        expect(segs.some(s => s.type === 'text' && s.value === '!')).toBe(true);
+    });
+
+    test('trailing question mark stripped from URL', () => {
+        const segs = parseMessageSegments('see https://example.com?');
+        const urlSeg = segs.find(s => s.type === 'url');
+        expect(urlSeg.value).toBe('https://example.com');
+        expect(segs.some(s => s.type === 'text' && s.value === '?')).toBe(true);
     });
 });
 
