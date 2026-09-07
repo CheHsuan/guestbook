@@ -1279,7 +1279,8 @@ body {
 }
 
 .message-text a,
-.reply-text a {
+.reply-text a,
+.author-msg-text a {
   color: var(--link);
   text-decoration: underline;
 }

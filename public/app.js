@@ -702,7 +702,7 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
         const snippet = typeof msg.text === 'string' && msg.text.length > 80
           ? msg.text.slice(0, 80) + '…'
           : (msg.text || '');
-        textEl.textContent = snippet; // textContent — XSS safe
+        textEl.appendChild(linkifyText(snippet)); // XSS safe via DOM text nodes
 
         preview.appendChild(timeEl);
         preview.appendChild(textEl);

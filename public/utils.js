@@ -191,7 +191,7 @@ function parseTextSegments(rawText) {
     if (!rawText) return [];
 
     const URL_REGEX = /(https?:\/\/[^\s<>"]+)/g;
-    const TRAILING_PUNCT = /[.,)]+$/;
+    const TRAILING_PUNCT = /[.,)!?]+$/;
     const parts = rawText.split(URL_REGEX);
     const segments = [];
 
@@ -214,7 +214,7 @@ function parseTextSegments(rawText) {
             }
 
             if (isValid) {
-                const display = url.length > 50 ? url.slice(0, 50) + '…' : url;
+                const display = url.length > 60 ? url.slice(0, 60) + '…' : url;
                 segments.push({ type: 'url', value: url, display });
                 if (punct) segments.push({ type: 'text', value: punct });
             } else {
@@ -251,6 +251,29 @@ function renderTextWithLinks(container, rawText) {
 }
 
 /**
+ * Linkify rawText and return a DocumentFragment.
+ * http/https URLs become <a target="_blank" rel="noopener noreferrer"> elements;
+ * all other text is safe Text nodes. No innerHTML on user data.
+ */
+function linkifyText(text) {
+    const frag = document.createDocumentFragment();
+    if (!text) return frag;
+    for (const seg of parseTextSegments(text)) {
+        if (seg.type === 'url') {
+            const a = document.createElement('a');
+            a.href = seg.value;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = seg.display;
+            frag.appendChild(a);
+        } else {
+            frag.appendChild(document.createTextNode(seg.value));
+        }
+    }
+    return frag;
+}
+
+/**
  * Parse rawText into segments for rendering with links, @mentions, and #hashtags.
  * Segment types: 'text' | 'url' | 'mention' | 'hashtag'
  * @mention tokens match /\B@(\w+)/ — one contiguous word after @, not at word boundary start.
@@ -260,7 +283,7 @@ function parseMessageSegments(rawText) {
     if (!rawText) return [];
 
     const COMBINED_REGEX = /(https?:\/\/[^\s<>"]+)|(\B@\w+)|(\B#[a-zA-Z][a-zA-Z0-9_]{1,29})/g;
-    const TRAILING_PUNCT = /[.,)]+$/;
+    const TRAILING_PUNCT = /[.,)!?]+$/;
     const segments = [];
     let lastIndex = 0;
     let match;
@@ -284,7 +307,7 @@ function parseMessageSegments(rawText) {
             } catch (_) {}
 
             if (isValid) {
-                const display = url.length > 50 ? url.slice(0, 50) + '…' : url;
+                const display = url.length > 60 ? url.slice(0, 60) + '…' : url;
                 segments.push({ type: 'url', value: url, display });
                 if (punct) segments.push({ type: 'text', value: punct });
                 // Adjust lastIndex to account for stripped trailing punctuation
@@ -470,5 +493,5 @@ async function fetchCountryData() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
 }
