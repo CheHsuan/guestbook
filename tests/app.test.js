@@ -5062,6 +5062,28 @@ describe('quote reply — composer quote preview', () => {
     expect(previewIdx).toBeGreaterThanOrEqual(0);
     expect(previewIdx).toBeLessThan(textareaIdx);
   });
+
+  test('reply-quote-preview contains a dismiss button (.btn-quote-dismiss)', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    const preview = card.querySelector('.reply-quote-preview');
+    expect(preview.querySelector('.btn-quote-dismiss')).not.toBeNull();
+  });
+
+  test('clicking dismiss button removes the quote preview from the DOM', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.reply-quote-preview')).not.toBeNull();
+    card.querySelector('.btn-quote-dismiss').click();
+    expect(card.querySelector('.reply-quote-preview')).toBeNull();
+  });
+
+  test('dismiss button is not shown when parent text is empty', () => {
+    const emptyMsg = { ...baseMsg, id: 'msg-empty-dismiss', text: '' };
+    const card = createMessageCard(emptyMsg, { uid: 'uid-bob' });
+    card.querySelector('.btn-reply').click();
+    expect(card.querySelector('.btn-quote-dismiss')).toBeNull();
+  });
 });
 
 // --- quote reply: Firebase payload ---
@@ -5182,6 +5204,25 @@ describe('quote reply — Firebase payload on submission', () => {
     const updateArg = dbRef.update.mock.calls[0][0];
     const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${longMsg.id}/replies/`));
     expect(updateArg[replyKey].quotedText).toBe('Z'.repeat(100) + '…');
+  });
+
+  test('reply payload omits quotedText after user dismisses the quote preview', async () => {
+    const { createMessageCard, dbRef } = setupForSubmission();
+    const user = { uid: 'uid-bob', displayName: 'Bob' };
+    const card = createMessageCard(baseMsg, user);
+    card.querySelector('.btn-reply').click();
+    // Dismiss the quote
+    card.querySelector('.btn-quote-dismiss').click();
+    card.querySelector('.reply-textarea').value = 'Plain reply after dismiss';
+    card.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const updateArg = dbRef.update.mock.calls[0][0];
+    const replyKey = Object.keys(updateArg).find(k => k.includes(`/messages/${baseMsg.id}/replies/`));
+    expect(updateArg[replyKey].quotedText).toBeUndefined();
+    expect(updateArg[replyKey].quotedAuthor).toBeUndefined();
   });
 });
 

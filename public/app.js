@@ -3428,12 +3428,12 @@ function createMessageCard(msg, user, isNew) {
         return;
       }
 
-      const quotedSnippet = truncateQuote(msg.text);
+      let activeQuotedSnippet = truncateQuote(msg.text);
 
       const formWrapper = document.createElement('div');
       formWrapper.className = 'reply-form-wrapper';
 
-      if (quotedSnippet) {
+      if (activeQuotedSnippet) {
         const quotePreview = document.createElement('div');
         quotePreview.className = 'reply-quote-preview';
         if (msg.author) {
@@ -3443,8 +3443,20 @@ function createMessageCard(msg, user, isNew) {
           quotePreview.appendChild(quotePreviewAuthor);
         }
         const quotePreviewText = document.createElement('span');
-        quotePreviewText.textContent = quotedSnippet; // textContent — XSS safe
+        quotePreviewText.textContent = activeQuotedSnippet; // textContent — XSS safe
         quotePreview.appendChild(quotePreviewText);
+
+        const quoteDismissBtn = document.createElement('button');
+        quoteDismissBtn.type = 'button';
+        quoteDismissBtn.className = 'btn-quote-dismiss';
+        quoteDismissBtn.setAttribute('aria-label', 'Remove quote');
+        quoteDismissBtn.textContent = '×';
+        quoteDismissBtn.addEventListener('click', () => {
+          activeQuotedSnippet = '';
+          quotePreview.remove();
+        });
+        quotePreview.appendChild(quoteDismissBtn);
+
         formWrapper.appendChild(quotePreview);
       }
 
@@ -3532,8 +3544,8 @@ function createMessageCard(msg, user, isNew) {
             authorId: user.uid,
             timestamp: firebase.database.ServerValue.TIMESTAMP,
           };
-          if (quotedSnippet) {
-            replyPayload.quotedText = quotedSnippet;
+          if (activeQuotedSnippet) {
+            replyPayload.quotedText = activeQuotedSnippet;
             replyPayload.quotedAuthor = msg.author || '';
           }
           updates[`/messages/${msg.id}/replies/${newReplyKey}`] = replyPayload;

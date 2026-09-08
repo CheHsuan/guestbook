@@ -1817,6 +1817,9 @@ body {
    Reply Composer Quote Preview
    ======================================== */
 .reply-quote-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border-left: 2px solid var(--link);
   padding: 6px 10px;
   margin-bottom: 8px;
@@ -1827,11 +1830,37 @@ body {
   word-break: break-word;
   overflow-wrap: break-word;
   user-select: none;
+  overflow-x: hidden;
 }
 
 .reply-quote-preview-author {
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.btn-quote-dismiss {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: inherit;
+  transition: color var(--transition), background var(--transition);
+}
+
+.btn-quote-dismiss:hover {
+  color: var(--text-primary);
+  background: var(--border);
+}
+
+.btn-quote-dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .btn-reply-delete {
