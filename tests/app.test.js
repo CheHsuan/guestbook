@@ -9210,3 +9210,245 @@ describe('linkifyText', () => {
   });
 });
 
+// ========================================
+// Image — handlePastedImageFile
+// ========================================
+describe('image — handlePastedImageFile', () => {
+  let handlePastedImageFile, enablePollMode, enableGifMode;
+
+  const validFile = { type: 'image/jpeg', size: 1024, name: 'photo.jpg' };
+  const invalidTypeFile = { type: 'image/gif', size: 1024, name: 'anim.gif' };
+  const tooLargeFile = { type: 'image/jpeg', size: 5 * 1024 * 1024 + 1, name: 'big.jpg' };
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    global.URL.createObjectURL = jest.fn().mockReturnValue('blob:mock-url');
+    global.URL.revokeObjectURL = jest.fn();
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    ({ handlePastedImageFile, enablePollMode, enableGifMode } = require('../public/app.js'));
+  });
+
+  test('activates image mode and shows image-composer for a valid file', () => {
+    handlePastedImageFile(validFile);
+    expect(document.getElementById('image-composer').style.display).toBe('');
+    expect(document.getElementById('image-toggle-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('hides text-composer when activating image mode via paste', () => {
+    handlePastedImageFile(validFile);
+    expect(document.getElementById('text-composer').style.display).toBe('none');
+  });
+
+  test('calls URL.createObjectURL and renders preview img', () => {
+    handlePastedImageFile(validFile);
+    expect(URL.createObjectURL).toHaveBeenCalledWith(validFile);
+    expect(document.querySelector('.gif-composer-preview')).not.toBeNull();
+  });
+
+  test('updates submit button text to "Post Image"', () => {
+    handlePastedImageFile(validFile);
+    expect(document.querySelector('.btn-text').textContent).toBe('Post Image');
+  });
+
+  test('does not open file picker (imageFileInput.click not called)', () => {
+    const fileInput = document.getElementById('image-file-input');
+    const clickSpy = jest.spyOn(fileInput, 'click');
+    handlePastedImageFile(validFile);
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
+
+  test('shows toast for invalid MIME type when not in image mode', () => {
+    handlePastedImageFile(invalidTypeFile);
+    expect(document.querySelector('.permalink-toast')).not.toBeNull();
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('shows toast for file exceeding 5 MB when not in image mode', () => {
+    handlePastedImageFile(tooLargeFile);
+    expect(document.querySelector('.permalink-toast')).not.toBeNull();
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('shows image-upload-error (not toast) for invalid type when already in image mode', () => {
+    handlePastedImageFile(validFile);
+    handlePastedImageFile(invalidTypeFile);
+    const errorEl = document.getElementById('image-upload-error');
+    expect(errorEl.style.display).toBe('');
+    expect(errorEl.textContent).toMatch(/jpeg|png|webp/i);
+  });
+
+  test('replaces existing preview when pasting a second image', () => {
+    handlePastedImageFile(validFile);
+    URL.createObjectURL.mockReturnValue('blob:mock-url-2');
+    const secondFile = { type: 'image/png', size: 2048, name: 'second.png' };
+    handlePastedImageFile(secondFile);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+    expect(URL.createObjectURL).toHaveBeenCalledWith(secondFile);
+  });
+
+  test('clears image-upload-error on successful paste over existing preview', () => {
+    handlePastedImageFile(validFile);
+    handlePastedImageFile(invalidTypeFile); // inject error
+    const secondValid = { type: 'image/png', size: 512, name: 'ok.png' };
+    handlePastedImageFile(secondValid);
+    expect(document.getElementById('image-upload-error').style.display).toBe('none');
+  });
+});
+
+// ========================================
+// Image — clipboard paste event listener
+// ========================================
+describe('image — clipboard paste event listener', () => {
+  let authStateCallback;
+  let mocks;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    global.URL.createObjectURL = jest.fn().mockReturnValue('blob:mock-url');
+    global.URL.revokeObjectURL = jest.fn();
+
+    mocks = makeFirebaseMock();
+    global.firebase = mocks.firebase;
+    mocks.authInstance.onAuthStateChanged.mockImplementation((cb) => {
+      authStateCallback = cb;
+    });
+    mocks.dbRef.once.mockResolvedValue({
+      exists: () => false,
+      forEach: jest.fn(),
+      numChildren: () => 0,
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    require('../public/app.js');
+  });
+
+  function signIn(opts = {}) {
+    authStateCallback({
+      uid: 'user-1',
+      displayName: 'Alice',
+      photoURL: '',
+      isAnonymous: opts.isAnonymous || false,
+    });
+  }
+
+  function makePasteEvent(files, text = '') {
+    const ev = new Event('paste', { bubbles: true, cancelable: true });
+    ev.clipboardData = {
+      files,
+      getData: jest.fn().mockReturnValue(text),
+    };
+    return ev;
+  }
+
+  const imageFile = { type: 'image/jpeg', size: 1024, name: 'shot.jpg' };
+
+  test('ignores paste when no user is signed in', () => {
+    authStateCallback(null);
+    document.dispatchEvent(makePasteEvent([imageFile]));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('ignores paste when user is anonymous', () => {
+    signIn({ isAnonymous: true });
+    document.dispatchEvent(makePasteEvent([imageFile]));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('ignores paste when clipboard has no files', () => {
+    signIn();
+    document.dispatchEvent(makePasteEvent([]));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('ignores paste when clipboard contains only non-image files', () => {
+    signIn();
+    document.dispatchEvent(makePasteEvent([{ type: 'text/plain', size: 10, name: 'notes.txt' }]));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('ignores paste when a non-composer text input is focused', () => {
+    signIn();
+    document.getElementById('search-input').focus();
+    document.dispatchEvent(makePasteEvent([imageFile]));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('activates image mode when authenticated user pastes an image', () => {
+    signIn();
+    document.dispatchEvent(makePasteEvent([imageFile]));
+    expect(document.getElementById('image-composer').style.display).toBe('');
+    expect(document.getElementById('image-toggle-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('calls preventDefault on a valid image paste', () => {
+    signIn();
+    const ev = makePasteEvent([imageFile]);
+    const spy = jest.spyOn(ev, 'preventDefault');
+    document.dispatchEvent(ev);
+    expect(spy).toHaveBeenCalled();
+  });
+
+  test('does NOT intercept when clipboard has text+image and message input is non-empty', () => {
+    signIn();
+    const msgInput = document.getElementById('message-input');
+    msgInput.value = 'some existing text';
+    msgInput.focus();
+    document.dispatchEvent(makePasteEvent([imageFile], 'pasted text'));
+    expect(document.getElementById('image-composer').style.display).toBe('none');
+  });
+
+  test('intercepts when clipboard has text+image but message input is empty', () => {
+    signIn();
+    document.getElementById('message-input').value = '';
+    document.dispatchEvent(makePasteEvent([imageFile], 'pasted text'));
+    expect(document.getElementById('image-composer').style.display).toBe('');
+  });
+
+  test('uses the first image file when multiple files are on clipboard', () => {
+    signIn();
+    const files = [
+      { type: 'image/jpeg', size: 1024, name: 'first.jpg' },
+      { type: 'image/png', size: 2048, name: 'second.png' },
+    ];
+    document.dispatchEvent(makePasteEvent(files));
+    expect(URL.createObjectURL).toHaveBeenCalledWith(files[0]);
+  });
+});
+

@@ -4688,6 +4688,85 @@ if (imageFileInput) {
 }
 
 // ========================================
+// Clipboard Paste — Image Support
+// ========================================
+
+function handlePastedImageFile(file) {
+  const validation = validateImageFile(file);
+
+  if (!validation.valid) {
+    if (imageMode) {
+      if (imageUploadError) {
+        imageUploadError.textContent = validation.error;
+        imageUploadError.style.display = '';
+      }
+    } else {
+      showToast(validation.error);
+    }
+    return;
+  }
+
+  if (!imageMode) {
+    if (pollMode) disablePollMode();
+    if (gifMode) disableGifMode();
+    imageMode = true;
+    hidePromptCard();
+    if (textComposer) textComposer.style.display = 'none';
+    if (pollComposer) pollComposer.style.display = 'none';
+    if (gifComposer) gifComposer.style.display = 'none';
+    if (imageComposer) imageComposer.style.display = '';
+    if (imageToggleBtn) imageToggleBtn.setAttribute('aria-pressed', 'true');
+    const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+    if (btnText) btnText.textContent = 'Post Image';
+  }
+
+  if (imagePreviewObjectUrl) {
+    URL.revokeObjectURL(imagePreviewObjectUrl);
+    imagePreviewObjectUrl = null;
+  }
+  if (imageUploadTask) {
+    imageUploadTask.cancel();
+    imageUploadTask = null;
+  }
+  if (imageUploadError) imageUploadError.style.display = 'none';
+  selectedImageFile = file;
+  const objectUrl = URL.createObjectURL(file);
+  imagePreviewObjectUrl = objectUrl;
+  renderImageComposerPreview(file, objectUrl);
+}
+
+document.addEventListener('paste', (e) => {
+  if (!currentUser || currentUser.isAnonymous) return;
+  if (pollMode || gifMode || voiceMode) return;
+
+  const active = document.activeElement;
+  if (active && active !== messageInput &&
+      (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+
+  const files = e.clipboardData && e.clipboardData.files;
+  if (!files || files.length === 0) return;
+
+  let imageFile = null;
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].type.startsWith('image/')) {
+      imageFile = files[i];
+      break;
+    }
+  }
+  if (!imageFile) return;
+
+  // If clipboard has both text and image: only intercept when in image mode or composer is empty
+  const hasClipboardText = e.clipboardData.getData('text/plain').trim().length > 0;
+  if (hasClipboardText && !imageMode) {
+    const composerIsEmpty = !messageInput || !messageInput.value.trim();
+    if (!composerIsEmpty) return;
+  }
+
+  e.preventDefault();
+  handlePastedImageFile(imageFile);
+});
+
+// ========================================
 // Voice Recording Feature
 // ========================================
 const VOICE_MAX_SECONDS = 60;
@@ -5561,5 +5640,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
 }
