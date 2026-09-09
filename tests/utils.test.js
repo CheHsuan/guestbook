@@ -1,4 +1,4 @@
-const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData } = require('../public/utils');
+const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData } = require('../public/utils');
 
 // ========================================
 // validateWebsiteURL
@@ -647,6 +647,59 @@ describe('parseInlineMarkdown', () => {
         // "5*3=15" — `*` followed by "3=15" followed by no closing `*`...
         // Actually the regex would try: at pos 7 `*` matches, then [^*]+ matches `3=15`, no closing `*` — no match
         expect(segs.every(s => s.type === 'text')).toBe(true);
+    });
+});
+
+// ========================================
+// stripInlineMarkdown
+// ========================================
+describe('stripInlineMarkdown', () => {
+    test('plain text is returned unchanged', () => {
+        expect(stripInlineMarkdown('hello world')).toBe('hello world');
+    });
+
+    test('bold markers are stripped', () => {
+        expect(stripInlineMarkdown('**bold**')).toBe('bold');
+    });
+
+    test('italic markers are stripped', () => {
+        expect(stripInlineMarkdown('*italic*')).toBe('italic');
+    });
+
+    test('code markers are stripped', () => {
+        expect(stripInlineMarkdown('`code`')).toBe('code');
+    });
+
+    test('mixed formatting markers are all stripped', () => {
+        expect(stripInlineMarkdown('**a** and *b* and `c`')).toBe('a and b and c');
+    });
+
+    test('bold mid-sentence strips markers but keeps surrounding text', () => {
+        expect(stripInlineMarkdown('Hello **world** today')).toBe('Hello world today');
+    });
+
+    test('unmatched ** is left as-is', () => {
+        expect(stripInlineMarkdown('**no closing')).toBe('**no closing');
+    });
+
+    test('empty bold **** is left as literal text', () => {
+        expect(stripInlineMarkdown('****')).toBe('****');
+    });
+
+    test('whitespace-only bold span is left as literal text', () => {
+        expect(stripInlineMarkdown('**   **')).toBe('**   **');
+    });
+
+    test('empty string returns empty string', () => {
+        expect(stripInlineMarkdown('')).toBe('');
+    });
+
+    test('null returns empty string', () => {
+        expect(stripInlineMarkdown(null)).toBe('');
+    });
+
+    test('strips markers at start and end of string', () => {
+        expect(stripInlineMarkdown('**start** middle `end`')).toBe('start middle end');
     });
 });
 
