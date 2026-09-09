@@ -386,6 +386,16 @@ function parseInlineMarkdown(text) {
 }
 
 /**
+ * Strip inline Markdown markers (**bold**, *italic*, `code`) from text,
+ * returning a plain string with the inner content but no delimiters.
+ * Unmatched/whitespace-only spans are left as-is (markers included).
+ */
+function stripInlineMarkdown(text) {
+    if (!text) return text || '';
+    return parseInlineMarkdown(text).map(seg => seg.value).join('');
+}
+
+/**
  * Render rawText into container, converting URLs to clickable anchors and
  * @Word tokens to <span class="mention">. XSS-safe — no innerHTML on user data.
  * Inline Markdown (**bold**, *italic*, `code`) is applied to plain-text segments.
@@ -493,5 +503,5 @@ async function fetchCountryData() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
 }

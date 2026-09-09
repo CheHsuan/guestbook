@@ -246,6 +246,7 @@ describe('createMessageCard', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
@@ -593,6 +594,7 @@ describe('post form submit handler', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
@@ -719,6 +721,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
@@ -820,6 +823,7 @@ describe('sign-out behaviour', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -939,6 +943,7 @@ describe('infinite scroll / loadMoreMessages', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.isNearBottom = jest.fn().mockReturnValue(false);
     global.firebase = mocks.firebase;
 
@@ -1088,6 +1093,7 @@ describe('search / filter', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -1270,6 +1276,7 @@ describe('type filter', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     ({ filterMessages, updateTypeFilterRow } = require('../public/app.js'));
   });
@@ -1472,6 +1479,7 @@ describe('My Posts filter', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     ({ filterMessages } = require('../public/app.js'));
   });
@@ -1640,6 +1648,7 @@ describe('unauthenticated visitor', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1737,6 +1746,7 @@ describe('guest posting', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
@@ -1906,6 +1916,7 @@ describe('reply feature', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -2114,6 +2125,7 @@ describe('collapsible reply threads', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
 
@@ -2287,6 +2299,7 @@ describe('share button', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -2532,6 +2545,7 @@ describe('handleDeepLink', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ handleDeepLink } = require('../public/app.js'));
@@ -2624,6 +2638,7 @@ describe('renderTypingLabel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -2768,6 +2783,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
@@ -2891,6 +2907,7 @@ describe('new messages banner', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3147,6 +3164,7 @@ describe('browser tab unread count', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3465,6 +3483,7 @@ describe('#hashtag click-to-filter wiring', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3543,6 +3562,7 @@ describe('@mention rendering in message cards', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -3622,6 +3642,7 @@ describe('@mention author pool', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -3699,6 +3720,7 @@ describe('getMentionPrefix', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -3777,6 +3799,7 @@ describe('bookmark feature', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -4165,6 +4188,7 @@ describe('browser notifications — maybeFireReplyNotification', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ maybeFireReplyNotification } = require('../public/app.js'));
@@ -4336,6 +4360,7 @@ describe('browser notifications — permission request on post', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.firebase = mocks.firebase;
@@ -4437,6 +4462,7 @@ describe('browser notifications — initial load gate in createMessageCard', () 
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ createMessageCard } = require('../public/app.js'));
@@ -4503,6 +4529,7 @@ describe('formatExpiryLabel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4633,6 +4660,7 @@ describe('createMessageCard expiry label', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4704,6 +4732,7 @@ describe('tickExpiryLabels', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4793,6 +4822,7 @@ describe('truncateQuote', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4871,6 +4901,7 @@ describe('quote reply — createReplyCard', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -4985,6 +5016,7 @@ describe('quote reply — composer quote preview', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -5112,6 +5144,7 @@ describe('quote reply — Firebase payload on submission', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
     global.firebase = firebase;
@@ -5259,6 +5292,7 @@ describe('draft auto-save', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ saveDraft, loadDraft, clearDraft, restoreDraft } = require('../public/app.js'));
@@ -5461,6 +5495,7 @@ describe('@mention notification', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
   }
 
   function setVisibility(state) {
@@ -5691,6 +5726,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -5857,6 +5893,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -5891,6 +5928,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -5925,6 +5963,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -5963,6 +6002,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
     await oap('uid-alice', 'Alice', null);
@@ -5999,6 +6039,7 @@ describe('author profile panel', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { openAuthorPanel: oap } = require('../public/app.js');
 
@@ -6041,6 +6082,7 @@ describe('bio feature', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = fbMocks.firebase;
   }
 
@@ -6298,6 +6340,7 @@ describe('sort comparators (getSortComparator)', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -6426,6 +6469,7 @@ describe('view count session deduplication (hasViewedInSession / markViewedInSes
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -6486,6 +6530,7 @@ describe('view count display in createMessageCard', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -6564,6 +6609,7 @@ describe('mute feature', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -6738,6 +6784,7 @@ describe('keyword mute feature', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -6934,6 +6981,7 @@ describe('renderTrendingHashtags', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -7092,6 +7140,7 @@ describe('thread follow — subscription localStorage helpers', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -7212,6 +7261,7 @@ describe('thread follow — follow button in createMessageCard', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -7330,6 +7380,7 @@ describe('thread follow — auto-subscribe on reply post', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ createMessageCard } = require('../public/app.js'));
@@ -7483,6 +7534,7 @@ describe('thread follow — maybeFireSubscriptionNotification', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ maybeFireSubscriptionNotification } = require('../public/app.js'));
@@ -7634,6 +7686,7 @@ describe('poll — createMessageCard renders poll card', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -7740,6 +7793,7 @@ describe('poll — post form creates poll payload', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
   }
@@ -7886,6 +7940,7 @@ describe('poll — vote casting and already-voted guard', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.firebase = mocks.firebase;
 
     ({ createMessageCard } = require('../public/app.js'));
@@ -7984,6 +8039,7 @@ describe('poll — validatePoll', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8076,6 +8132,7 @@ describe('gif — isGifUrlAllowed', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8131,6 +8188,7 @@ describe('gif — createMessageCard renders gif card', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8219,6 +8277,7 @@ describe('image — validateImageFile', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8290,6 +8349,7 @@ describe('image — generateImageAlt', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8344,6 +8404,7 @@ describe('image — createMessageCard renders image card', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -8423,6 +8484,7 @@ describe('Daily Writing Prompt', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.updateEditCounter = utils.updateEditCounter || (() => {});
@@ -8565,6 +8627,7 @@ describe('avatar — handleAvatarUpload', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
@@ -8658,6 +8721,7 @@ describe('avatar — handleAvatarRemove', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
@@ -8757,6 +8821,7 @@ describe('avatar — refreshAllUserAvatars', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
@@ -8838,6 +8903,7 @@ describe('voice message — createMessageCard for audio type', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -8936,6 +9002,7 @@ describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
@@ -9040,6 +9107,7 @@ describe('voice recording — resetVoiceComposer, startVoiceRecording, stopVoice
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
@@ -9284,6 +9352,7 @@ describe('image — handlePastedImageFile', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
@@ -9394,6 +9463,7 @@ describe('image — clipboard paste event listener', () => {
     global.renderMessageText = utils.renderMessageText;
     global.linkifyText = utils.linkifyText;
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 

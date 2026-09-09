@@ -729,9 +729,8 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
 
         const textEl = document.createElement('p');
         textEl.className = 'author-msg-text';
-        const snippet = typeof msg.text === 'string' && msg.text.length > 80
-          ? msg.text.slice(0, 80) + '…'
-          : (msg.text || '');
+        const plainText = stripInlineMarkdown(typeof msg.text === 'string' ? msg.text : '');
+        const snippet = plainText.length > 80 ? plainText.slice(0, 80) + '…' : plainText;
         textEl.appendChild(linkifyText(snippet)); // XSS safe via DOM text nodes
 
         preview.appendChild(timeEl);
@@ -2561,7 +2560,7 @@ function refreshSavedPanel() {
 
     const textEl = document.createElement('p');
     textEl.className = 'saved-message-text';
-    textEl.textContent = bookmark.text; // textContent — XSS safe
+    textEl.textContent = stripInlineMarkdown(bookmark.text); // textContent — XSS safe
 
     item.appendChild(unsaveBtn);
     item.appendChild(msgHeader);
@@ -2705,11 +2704,13 @@ function createFormattingToolbar(textarea) {
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', 'Formatting options');
 
-  [
-    { label: 'Bold',   before: '**', after: '**', text: 'B', cls: 'btn-format-bold' },
-    { label: 'Italic', before: '*',  after: '*',  text: 'I', cls: 'btn-format-italic' },
-    { label: 'Code',   before: '`',  after: '`',  text: '<>', cls: 'btn-format-code' },
-  ].forEach(({ label, before, after, text, cls }) => {
+  const FORMATS = [
+    { label: 'Bold',   before: '**', after: '**', text: 'B', cls: 'btn-format-bold',   key: 'b' },
+    { label: 'Italic', before: '*',  after: '*',  text: 'I', cls: 'btn-format-italic', key: 'i' },
+    { label: 'Code',   before: '`',  after: '`',  text: '<>', cls: 'btn-format-code',  key: null },
+  ];
+
+  FORMATS.forEach(({ label, before, after, text, cls }) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn-format ' + cls;
@@ -2722,6 +2723,16 @@ function createFormattingToolbar(textarea) {
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     });
     toolbar.appendChild(btn);
+  });
+
+  // Ctrl/Cmd+B → bold, Ctrl/Cmd+I → italic
+  textarea.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const fmt = FORMATS.find(f => f.key === e.key.toLowerCase());
+    if (!fmt) return;
+    e.preventDefault();
+    wrapSelection(textarea, fmt.before, fmt.after);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
   return toolbar;
