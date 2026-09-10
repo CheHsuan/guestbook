@@ -2553,6 +2553,47 @@ body {
 }
 
 /* ========================================
+   Hashtag autocomplete dropdown
+   ======================================== */
+.hashtag-dropdown {
+  position: absolute;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  overflow-y: auto;
+  max-height: 200px;
+  min-width: 180px;
+}
+
+.hashtag-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  transition: background var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.hashtag-dropdown-item:hover,
+.hashtag-dropdown-item.active {
+  background: var(--bg-subtle);
+}
+
+.hashtag-dropdown-count {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ========================================
    Author Profile Panel — clickable author
    ======================================== */
 .author-name-btn {
