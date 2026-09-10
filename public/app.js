@@ -821,6 +821,43 @@ document.addEventListener('keydown', (e) => {
 // ========================================
 const authorPool = new Map(); // authorName -> most-recent timestamp
 
+// ========================================
+// Hashtag Pool (for # autocomplete)
+// ========================================
+const hashtagPool = new Map(); // lowercase tag name (without #) -> { canonical, count }
+
+function rebuildHashtagPool() {
+  const rawMap = new Map(); // lowercase -> Map(casing -> count)
+  messagesContainer.querySelectorAll('.hashtag').forEach(el => {
+    const tag = el.textContent; // e.g. "#Firebase"
+    const lower = tag.slice(1).toLowerCase();
+    if (!rawMap.has(lower)) rawMap.set(lower, new Map());
+    const casings = rawMap.get(lower);
+    casings.set(tag, (casings.get(tag) || 0) + 1);
+  });
+  hashtagPool.clear();
+  for (const [lower, casings] of rawMap) {
+    let bestTag = '', bestCount = 0, totalCount = 0;
+    for (const [tag, count] of casings) {
+      totalCount += count;
+      if (count > bestCount) { bestTag = tag; bestCount = count; }
+    }
+    hashtagPool.set(lower, { canonical: bestTag, count: totalCount });
+  }
+}
+
+function getHashtagSuggestions(prefix) {
+  const lower = prefix.toLowerCase();
+  const matches = [];
+  for (const [key, data] of hashtagPool.entries()) {
+    if (!lower || key.startsWith(lower)) {
+      matches.push(data);
+    }
+  }
+  matches.sort((a, b) => b.count - a.count);
+  return matches.slice(0, 5);
+}
+
 function trackAuthor(name, timestamp) {
   if (!name) return;
   const existing = authorPool.get(name);
@@ -1129,6 +1166,8 @@ function handleDeepLink() {
 // Trending Hashtags
 // ========================================
 function renderTrendingHashtags() {
+  rebuildHashtagPool();
+
   const trendingSection = document.getElementById('trending-section');
   if (!trendingSection) return;
 
@@ -3520,9 +3559,10 @@ function createMessageCard(msg, user, isNew) {
         }
       });
 
-      // Attach @mention autocomplete to reply textarea
+      // Attach @mention and #hashtag autocomplete to reply textarea
       formWrapper.style.position = 'relative';
       attachMentionAutocomplete(replyTextarea, formWrapper);
+      attachHashtagAutocomplete(replyTextarea, formWrapper);
 
       // Insert form between footer and replies section
       card.insertBefore(formWrapper, repliesSection);
@@ -3935,6 +3975,156 @@ function attachMentionAutocomplete(textarea, relativeParent) {
 
   textarea.addEventListener('blur', () => {
     // Delay so mousedown on item fires first
+    setTimeout(removeDropdown, 150);
+  });
+
+  return { removeDropdown };
+}
+
+// ========================================
+// #hashtag Autocomplete
+// ========================================
+
+function getHashtagPrefix(textarea) {
+  const val = textarea.value;
+  const pos = textarea.selectionStart;
+  let i = pos - 1;
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(val[i])) i--;
+  if (i >= 0 && val[i] === '#') {
+    const prefix = val.slice(i + 1, pos);
+    return { prefix, hashIndex: i };
+  }
+  return null;
+}
+
+function attachHashtagAutocomplete(textarea, relativeParent) {
+  let dropdown = null;
+  let activeIndex = -1;
+  let currentHashIndex = -1;
+  let currentSuggestions = [];
+
+  function removeDropdown() {
+    if (dropdown) {
+      dropdown.remove();
+      dropdown = null;
+    }
+    activeIndex = -1;
+    currentHashIndex = -1;
+    currentSuggestions = [];
+  }
+
+  function selectItem(suggestion) {
+    const val = textarea.value;
+    const pos = textarea.selectionStart;
+    const before = val.slice(0, currentHashIndex);
+    const after = val.slice(pos);
+    const inserted = suggestion.canonical + ' ';
+    textarea.value = before + inserted + after;
+    const newCursor = before.length + inserted.length;
+    textarea.setSelectionRange(newCursor, newCursor);
+    removeDropdown();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function renderDropdown(suggestions) {
+    currentSuggestions = suggestions;
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'hashtag-dropdown';
+      relativeParent.appendChild(dropdown);
+    }
+
+    const taRect = textarea.getBoundingClientRect();
+    const parentRect = relativeParent.getBoundingClientRect();
+    dropdown.style.top = (taRect.bottom - parentRect.top + relativeParent.scrollTop) + 'px';
+    dropdown.style.left = (taRect.left - parentRect.left) + 'px';
+    dropdown.style.width = taRect.width + 'px';
+
+    dropdown.innerHTML = '';
+    activeIndex = -1;
+
+    suggestions.forEach((suggestion) => {
+      const item = document.createElement('div');
+      item.className = 'hashtag-dropdown-item';
+
+      const tagSpan = document.createElement('span');
+      tagSpan.textContent = suggestion.canonical; // XSS safe
+
+      const countSpan = document.createElement('span');
+      countSpan.className = 'hashtag-dropdown-count';
+      countSpan.textContent = '\xD7 ' + suggestion.count;
+
+      item.appendChild(tagSpan);
+      item.appendChild(countSpan);
+
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // prevent textarea blur
+        selectItem(suggestion);
+      });
+
+      dropdown.appendChild(item);
+    });
+  }
+
+  function setActiveIndex(idx) {
+    const items = dropdown ? dropdown.querySelectorAll('.hashtag-dropdown-item') : [];
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.remove('active');
+    }
+    activeIndex = idx;
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.add('active');
+      items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  textarea.addEventListener('input', () => {
+    const match = getHashtagPrefix(textarea);
+    if (!match) {
+      removeDropdown();
+      return;
+    }
+    const { prefix, hashIndex } = match;
+    currentHashIndex = hashIndex;
+    const suggestions = getHashtagSuggestions(prefix);
+    if (suggestions.length === 0) {
+      removeDropdown();
+      return;
+    }
+    renderDropdown(suggestions);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (!dropdown) return;
+    const items = dropdown.querySelectorAll('.hashtag-dropdown-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(Math.min(activeIndex + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(Math.max(activeIndex - 1, 0));
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      selectItem(currentSuggestions[activeIndex]);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const idx = activeIndex >= 0 ? activeIndex : 0;
+      if (currentSuggestions[idx]) selectItem(currentSuggestions[idx]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('click', () => {
+    if (!dropdown) return;
+    const match = getHashtagPrefix(textarea);
+    if (!match || match.hashIndex !== currentHashIndex) {
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
     setTimeout(removeDropdown, 150);
   });
 
@@ -5090,8 +5280,9 @@ if (mutedWordsInputEl) {
 // Add formatting toolbar above the main message textarea
 messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
-// Attach @mention autocomplete to the main message textarea
+// Attach @mention and #hashtag autocomplete to the main message textarea
 attachMentionAutocomplete(messageInput, messageInput.parentElement);
+attachHashtagAutocomplete(messageInput, messageInput.parentElement);
 
 // Set platform-appropriate keyboard shortcut hint
 if (submitHint) submitHint.textContent = SUBMIT_HINT_TEXT;
@@ -5663,5 +5854,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
 }

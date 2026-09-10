@@ -3768,6 +3768,187 @@ describe('getMentionPrefix', () => {
   });
 });
 
+// --- #hashtag autocomplete pool ---
+describe('#hashtag autocomplete pool', () => {
+  let rebuildHashtagPool;
+  let getHashtagSuggestions;
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ rebuildHashtagPool, getHashtagSuggestions } = require('../public/app.js'));
+  }
+
+  function addHashtagsToDOM(tags) {
+    const container = document.getElementById('messages-container');
+    tags.forEach(tag => {
+      const span = document.createElement('span');
+      span.className = 'hashtag';
+      span.textContent = tag;
+      container.appendChild(span);
+    });
+  }
+
+  beforeEach(() => {
+    setupModule();
+  });
+
+  test('getHashtagSuggestions returns empty array when pool is empty', () => {
+    rebuildHashtagPool();
+    expect(getHashtagSuggestions('fire')).toEqual([]);
+  });
+
+  test('getHashtagSuggestions returns matching tags after rebuildHashtagPool', () => {
+    addHashtagsToDOM(['#firebase', '#firebase', '#fun']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('fir');
+    expect(results.map(r => r.canonical)).toContain('#firebase');
+    expect(results.map(r => r.canonical)).not.toContain('#fun');
+  });
+
+  test('getHashtagSuggestions is case-insensitive', () => {
+    addHashtagsToDOM(['#Firebase']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('firebase');
+    expect(results.map(r => r.canonical)).toContain('#Firebase');
+  });
+
+  test('getHashtagSuggestions returns at most 5 results', () => {
+    addHashtagsToDOM(['#alpha', '#beta', '#gamma', '#delta', '#epsilon', '#zeta']);
+    rebuildHashtagPool();
+    expect(getHashtagSuggestions('').length).toBeLessThanOrEqual(5);
+  });
+
+  test('getHashtagSuggestions sorts by frequency descending', () => {
+    addHashtagsToDOM(['#js', '#js', '#js', '#java', '#java', '#python']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('');
+    expect(results[0].canonical).toBe('#js');
+    expect(results[1].canonical).toBe('#java');
+    expect(results[2].canonical).toBe('#python');
+  });
+
+  test('getHashtagSuggestions with empty prefix returns top tags', () => {
+    addHashtagsToDOM(['#react', '#react', '#vue']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].canonical).toBe('#react');
+  });
+
+  test('rebuildHashtagPool picks most-common casing as canonical', () => {
+    addHashtagsToDOM(['#firebase', '#firebase', '#Firebase']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('firebase');
+    expect(results[0].canonical).toBe('#firebase');
+  });
+
+  test('rebuildHashtagPool sums counts across casings', () => {
+    addHashtagsToDOM(['#js', '#JS', '#js']);
+    rebuildHashtagPool();
+    const results = getHashtagSuggestions('js');
+    expect(results[0].count).toBe(3);
+  });
+});
+
+// --- getHashtagPrefix ---
+describe('getHashtagPrefix', () => {
+  let getHashtagPrefix;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ getHashtagPrefix } = require('../public/app.js'));
+  });
+
+  function makeTextarea(value, cursorPos) {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.selectionStart = cursorPos;
+    ta.selectionEnd = cursorPos;
+    return ta;
+  }
+
+  test('returns prefix when cursor is right after #word', () => {
+    const ta = makeTextarea('Hello #fire', 11);
+    const result = getHashtagPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('fire');
+    expect(result.hashIndex).toBe(6);
+  });
+
+  test('returns empty prefix when cursor is right after lone #', () => {
+    const ta = makeTextarea('Hello #', 7);
+    const result = getHashtagPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('');
+    expect(result.hashIndex).toBe(6);
+  });
+
+  test('returns null when no # before cursor word', () => {
+    const ta = makeTextarea('Hello world', 11);
+    expect(getHashtagPrefix(ta)).toBeNull();
+  });
+
+  test('returns null after completed #tag followed by space', () => {
+    const ta = makeTextarea('#firebase ', 10);
+    expect(getHashtagPrefix(ta)).toBeNull();
+  });
+
+  test('returns correct prefix for #tag at start of text', () => {
+    const ta = makeTextarea('#js', 3);
+    const result = getHashtagPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('js');
+    expect(result.hashIndex).toBe(0);
+  });
+
+  test('handles digits in hashtag body', () => {
+    const ta = makeTextarea('#web3', 5);
+    const result = getHashtagPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('web3');
+  });
+});
+
 // --- Bookmark feature ---
 describe('bookmark feature', () => {
   let createMessageCard;
