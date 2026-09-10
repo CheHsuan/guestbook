@@ -2368,34 +2368,70 @@ function stopListeningMessages() {
 // Expiry Countdown
 // ========================================
 const MESSAGE_LIFETIME_MS = 86400000; // 24 hours
+const EXPIRY_BADGE_THRESHOLD_MS = 7200000; // show badge only in final 2 hours
 
+// Returns null when > 2 h remain (no badge). Text is the count portion only
+// (e.g. "47m"); CSS ::after adds " left" so the narrow-viewport rule can omit it.
 function formatExpiryLabel(msRemaining) {
+  if (msRemaining > EXPIRY_BADGE_THRESHOLD_MS) return null;
   if (msRemaining >= 3600000) {
     const hours = Math.floor(msRemaining / 3600000);
-    const minutes = Math.floor((msRemaining % 3600000) / 60000);
-    return { text: `expires in ${hours}h ${minutes}m`, cls: '' };
+    return { text: `${hours}h`, cls: 'expiry--warning' };
   }
-  if (msRemaining >= 600000) {
+  if (msRemaining >= 60000) {
     const minutes = Math.ceil(msRemaining / 60000);
-    return { text: `expires in ${minutes}m`, cls: 'expiry--warning' };
+    return { text: `${minutes}m`, cls: 'expiry--warning' };
   }
-  return { text: 'expiring soon', cls: 'expiry--danger' };
+  return { text: '< 1m', cls: 'expiry--danger' };
 }
 
+function _expiryAriaLabel(msRemaining) {
+  if (msRemaining >= 3600000) {
+    const hours = Math.floor(msRemaining / 3600000);
+    return `Expires in ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  }
+  if (msRemaining >= 60000) {
+    const minutes = Math.ceil(msRemaining / 60000);
+    return `Expires in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+  }
+  return 'Expires in less than 1 minute';
+}
+
+// Returns null when no badge should be shown (> 2 h remaining or already expired).
 function createExpiryLabel(timestamp) {
   const expiry = timestamp + MESSAGE_LIFETIME_MS;
   const msRemaining = expiry - Date.now();
-  const { text, cls } = msRemaining > 0 ? formatExpiryLabel(msRemaining) : { text: 'expiring soon', cls: 'expiry--danger' };
+  if (msRemaining <= 0) return null;
+  const result = formatExpiryLabel(msRemaining);
+  if (!result) return null;
 
+  const { text, cls } = result;
   const el = document.createElement('span');
   el.className = 'expiry-label' + (cls ? ' ' + cls : '');
   el.dataset.expiry = String(expiry);
   el.textContent = ' \xB7 ' + text;
 
   const expiryTimeStr = new Date(expiry).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  el.setAttribute('aria-label', 'Expires at ' + expiryTimeStr);
+  el.title = `Expires at ${expiryTimeStr}`;
+  el.setAttribute('aria-label', _expiryAriaLabel(msRemaining));
 
   return el;
+}
+
+function _fadeRemoveCard(card) {
+  if (card.dataset.removing) return;
+  card.dataset.removing = '1';
+  card.style.transition = 'opacity 0.5s';
+  card.style.opacity = '0';
+  const msgId = card.id.replace(/^msg-/, '');
+  const replyRef = replyListenerMap.get(msgId);
+  if (replyRef) {
+    replyRef.off();
+    replyListenerMap.delete(msgId);
+  }
+  replyCountMap.delete(msgId);
+  replyExpandMap.delete(msgId);
+  setTimeout(() => card.remove(), 500);
 }
 
 function tickExpiryLabels() {
@@ -2406,21 +2442,37 @@ function tickExpiryLabels() {
     const msRemaining = expiry - now;
     if (msRemaining <= 0) {
       const card = el.closest('.message-card');
-      if (card) {
-        const msgId = card.id.replace(/^msg-/, '');
-        const replyRef = replyListenerMap.get(msgId);
-        if (replyRef) {
-          replyRef.off();
-          replyListenerMap.delete(msgId);
-        }
-        replyCountMap.delete(msgId);
-        replyExpandMap.delete(msgId);
-        card.remove();
-      }
+      if (card) _fadeRemoveCard(card);
     } else {
-      const { text, cls } = formatExpiryLabel(msRemaining);
-      el.textContent = ' \xB7 ' + text;
-      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+      const result = formatExpiryLabel(msRemaining);
+      if (result) {
+        el.textContent = ' \xB7 ' + result.text;
+        el.className = 'expiry-label' + (result.cls ? ' ' + result.cls : '');
+        el.setAttribute('aria-label', _expiryAriaLabel(msRemaining));
+      }
+    }
+  });
+
+  // Add badge to cards that have just crossed into the 2-hour window.
+  document.querySelectorAll('.message-card').forEach(card => {
+    if (card.querySelector('.expiry-label') || card.dataset.removing) return;
+    const timestamp = Number(card.dataset.timestamp);
+    if (!timestamp) return;
+    const expiry = timestamp + MESSAGE_LIFETIME_MS;
+    const msRemaining = expiry - now;
+    if (msRemaining > 0 && msRemaining <= EXPIRY_BADGE_THRESHOLD_MS) {
+      const timeEl = card.querySelector('.message-time');
+      if (timeEl) {
+        const label = createExpiryLabel(timestamp);
+        if (label) {
+          const newBadge = timeEl.querySelector('.new-since-visit-badge');
+          if (newBadge) {
+            timeEl.insertBefore(label, newBadge);
+          } else {
+            timeEl.appendChild(label);
+          }
+        }
+      }
     }
   });
 
@@ -2431,9 +2483,11 @@ function tickExpiryLabels() {
     if (msRemaining <= 0) {
       savedPanelNeedsRefresh = true;
     } else {
-      const { text, cls } = formatExpiryLabel(msRemaining);
-      el.textContent = ' \xB7 ' + text;
-      el.className = 'expiry-label' + (cls ? ' ' + cls : '');
+      const result = formatExpiryLabel(msRemaining);
+      if (result) {
+        el.textContent = ' \xB7 ' + result.text;
+        el.className = 'expiry-label' + (result.cls ? ' ' + result.cls : '');
+      }
     }
   });
 
@@ -2590,7 +2644,8 @@ function refreshSavedPanel() {
       timeEl.appendChild(badge);
     } else {
       timeEl.textContent = formatTimestamp(bookmark.timestamp);
-      timeEl.appendChild(createExpiryLabel(bookmark.timestamp));
+      const savedExpiryEl = createExpiryLabel(bookmark.timestamp);
+      if (savedExpiryEl) timeEl.appendChild(savedExpiryEl);
     }
 
     msgHeader.appendChild(avatarEl);
@@ -3074,7 +3129,8 @@ function createMessageCard(msg, user, isNew) {
     editedLabel.title = `Last edited at ${formatTimestamp(msg.editedAt)}`;
     timeEl.appendChild(editedLabel);
   }
-  timeEl.appendChild(createExpiryLabel(msg.timestamp));
+  const expiryEl = createExpiryLabel(msg.timestamp);
+  if (expiryEl) timeEl.appendChild(expiryEl);
 
   if (isNew) {
     const newBadge = document.createElement('span');

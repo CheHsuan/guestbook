@@ -1299,6 +1299,16 @@ body {
   color: var(--text-muted);
 }
 
+.expiry-label::after {
+  content: " left";
+}
+
+@media (max-width: 380px) {
+  .expiry-label::after {
+    content: "";
+  }
+}
+
 .expiry-label.expiry--warning {
   color: var(--warning);
 }
