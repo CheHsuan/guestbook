@@ -4720,52 +4720,44 @@ describe('formatExpiryLabel', () => {
     ({ formatExpiryLabel } = require('../public/app.js'));
   });
 
-  test('returns hours+minutes format and no class for >= 2 hours', () => {
-    const ms = 4 * 3600000 + 23 * 60000; // 4h 23m
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expires in 4h 23m');
-    expect(result.cls).toBe('');
+  test('returns null when more than 2 hours remain', () => {
+    expect(formatExpiryLabel(4 * 3600000 + 23 * 60000)).toBeNull(); // 4h 23m
+    expect(formatExpiryLabel(7200001)).toBeNull(); // 2h + 1ms
   });
 
-  test('returns hours+minutes format and no class for exactly 1 hour', () => {
-    const ms = 3600000; // 1h 0m
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expires in 1h 0m');
-    expect(result.cls).toBe('');
-  });
-
-  test('returns minutes format and warning class for < 1 hour but >= 10 min', () => {
-    const ms = 52 * 60000; // 52 minutes
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expires in 52m');
+  test('returns "2h" and warning class at exactly 2 hours', () => {
+    const result = formatExpiryLabel(7200000);
+    expect(result.text).toBe('2h');
     expect(result.cls).toBe('expiry--warning');
   });
 
-  test('returns minutes format and warning class for exactly 10 minutes', () => {
-    const ms = 600000; // 10 minutes
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expires in 10m');
+  test('returns hours (floored) and warning class when >= 1 hour', () => {
+    const result = formatExpiryLabel(90 * 60000); // 1h 30m → floors to 1h
+    expect(result.text).toBe('1h');
     expect(result.cls).toBe('expiry--warning');
   });
 
-  test('returns "expiring soon" and danger class for < 10 minutes', () => {
-    const ms = 9 * 60000; // 9 minutes
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expiring soon');
-    expect(result.cls).toBe('expiry--danger');
+  test('returns minutes (ceiled) and warning class when < 1 hour', () => {
+    const result = formatExpiryLabel(52 * 60000); // 52 minutes
+    expect(result.text).toBe('52m');
+    expect(result.cls).toBe('expiry--warning');
   });
 
-  test('returns "expiring soon" and danger class for 1 ms remaining', () => {
-    const result = formatExpiryLabel(1);
-    expect(result.text).toBe('expiring soon');
-    expect(result.cls).toBe('expiry--danger');
+  test('returns minutes (ceiled) and warning class for exactly 1 minute', () => {
+    const result = formatExpiryLabel(60000); // 1 minute
+    expect(result.text).toBe('1m');
+    expect(result.cls).toBe('expiry--warning');
   });
 
-  test('floors hours and minutes correctly', () => {
-    const ms = 2 * 3600000 + 59000; // 2h 0m (59 seconds left over, rounds down)
-    const result = formatExpiryLabel(ms);
-    expect(result.text).toBe('expires in 2h 0m');
-    expect(result.cls).toBe('');
+  test('returns "< 1m" and danger class in final minute', () => {
+    expect(formatExpiryLabel(59000).text).toBe('< 1m'); // 59 seconds
+    expect(formatExpiryLabel(59000).cls).toBe('expiry--danger');
+    expect(formatExpiryLabel(1).text).toBe('< 1m'); // 1 ms
+  });
+
+  test('ceils minutes correctly for fractional minutes', () => {
+    const result = formatExpiryLabel(30 * 60000 + 1000); // 30m 1s → ceils to 31m
+    expect(result.text).toBe('31m');
   });
 });
 
@@ -4781,46 +4773,62 @@ describe('createExpiryLabel', () => {
     ({ createExpiryLabel } = require('../public/app.js'));
   });
 
-  test('returns an element with class expiry-label', () => {
-    const now = Date.now();
-    const el = createExpiryLabel(now - (20 * 3600000)); // 4h remaining
+  test('returns null when more than 2 hours remain', () => {
+    const ts = Date.now() - (20 * 3600000); // 4h remaining
+    expect(createExpiryLabel(ts)).toBeNull();
+  });
+
+  test('returns null for already-expired timestamp', () => {
+    const ts = Date.now() - (25 * 3600000); // expired
+    expect(createExpiryLabel(ts)).toBeNull();
+  });
+
+  test('returns an element with class expiry-label within 2 hours', () => {
+    const ts = Date.now() - (23 * 3600000); // 1h remaining
+    const el = createExpiryLabel(ts);
+    expect(el).not.toBeNull();
     expect(el.classList.contains('expiry-label')).toBe(true);
   });
 
   test('sets data-expiry to timestamp + 86400000', () => {
-    const ts = Date.now() - (20 * 3600000); // 4h remaining
+    const ts = Date.now() - (23 * 3600000); // 1h remaining
     const el = createExpiryLabel(ts);
     expect(Number(el.dataset.expiry)).toBe(ts + 86400000);
   });
 
-  test('sets aria-label with absolute expiry time', () => {
-    const ts = Date.now() - (20 * 3600000);
+  test('sets title with absolute expiry time', () => {
+    const ts = Date.now() - (23 * 3600000);
     const el = createExpiryLabel(ts);
-    expect(el.getAttribute('aria-label')).toMatch(/^Expires at \d/);
+    expect(el.title).toMatch(/^Expires at /);
   });
 
-  test('text includes formatted countdown', () => {
-    const ts = Date.now() - (20 * 3600000); // 4h remaining
+  test('sets aria-label with relative time', () => {
+    const ts = Date.now() - (23 * 3600000); // 1h remaining
     const el = createExpiryLabel(ts);
-    expect(el.textContent).toMatch(/expires in \d+h \d+m/);
+    expect(el.getAttribute('aria-label')).toMatch(/^Expires in \d+ hour/);
   });
 
-  test('adds expiry--warning class when < 1 hour remaining', () => {
+  test('textContent includes the count', () => {
+    const ts = Date.now() - (23 * 3600000); // 1h remaining
+    const el = createExpiryLabel(ts);
+    expect(el.textContent).toContain('1h');
+  });
+
+  test('adds expiry--warning class for hours remaining', () => {
+    const ts = Date.now() - (23 * 3600000); // 1h remaining
+    const el = createExpiryLabel(ts);
+    expect(el.classList.contains('expiry--warning')).toBe(true);
+  });
+
+  test('adds expiry--warning class for minutes remaining', () => {
     const ts = Date.now() - (23.5 * 3600000); // 30 minutes remaining
     const el = createExpiryLabel(ts);
     expect(el.classList.contains('expiry--warning')).toBe(true);
   });
 
-  test('adds expiry--danger class when < 10 minutes remaining', () => {
-    const ts = Date.now() - (24 * 3600000 - 5 * 60000); // 5 minutes remaining
+  test('adds expiry--danger class in the final minute', () => {
+    const ts = Date.now() - (24 * 3600000 - 30000); // 30 seconds remaining
     const el = createExpiryLabel(ts);
-    expect(el.classList.contains('expiry--danger')).toBe(true);
-  });
-
-  test('shows expiring soon for already-expired timestamp', () => {
-    const ts = Date.now() - (25 * 3600000); // already expired
-    const el = createExpiryLabel(ts);
-    expect(el.textContent).toContain('expiring soon');
     expect(el.classList.contains('expiry--danger')).toBe(true);
   });
 });
@@ -4851,45 +4859,88 @@ describe('createMessageCard expiry label', () => {
     ({ createMessageCard } = require('../public/app.js'));
   });
 
-  const baseMsg = {
-    id: 'msg-expiry-1',
-    author: 'Alice',
-    text: 'Hello',
-    timestamp: Date.now() - (20 * 3600000), // 4h remaining
-    authorId: 'uid-alice',
-  };
+  test('does NOT render .expiry-label for message with more than 2 hours remaining', () => {
+    const msg = {
+      id: 'msg-no-badge',
+      author: 'Alice',
+      text: 'Hello',
+      timestamp: Date.now() - (20 * 3600000), // 4h remaining
+      authorId: 'uid-alice',
+    };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.expiry-label')).toBeNull();
+  });
 
-  test('renders .expiry-label inside .message-time', () => {
-    const card = createMessageCard(baseMsg, null);
+  test('renders .expiry-label inside .message-time for message within 2 hours', () => {
+    const msg = {
+      id: 'msg-expiry-1',
+      author: 'Alice',
+      text: 'Hello',
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining
+      authorId: 'uid-alice',
+    };
+    const card = createMessageCard(msg, null);
     const timeEl = card.querySelector('.message-time');
     expect(timeEl).not.toBeNull();
     expect(timeEl.querySelector('.expiry-label')).not.toBeNull();
   });
 
   test('expiry label has data-expiry attribute set to timestamp + 86400000', () => {
-    const card = createMessageCard(baseMsg, null);
-    const label = card.querySelector('.expiry-label');
-    expect(Number(label.dataset.expiry)).toBe(baseMsg.timestamp + 86400000);
-  });
-
-  test('expiry label has aria-label with expiry time', () => {
-    const card = createMessageCard(baseMsg, null);
-    const label = card.querySelector('.expiry-label');
-    expect(label.getAttribute('aria-label')).toMatch(/^Expires at/);
-  });
-
-  test('expiry label shows warning class when < 1 hour remaining', () => {
-    const msg = { ...baseMsg, id: 'msg-warn', timestamp: Date.now() - (23.5 * 3600000) };
+    const ts = Date.now() - (23 * 3600000);
+    const msg = { id: 'msg-expiry-2', author: 'Alice', text: 'Hi', timestamp: ts, authorId: 'uid-alice' };
     const card = createMessageCard(msg, null);
     const label = card.querySelector('.expiry-label');
-    expect(label.classList.contains('expiry--warning')).toBe(true);
+    expect(Number(label.dataset.expiry)).toBe(ts + 86400000);
   });
 
-  test('expiry label shows danger class when < 10 minutes remaining', () => {
-    const msg = { ...baseMsg, id: 'msg-danger', timestamp: Date.now() - (24 * 3600000 - 5 * 60000) };
+  test('expiry label aria-label contains relative time', () => {
+    const msg = {
+      id: 'msg-expiry-3',
+      author: 'Alice',
+      text: 'Hi',
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining
+      authorId: 'uid-alice',
+    };
     const card = createMessageCard(msg, null);
     const label = card.querySelector('.expiry-label');
-    expect(label.classList.contains('expiry--danger')).toBe(true);
+    expect(label.getAttribute('aria-label')).toMatch(/^Expires in /);
+  });
+
+  test('expiry label title contains absolute time', () => {
+    const msg = {
+      id: 'msg-expiry-4',
+      author: 'Alice',
+      text: 'Hi',
+      timestamp: Date.now() - (23 * 3600000),
+      authorId: 'uid-alice',
+    };
+    const card = createMessageCard(msg, null);
+    const label = card.querySelector('.expiry-label');
+    expect(label.title).toMatch(/^Expires at /);
+  });
+
+  test('expiry label shows warning class when within 2 hours', () => {
+    const msg = {
+      id: 'msg-warn',
+      author: 'Alice',
+      text: 'Hi',
+      timestamp: Date.now() - (23.5 * 3600000), // 30m remaining
+      authorId: 'uid-alice',
+    };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.expiry-label').classList.contains('expiry--warning')).toBe(true);
+  });
+
+  test('expiry label shows danger class in the final minute', () => {
+    const msg = {
+      id: 'msg-danger',
+      author: 'Alice',
+      text: 'Hi',
+      timestamp: Date.now() - (24 * 3600000 - 30000), // 30s remaining
+      authorId: 'uid-alice',
+    };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.expiry-label').classList.contains('expiry--danger')).toBe(true);
   });
 });
 
@@ -4932,39 +4983,44 @@ describe('tickExpiryLabels', () => {
       id: 'tick-1',
       author: 'Alice',
       text: 'hi',
-      timestamp: Date.now() - (23 * 3600000), // 1h remaining
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining → badge created
       authorId: 'uid-alice',
     };
     const card = appendCard(msg);
     const label = card.querySelector('.expiry-label');
 
-    // Simulate time passing: change data-expiry to 30 min from now
-    const thirtyMin = Date.now() + (30 * 60000);
-    label.dataset.expiry = String(thirtyMin);
+    // Simulate time passing: move expiry to 30 min from now
+    label.dataset.expiry = String(Date.now() + 30 * 60000);
 
     tickExpiryLabels();
 
-    expect(label.textContent).toContain('expires in 30m');
+    expect(label.textContent).toContain('30m');
     expect(label.classList.contains('expiry--warning')).toBe(true);
   });
 
-  test('removes expired message card from DOM on tick', () => {
+  test('fades out and removes expired card after timeout', () => {
+    jest.useFakeTimers();
     const msg = {
       id: 'tick-expire',
       author: 'Alice',
       text: 'hi',
-      timestamp: Date.now() - (20 * 3600000),
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining → badge created
       authorId: 'uid-alice',
     };
     const card = appendCard(msg);
     const label = card.querySelector('.expiry-label');
 
-    // Set expiry to the past
-    label.dataset.expiry = String(Date.now() - 1000);
+    label.dataset.expiry = String(Date.now() - 1000); // expired
 
     tickExpiryLabels();
 
+    // Fade starts, card not yet removed
+    expect(card.style.opacity).toBe('0');
+    expect(document.getElementById('msg-tick-expire')).not.toBeNull();
+
+    jest.runAllTimers();
     expect(document.getElementById('msg-tick-expire')).toBeNull();
+    jest.useRealTimers();
   });
 
   test('does not remove card with time remaining', () => {
@@ -4972,7 +5028,7 @@ describe('tickExpiryLabels', () => {
       id: 'tick-keep',
       author: 'Alice',
       text: 'hi',
-      timestamp: Date.now() - (20 * 3600000),
+      timestamp: Date.now() - (23 * 3600000), // 1h remaining
       authorId: 'uid-alice',
     };
     appendCard(msg);
@@ -4980,6 +5036,27 @@ describe('tickExpiryLabels', () => {
     tickExpiryLabels();
 
     expect(document.getElementById('msg-tick-keep')).not.toBeNull();
+  });
+
+  test('adds expiry badge to a card that just crossed the 2-hour threshold', () => {
+    const msg = {
+      id: 'tick-new-badge',
+      author: 'Bob',
+      text: 'hello',
+      timestamp: Date.now() - (20 * 3600000), // 4h remaining → no badge
+      authorId: 'uid-bob',
+    };
+    const card = appendCard(msg);
+    expect(card.querySelector('.expiry-label')).toBeNull();
+
+    // Simulate the card now having only 1h remaining
+    card.dataset.timestamp = String(Date.now() - (23 * 3600000));
+
+    tickExpiryLabels();
+
+    const label = card.querySelector('.expiry-label');
+    expect(label).not.toBeNull();
+    expect(label.textContent).toContain('1h');
   });
 });
 
