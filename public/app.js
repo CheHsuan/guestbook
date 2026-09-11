@@ -1127,6 +1127,8 @@ function maybeWriteInboxMentionNotification(msg) {
   const text = typeof msg.text === 'string' ? msg.text : '';
   const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
   if (!mentionRegex.test(text)) return;
+  const alreadyNotified = Object.values(notifData).some(n => n.msgId === msg.id && n.type === 'mention');
+  if (alreadyNotified) return;
   const snippet = text.length > 80 ? text.slice(0, 80) : text;
   writeNotification(currentUser.uid, {
     type: 'mention',
@@ -1147,6 +1149,8 @@ function maybeWriteInboxMentionNotificationFromReply(msg, reply) {
   const text = typeof reply.text === 'string' ? reply.text : '';
   const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
   if (!mentionRegex.test(text)) return;
+  const alreadyNotified = Object.values(notifData).some(n => n.msgId === msg.id && n.type === 'mention');
+  if (alreadyNotified) return;
   const snippet = text.length > 80 ? text.slice(0, 80) : text;
   writeNotification(currentUser.uid, {
     type: 'mention',

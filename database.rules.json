@@ -144,7 +144,7 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$notif_id": {
-          ".write": "auth != null && (newData.exists() || auth.uid == $uid)",
+          ".write": "auth != null && (!data.exists() || auth.uid == $uid)",
           ".validate": "newData.hasChildren(['type', 'fromAuthor', 'msgId', 'snippet', 'timestamp', 'read'])",
           "type": {
             ".validate": "newData.isString() && (newData.val() === 'reply' || newData.val() === 'mention')"
