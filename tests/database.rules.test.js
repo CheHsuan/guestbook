@@ -348,3 +348,128 @@ describe('views: write access', () => {
     );
   });
 });
+
+// ============================================================
+// Notifications — read and write access
+// ============================================================
+
+function validNotification(overrides = {}) {
+  return {
+    type: 'reply',
+    fromAuthor: 'Alice',
+    fromAuthorId: 'uid-alice',
+    msgId: 'msg123',
+    snippet: 'Great post!',
+    timestamp: Date.now(),
+    read: false,
+    ...overrides,
+  };
+}
+
+describe('notifications: read access', () => {
+  beforeEach(async () => {
+    await seedMessage('notifications/uid-alice/notif1', validNotification());
+  });
+
+  test('owner can read their own notifications', async () => {
+    await assertSucceeds(get(ref(aliceDb(), 'notifications/uid-alice')));
+  });
+
+  test('other authenticated user cannot read another user\'s notifications', async () => {
+    await assertFails(get(ref(bobDb(), 'notifications/uid-alice')));
+  });
+
+  test('unauthenticated user cannot read notifications', async () => {
+    await assertFails(get(ref(anonDb(), 'notifications/uid-alice')));
+  });
+});
+
+describe('notifications: write access', () => {
+  test('authenticated user can write a notification to their own path', async () => {
+    await assertSucceeds(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification())
+    );
+  });
+
+  test('authenticated user can write a notification to another user\'s path', async () => {
+    await assertSucceeds(
+      set(ref(bobDb(), 'notifications/uid-alice/notif1'), validNotification({ fromAuthorId: 'uid-bob' }))
+    );
+  });
+
+  test('unauthenticated user cannot write a notification', async () => {
+    await assertFails(
+      set(ref(anonDb(), 'notifications/uid-alice/notif1'), validNotification())
+    );
+  });
+
+  test('authenticated user can mark a notification as read', async () => {
+    await seedMessage('notifications/uid-alice/notif1', validNotification());
+    await assertSucceeds(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1/read'), true)
+    );
+  });
+});
+
+describe('notifications: field validation', () => {
+  test('rejects notification missing required type field', async () => {
+    const { type: _, ...notif } = validNotification();
+    await assertFails(set(ref(aliceDb(), 'notifications/uid-alice/notif1'), notif));
+  });
+
+  test('rejects notification missing required fromAuthor field', async () => {
+    const { fromAuthor: _, ...notif } = validNotification();
+    await assertFails(set(ref(aliceDb(), 'notifications/uid-alice/notif1'), notif));
+  });
+
+  test('rejects notification missing required snippet field', async () => {
+    const { snippet: _, ...notif } = validNotification();
+    await assertFails(set(ref(aliceDb(), 'notifications/uid-alice/notif1'), notif));
+  });
+
+  test('rejects notification missing required timestamp field', async () => {
+    const { timestamp: _, ...notif } = validNotification();
+    await assertFails(set(ref(aliceDb(), 'notifications/uid-alice/notif1'), notif));
+  });
+
+  test('rejects notification missing required read field', async () => {
+    const { read: _, ...notif } = validNotification();
+    await assertFails(set(ref(aliceDb(), 'notifications/uid-alice/notif1'), notif));
+  });
+
+  test('rejects unknown notification type', async () => {
+    await assertFails(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification({ type: 'like' }))
+    );
+  });
+
+  test('accepts notification type "mention"', async () => {
+    await assertSucceeds(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification({ type: 'mention' }))
+    );
+  });
+
+  test('rejects fromAuthor over 80 characters', async () => {
+    await assertFails(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification({ fromAuthor: 'A'.repeat(81) }))
+    );
+  });
+
+  test('rejects snippet over 80 characters', async () => {
+    await assertFails(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification({ snippet: 'A'.repeat(81) }))
+    );
+  });
+
+  test('rejects unknown fields ($other)', async () => {
+    await assertFails(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), { ...validNotification(), extraField: 'not allowed' })
+    );
+  });
+
+  test('rejects non-boolean read field', async () => {
+    await assertFails(
+      set(ref(aliceDb(), 'notifications/uid-alice/notif1'), validNotification({ read: 'yes' }))
+    );
+  });
+});

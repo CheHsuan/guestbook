@@ -1001,7 +1001,8 @@ describe('sign-out behaviour', () => {
 
     authStateCallback(null);
 
-    expect(mocks.dbRef.off.mock.calls.length).toBe(offCallsBefore);
+    // +1 for teardownNotificationInbox() detaching the notifications inbox listener
+    expect(mocks.dbRef.off.mock.calls.length).toBe(offCallsBefore + 1);
   });
 
   test('keeps message cards in DOM on sign-out', async () => {
@@ -1823,7 +1824,8 @@ describe('unauthenticated visitor', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mocks.dbRef.on.mock.calls.length).toBe(onCallsAfterAnon);
+    // +1 for setupNotificationInbox() attaching the notifications inbox listener
+    expect(mocks.dbRef.on.mock.calls.length).toBe(onCallsAfterAnon + 1);
   });
 
   test('shows post section after sign-in', async () => {

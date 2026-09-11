@@ -140,6 +140,39 @@
         }
       }
     },
+    "notifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null",
+        "$notif_id": {
+          ".validate": "newData.hasChildren(['type', 'fromAuthor', 'msgId', 'snippet', 'timestamp', 'read'])",
+          "type": {
+            ".validate": "newData.isString() && (newData.val() === 'reply' || newData.val() === 'mention')"
+          },
+          "fromAuthor": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "fromAuthorId": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "msgId": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "snippet": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "read": {
+            ".validate": "newData.isBoolean()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
     "pollVotes": {
       ".read": true,
       "$message_id": {
