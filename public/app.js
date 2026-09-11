@@ -2335,6 +2335,7 @@ let realtimeRemovedListener = null;
 let realtimeChangedListener = null;
 let oldestMessageTimestamp = null;
 let newestMessageTimestamp = null;
+let initialMessageLoadComplete = false;
 let isLoadingMore = false;
 let hasMoreMessages = true;
 let totalMessagesListener = null;
@@ -2358,6 +2359,7 @@ async function startListeningMessages() {
   // Reset state
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
+  initialMessageLoadComplete = false;
   hasMoreMessages = true;
   deepLinkHandled = false;
   newMessageCount = 0;
@@ -2478,7 +2480,9 @@ async function startListeningMessages() {
         applySortOrder();
         filterMessages();
         maybeFireMentionNotification(msg);
-        maybeWriteInboxMentionNotification(msg);
+        if (initialMessageLoadComplete) {
+          maybeWriteInboxMentionNotification(msg);
+        }
 
         // Show banner and update tab title when user is scrolled down or tab is hidden
         if (window.scrollY > 200 || document.hidden) {
@@ -2490,6 +2494,7 @@ async function startListeningMessages() {
         }
       }
     });
+    Promise.resolve().then(() => { initialMessageLoadComplete = true; });
 
     // 3. Listen for REMOVED messages
     realtimeRemovedListener = db.ref('messages').on('child_removed', (childSnapshot) => {
