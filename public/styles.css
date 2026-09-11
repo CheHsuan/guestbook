@@ -2898,6 +2898,117 @@ body {
   background: var(--accent-faint);
 }
 
+/* ========================================
+   Mood Picker — popup + chip + card badge
+   ======================================== */
+
+.mood-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+}
+
+.mood-picker {
+  position: fixed;
+  z-index: 300;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.16);
+  padding: 8px;
+  width: 232px;
+}
+
+.mood-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.mood-emoji-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  font-family: inherit;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.mood-emoji-btn:hover,
+.mood-emoji-btn:focus-visible {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  outline: none;
+}
+
+.mood-emoji-btn[aria-selected="true"] {
+  background: var(--accent-faint);
+  border-color: var(--accent);
+}
+
+.mood-emoji-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.mood-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-faint);
+  border: 1px solid var(--accent);
+  width: fit-content;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+}
+
+.mood-chip-emoji {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.mood-chip-label {
+  font-weight: 600;
+}
+
+.mood-chip-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-family: inherit;
+  transition: color var(--transition);
+}
+
+.mood-chip-clear:hover {
+  color: var(--text-primary);
+}
+
+.message-mood {
+  font-size: 0.9em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .poll-composer {
   display: flex;
   flex-direction: column;
