@@ -1149,14 +1149,17 @@ function maybeWriteInboxMentionNotificationFromReply(msg, reply) {
   const text = typeof reply.text === 'string' ? reply.text : '';
   const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
   if (!mentionRegex.test(text)) return;
-  const alreadyNotified = Object.values(notifData).some(n => n.msgId === msg.id && n.type === 'mention');
+  // Dedup by reply id, not parent id — two different replies to the same parent
+  // can each mention the user and should each produce a separate notification.
+  const alreadyNotified = Object.values(notifData).some(n => n.replyId === reply.id && n.type === 'mention');
   if (alreadyNotified) return;
   const snippet = text.length > 80 ? text.slice(0, 80) : text;
   writeNotification(currentUser.uid, {
     type: 'mention',
     fromAuthor: reply.author || 'Someone',
     fromAuthorId: reply.authorId || '',
-    msgId: msg.id,
+    msgId: msg.id,    // parent id — used to scroll to the card in the DOM
+    replyId: reply.id, // reply id — used for dedup
     snippet,
     timestamp: reply.timestamp || Date.now(),
     read: false,
