@@ -1001,7 +1001,8 @@ describe('sign-out behaviour', () => {
 
     authStateCallback(null);
 
-    expect(mocks.dbRef.off.mock.calls.length).toBe(offCallsBefore);
+    // +1 for teardownNotificationInbox() detaching the notifications inbox listener
+    expect(mocks.dbRef.off.mock.calls.length).toBe(offCallsBefore + 1);
   });
 
   test('keeps message cards in DOM on sign-out', async () => {
@@ -1823,7 +1824,8 @@ describe('unauthenticated visitor', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(mocks.dbRef.on.mock.calls.length).toBe(onCallsAfterAnon);
+    // +1 for setupNotificationInbox() attaching the notifications inbox listener
+    expect(mocks.dbRef.on.mock.calls.length).toBe(onCallsAfterAnon + 1);
   });
 
   test('shows post section after sign-in', async () => {
@@ -9874,6 +9876,340 @@ describe('image — clipboard paste event listener', () => {
     ];
     document.dispatchEvent(makePasteEvent(files));
     expect(URL.createObjectURL).toHaveBeenCalledWith(files[0]);
+  });
+});
+
+// --- notification inbox ---
+describe('notification inbox', () => {
+  const NOTIF_HTML = `
+    <button id="notif-bell-btn" aria-expanded="false" style="display:none;"></button>
+    <span id="notif-badge" style="display:none;"></span>
+    <section id="notif-panel" style="display:none;">
+      <button id="notif-mark-all-read"></button>
+      <div id="notif-panel-list"></div>
+    </section>
+  `;
+
+  function setupGlobals() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+  }
+
+  function buildModule(user) {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML + NOTIF_HTML;
+    setupGlobals();
+
+    const mocks = makeFirebaseMock();
+    mocks.dbRef.set = jest.fn().mockResolvedValue(undefined);
+
+    let onValueCallback = null;
+    mocks.dbRef.on.mockImplementation((event, cb) => {
+      if (event === 'value') onValueCallback = cb;
+      return 'listener-token';
+    });
+
+    let authCb;
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authCb = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    global.firebase = mocks.firebase;
+    const mod = require('../public/app.js');
+    if (user) authCb(user);
+
+    return { mod, mocks, getOnValueCallback: () => onValueCallback };
+  }
+
+  function makeNotifSnapshot(notifs) {
+    return {
+      exists: () => notifs.length > 0,
+      numChildren: () => notifs.length,
+      forEach: fn => notifs.forEach(n => fn({ key: n.key, val: () => n.val })),
+    };
+  }
+
+  // --- formatRelativeTime ---
+  describe('formatRelativeTime', () => {
+    let formatRelativeTime;
+
+    beforeEach(() => {
+      jest.resetModules();
+      document.body.innerHTML = APP_HTML + NOTIF_HTML;
+      setupGlobals();
+      const mocks = makeFirebaseMock();
+      mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+      global.firebase = mocks.firebase;
+      ({ formatRelativeTime } = require('../public/app.js'));
+    });
+
+    function withNow(nowMs, fn) {
+      const spy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+      try { return fn(); } finally { spy.mockRestore(); }
+    }
+
+    const BASE = 1_000_000_000;
+
+    test('returns "just now" when elapsed < 60 seconds', () => {
+      withNow(BASE + 30_000, () => expect(formatRelativeTime(BASE)).toBe('just now'));
+    });
+
+    test('boundary: 59 seconds → "just now"', () => {
+      withNow(BASE + 59_000, () => expect(formatRelativeTime(BASE)).toBe('just now'));
+    });
+
+    test('boundary: 60 seconds → "1 min ago"', () => {
+      withNow(BASE + 60_000, () => expect(formatRelativeTime(BASE)).toBe('1 min ago'));
+    });
+
+    test('returns minutes when elapsed is between 1 and 59 minutes', () => {
+      withNow(BASE + 45 * 60_000, () => expect(formatRelativeTime(BASE)).toBe('45 min ago'));
+    });
+
+    test('boundary: 59 minutes → "59 min ago"', () => {
+      withNow(BASE + 59 * 60_000, () => expect(formatRelativeTime(BASE)).toBe('59 min ago'));
+    });
+
+    test('boundary: 60 minutes → "1 hr ago"', () => {
+      withNow(BASE + 60 * 60_000, () => expect(formatRelativeTime(BASE)).toBe('1 hr ago'));
+    });
+
+    test('returns hours when elapsed is between 1 and 23 hours', () => {
+      withNow(BASE + 5 * 3_600_000, () => expect(formatRelativeTime(BASE)).toBe('5 hr ago'));
+    });
+
+    test('boundary: 23 hours → "23 hr ago"', () => {
+      withNow(BASE + 23 * 3_600_000, () => expect(formatRelativeTime(BASE)).toBe('23 hr ago'));
+    });
+
+    test('boundary: 24 hours → "1 day ago"', () => {
+      withNow(BASE + 24 * 3_600_000, () => expect(formatRelativeTime(BASE)).toBe('1 day ago'));
+    });
+
+    test('pluralises days correctly for 2+ days', () => {
+      withNow(BASE + 3 * 24 * 3_600_000, () => expect(formatRelativeTime(BASE)).toBe('3 days ago'));
+    });
+  });
+
+  // --- updateNotifBadge ---
+  describe('updateNotifBadge', () => {
+    const me = { uid: 'uid-me', displayName: 'Me', photoURL: '', isAnonymous: false };
+
+    function notif(key, read) {
+      return { key, val: { type: 'mention', read, timestamp: Date.now(), msgId: 'm1', snippet: 'hi', fromAuthor: 'Bob', fromAuthorId: 'uid-bob' } };
+    }
+
+    test('hides badge when all notifications are read', () => {
+      const { getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([notif('n1', true), notif('n2', true)]));
+      expect(document.getElementById('notif-badge').style.display).toBe('none');
+    });
+
+    test('shows badge with correct unread count', () => {
+      const { getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([notif('n1', false), notif('n2', true), notif('n3', false)]));
+      const badge = document.getElementById('notif-badge');
+      expect(badge.style.display).not.toBe('none');
+      expect(badge.textContent).toBe('2');
+    });
+
+    test('shows "99+" when unread count exceeds 99', () => {
+      const { getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      const notifs = Array.from({ length: 100 }, (_, i) => notif(`n${i}`, false));
+      snapFn(makeNotifSnapshot(notifs));
+      expect(document.getElementById('notif-badge').textContent).toBe('99+');
+    });
+
+    test('badge shows exactly "99" for exactly 99 unread (not capped)', () => {
+      const { getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      const notifs = Array.from({ length: 99 }, (_, i) => notif(`n${i}`, false));
+      snapFn(makeNotifSnapshot(notifs));
+      expect(document.getElementById('notif-badge').textContent).toBe('99');
+    });
+  });
+
+  // --- maybeWriteInboxMentionNotification — dedup guards ---
+  describe('maybeWriteInboxMentionNotification', () => {
+    const me = { uid: 'uid-me', displayName: 'Me', photoURL: '', isAnonymous: false };
+
+    function makeMsg(overrides = {}) {
+      return { id: 'msg-1', author: 'Alice', authorId: 'uid-alice', text: '@Me hello', timestamp: Date.now(), ...overrides };
+    }
+
+    test('writes notification when mentioned by another user', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotification(makeMsg());
+      expect(mocks.dbRef.push).toHaveBeenCalled();
+    });
+
+    test('does not write when no currentUser', () => {
+      const { mod, mocks } = buildModule(null);
+      mod.maybeWriteInboxMentionNotification(makeMsg());
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('does not write when user is anonymous', () => {
+      const { mod, mocks } = buildModule({ ...me, isAnonymous: true });
+      mod.maybeWriteInboxMentionNotification(makeMsg());
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('does not write for self-mention (authorId === currentUser.uid)', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotification(makeMsg({ authorId: 'uid-me' }));
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('does not write when display name is not in the message text', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotification(makeMsg({ text: '@Alice hello' }));
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('match is case-insensitive', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotification(makeMsg({ text: '@me hello' }));
+      expect(mocks.dbRef.push).toHaveBeenCalled();
+    });
+
+    test('word boundary: @MeX does not match display name "Me"', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotification(makeMsg({ text: '@MeX hello' }));
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('does not write duplicate when same msgId already has a mention notification', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([
+        { key: 'n1', val: { type: 'mention', read: false, msgId: 'msg-1', timestamp: Date.now(), snippet: '@Me', fromAuthor: 'Alice', fromAuthorId: 'uid-alice' } },
+      ]));
+      mocks.dbRef.push.mockClear();
+      mod.maybeWriteInboxMentionNotification(makeMsg());
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('writes for a different msgId even if another mention notification exists', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([
+        { key: 'n1', val: { type: 'mention', read: false, msgId: 'msg-99', timestamp: Date.now(), snippet: '@Me', fromAuthor: 'Alice', fromAuthorId: 'uid-alice' } },
+      ]));
+      mocks.dbRef.push.mockClear();
+      mod.maybeWriteInboxMentionNotification(makeMsg({ id: 'msg-1' }));
+      expect(mocks.dbRef.push).toHaveBeenCalled();
+    });
+  });
+
+  // --- maybeWriteInboxMentionNotificationFromReply — dedup by reply id ---
+  describe('maybeWriteInboxMentionNotificationFromReply', () => {
+    const me = { uid: 'uid-me', displayName: 'Me', photoURL: '', isAnonymous: false };
+    const parentMsg = { id: 'parent-1', author: 'Alice', authorId: 'uid-alice', text: 'Hello', timestamp: Date.now() };
+
+    function makeReply(overrides = {}) {
+      return { id: 'reply-1', author: 'Bob', authorId: 'uid-bob', text: '@Me hi', timestamp: Date.now(), ...overrides };
+    }
+
+    test('writes notification when reply mentions current user', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotificationFromReply(parentMsg, makeReply());
+      expect(mocks.dbRef.push).toHaveBeenCalled();
+    });
+
+    test('does not write duplicate for the same reply id', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([
+        { key: 'n1', val: { type: 'mention', read: false, msgId: 'parent-1', replyId: 'reply-1', timestamp: Date.now(), snippet: '@Me', fromAuthor: 'Bob', fromAuthorId: 'uid-bob' } },
+      ]));
+      mocks.dbRef.push.mockClear();
+      mod.maybeWriteInboxMentionNotificationFromReply(parentMsg, makeReply({ id: 'reply-1' }));
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+
+    test('two different replies to the same parent each produce a notification', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      // reply-1 has already been notified
+      snapFn(makeNotifSnapshot([
+        { key: 'n1', val: { type: 'mention', read: false, msgId: 'parent-1', replyId: 'reply-1', timestamp: Date.now(), snippet: '@Me', fromAuthor: 'Bob', fromAuthorId: 'uid-bob' } },
+      ]));
+      mocks.dbRef.push.mockClear();
+      // reply-2 from a different user also mentions the current user
+      mod.maybeWriteInboxMentionNotificationFromReply(parentMsg, makeReply({ id: 'reply-2', author: 'Carol', authorId: 'uid-carol' }));
+      expect(mocks.dbRef.push).toHaveBeenCalled();
+    });
+
+    test('does not write for self-mention in reply', () => {
+      const { mod, mocks } = buildModule(me);
+      mod.maybeWriteInboxMentionNotificationFromReply(parentMsg, makeReply({ authorId: 'uid-me' }));
+      expect(mocks.dbRef.push).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- markAllNotifsRead ---
+  describe('markAllNotifsRead', () => {
+    const me = { uid: 'uid-me', displayName: 'Me', photoURL: '', isAnonymous: false };
+
+    function notifEntry(key, read) {
+      return { key, val: { type: 'mention', read, timestamp: Date.now(), msgId: 'm1', snippet: 'hi', fromAuthor: 'Bob', fromAuthorId: 'uid-bob' } };
+    }
+
+    test('marks all unread notifications as read, hiding the badge', () => {
+      const { mod, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([notifEntry('n1', false), notifEntry('n2', false)]));
+      expect(document.getElementById('notif-badge').textContent).toBe('2');
+
+      mod.markAllNotifsRead();
+
+      expect(document.getElementById('notif-badge').style.display).toBe('none');
+    });
+
+    test('sends a Firebase update with read=true for each unread notification', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([notifEntry('n1', false), notifEntry('n2', false)]));
+      mocks.dbRef.update.mockClear();
+
+      mod.markAllNotifsRead();
+
+      expect(mocks.dbRef.update).toHaveBeenCalledTimes(1);
+      const updateArg = mocks.dbRef.update.mock.calls[0][0];
+      expect(updateArg['notifications/uid-me/n1/read']).toBe(true);
+      expect(updateArg['notifications/uid-me/n2/read']).toBe(true);
+    });
+
+    test('does not call Firebase update when all notifications are already read', () => {
+      const { mod, mocks, getOnValueCallback } = buildModule(me);
+      const snapFn = getOnValueCallback();
+      snapFn(makeNotifSnapshot([notifEntry('n1', true)]));
+      mocks.dbRef.update.mockClear();
+
+      mod.markAllNotifsRead();
+
+      expect(mocks.dbRef.update).not.toHaveBeenCalled();
+    });
+
+    test('does nothing when there is no currentUser', () => {
+      const { mod, mocks } = buildModule(null);
+      expect(() => mod.markAllNotifsRead()).not.toThrow();
+      expect(mocks.dbRef.update).not.toHaveBeenCalled();
+    });
   });
 });
 

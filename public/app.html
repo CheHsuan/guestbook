@@ -59,6 +59,10 @@
         <button id="muted-badge" class="muted-badge" style="display:none;" aria-label="View muted authors" aria-expanded="false"></button>
         <button id="muted-words-badge" class="muted-badge" style="display:none;" aria-label="View muted words" aria-expanded="false"></button>
         <button id="saved-badge" class="saved-badge" style="display:none;" aria-label="View saved messages" aria-expanded="false"></button>
+        <button id="notif-bell-btn" class="notif-bell-btn" style="display:none;" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="18" height="18"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="notif-badge" class="notif-badge" style="display:none;" aria-live="polite" aria-atomic="true"></span>
+        </button>
         <div id="auth-section">
           <button id="login-btn-header" class="btn btn-login" style="display: none;">
             <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18">
@@ -216,6 +220,14 @@
           </div>
           <p id="muted-words-input-error" class="muted-words-panel-error" style="display:none;"></p>
           <div id="muted-words-panel-list" class="muted-panel-list"></div>
+        </section>
+        <!-- Notification inbox panel — toggled by #notif-bell-btn in the header -->
+        <section id="notif-panel" class="notif-panel" style="display:none;" aria-label="Notifications" role="region">
+          <div class="notif-panel-header">
+            <span class="notif-panel-title">Notifications</span>
+            <button id="notif-mark-all-read" class="notif-mark-all-btn">Mark all as read</button>
+          </div>
+          <div id="notif-panel-list" class="notif-panel-list" role="list"></div>
         </section>
         <h2 class="section-title">
           Messages from the last 24 hours

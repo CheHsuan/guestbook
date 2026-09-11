@@ -190,6 +190,13 @@ const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
 
 // ========================================
+// Notification Inbox State
+// ========================================
+let notifListener = null;
+let notifData = {}; // notifId -> notification object (in-memory cache)
+let notifPanelOpen = false;
+
+// ========================================
 // Reply Collapse Threshold
 // ========================================
 const REPLIES_COLLAPSE_THRESHOLD = 3;
@@ -1112,6 +1119,53 @@ function maybeFireReplyNotification(msg, reply) {
   });
 }
 
+function maybeWriteInboxMentionNotification(msg) {
+  if (!currentUser || currentUser.isAnonymous) return;
+  if (msg.authorId === currentUser.uid) return;
+  const displayName = currentUser.displayName;
+  if (!displayName) return;
+  const text = typeof msg.text === 'string' ? msg.text : '';
+  const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
+  if (!mentionRegex.test(text)) return;
+  const alreadyNotified = Object.values(notifData).some(n => n.msgId === msg.id && n.type === 'mention');
+  if (alreadyNotified) return;
+  const snippet = text.length > 80 ? text.slice(0, 80) : text;
+  writeNotification(currentUser.uid, {
+    type: 'mention',
+    fromAuthor: msg.author || 'Someone',
+    fromAuthorId: msg.authorId || '',
+    msgId: msg.id,
+    snippet,
+    timestamp: msg.timestamp || Date.now(),
+    read: false,
+  }).then(() => maybePruneNotifications(currentUser.uid));
+}
+
+function maybeWriteInboxMentionNotificationFromReply(msg, reply) {
+  if (!currentUser || currentUser.isAnonymous) return;
+  if (reply.authorId === currentUser.uid) return;
+  const displayName = currentUser.displayName;
+  if (!displayName) return;
+  const text = typeof reply.text === 'string' ? reply.text : '';
+  const mentionRegex = new RegExp('@' + escapeRegex(displayName) + '(?!\\w)', 'i');
+  if (!mentionRegex.test(text)) return;
+  // Dedup by reply id, not parent id — two different replies to the same parent
+  // can each mention the user and should each produce a separate notification.
+  const alreadyNotified = Object.values(notifData).some(n => n.replyId === reply.id && n.type === 'mention');
+  if (alreadyNotified) return;
+  const snippet = text.length > 80 ? text.slice(0, 80) : text;
+  writeNotification(currentUser.uid, {
+    type: 'mention',
+    fromAuthor: reply.author || 'Someone',
+    fromAuthorId: reply.authorId || '',
+    msgId: msg.id,    // parent id — used to scroll to the card in the DOM
+    replyId: reply.id, // reply id — used for dedup
+    snippet,
+    timestamp: reply.timestamp || Date.now(),
+    read: false,
+  }).then(() => maybePruneNotifications(currentUser.uid));
+}
+
 function maybeFireSubscriptionNotification(msg, reply) {
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
@@ -1134,6 +1188,295 @@ function maybeFireSubscriptionNotification(msg, reply) {
     notif.close();
   });
 }
+
+// ========================================
+// Notification Inbox
+// ========================================
+const NOTIF_MAX = 50;
+const NOTIF_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function formatRelativeTime(ts) {
+  const diffMs = Date.now() - ts;
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + ' min ago';
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return diffHour + ' hr ago';
+  const diffDay = Math.floor(diffHour / 24);
+  return diffDay + ' day' + (diffDay === 1 ? '' : 's') + ' ago';
+}
+
+function updateNotifBadge() {
+  const bellBtn = document.getElementById('notif-bell-btn');
+  const badgeEl = document.getElementById('notif-badge');
+  if (!bellBtn || !badgeEl) return;
+  const unreadCount = Object.values(notifData).filter(n => !n.read).length;
+  if (unreadCount === 0) {
+    badgeEl.style.display = 'none';
+    badgeEl.textContent = '';
+  } else {
+    const label = unreadCount > 99 ? '99+' : String(unreadCount);
+    badgeEl.textContent = label;
+    badgeEl.style.display = 'flex';
+  }
+}
+
+function renderNotifPanel() {
+  const listEl = document.getElementById('notif-panel-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  const now = Date.now();
+  const cutoff = now - NOTIF_MAX_AGE_MS;
+  const notifs = Object.entries(notifData)
+    .filter(([, n]) => n.timestamp >= cutoff)
+    .sort(([, a], [, b]) => b.timestamp - a.timestamp)
+    .slice(0, NOTIF_MAX);
+
+  if (notifs.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'notif-panel-empty';
+    empty.textContent = 'No notifications yet.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  notifs.forEach(([notifId, notif]) => {
+    const row = document.createElement('div');
+    row.className = 'notif-row' + (notif.read ? '' : ' notif-row--unread');
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('tabindex', '0');
+    row.setAttribute('aria-label', (notif.type === 'reply' ? 'Reply from ' : 'Mention by ') + notif.fromAuthor);
+
+    const iconEl = document.createElement('div');
+    iconEl.className = 'notif-row-icon';
+    iconEl.setAttribute('aria-hidden', 'true');
+    iconEl.textContent = notif.type === 'reply' ? '↩' : '@';
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'notif-row-body';
+
+    const authorEl = document.createElement('span');
+    authorEl.className = 'notif-row-author';
+    authorEl.textContent = notif.fromAuthor; // textContent — XSS safe
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'notif-row-meta';
+    metaEl.textContent = notif.type === 'reply' ? 'replied to your message' : 'mentioned you';
+
+    const snippetEl = document.createElement('div');
+    snippetEl.className = 'notif-row-snippet';
+    snippetEl.textContent = notif.snippet || ''; // textContent — XSS safe
+
+    bodyEl.appendChild(authorEl);
+    bodyEl.appendChild(metaEl);
+    bodyEl.appendChild(snippetEl);
+
+    const timeEl = document.createElement('div');
+    timeEl.className = 'notif-row-time';
+    timeEl.textContent = formatRelativeTime(notif.timestamp);
+
+    row.appendChild(iconEl);
+    row.appendChild(bodyEl);
+    row.appendChild(timeEl);
+
+    const msgId = notif.msgId;
+    const card = msgId ? document.getElementById('msg-' + msgId) : null;
+    const expired = !card;
+
+    if (expired) {
+      row.classList.add('notif-row--expired');
+      snippetEl.textContent = notif.snippet || 'Message has expired';
+    }
+
+    const handleActivate = () => {
+      if (!notif.read) {
+        markNotifRead(notifId);
+      }
+      if (!expired && card) {
+        closeNotifPanel();
+        const expandFn = replyExpandMap.get(msgId);
+        if (expandFn) expandFn();
+        card.scrollIntoView({ behavior: 'smooth' });
+        card.classList.add('permalink-highlight');
+        setTimeout(() => card.classList.remove('permalink-highlight'), 2000);
+      }
+    };
+
+    row.addEventListener('click', handleActivate);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleActivate();
+      }
+    });
+
+    listEl.appendChild(row);
+  });
+}
+
+function markNotifRead(notifId) {
+  if (!currentUser || !notifData[notifId] || notifData[notifId].read) return;
+  notifData[notifId] = { ...notifData[notifId], read: true };
+  db.ref(`notifications/${currentUser.uid}/${notifId}/read`).set(true).catch(() => {});
+  updateNotifBadge();
+  renderNotifPanel();
+}
+
+function markAllNotifsRead() {
+  if (!currentUser) return;
+  const updates = {};
+  let anyUnread = false;
+  Object.keys(notifData).forEach(notifId => {
+    if (!notifData[notifId].read) {
+      notifData[notifId] = { ...notifData[notifId], read: true };
+      updates[`notifications/${currentUser.uid}/${notifId}/read`] = true;
+      anyUnread = true;
+    }
+  });
+  if (!anyUnread) return;
+  db.ref().update(updates).catch(() => {});
+  updateNotifBadge();
+  renderNotifPanel();
+}
+
+function openNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const bellBtn = document.getElementById('notif-bell-btn');
+  if (!panel) return;
+  notifPanelOpen = true;
+  panel.style.display = '';
+  if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
+  renderNotifPanel();
+}
+
+function closeNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  const bellBtn = document.getElementById('notif-bell-btn');
+  if (!panel) return;
+  notifPanelOpen = false;
+  panel.style.display = 'none';
+  if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+}
+
+function setupNotificationInbox(user) {
+  if (notifListener) return; // already set up
+  notifData = {};
+
+  const notifRef = db.ref(`notifications/${user.uid}`)
+    .orderByChild('timestamp')
+    .limitToLast(NOTIF_MAX);
+
+  notifListener = notifRef.on('value', (snap) => {
+    if (!snap.exists()) {
+      notifData = {};
+      updateNotifBadge();
+      if (notifPanelOpen) renderNotifPanel();
+      return;
+    }
+    const now = Date.now();
+    const cutoff = now - NOTIF_MAX_AGE_MS;
+    const fresh = {};
+    snap.forEach(child => {
+      const n = child.val();
+      if (n.timestamp >= cutoff) {
+        fresh[child.key] = n;
+      }
+    });
+    notifData = fresh;
+    updateNotifBadge();
+    if (notifPanelOpen) renderNotifPanel();
+  });
+}
+
+function teardownNotificationInbox() {
+  if (notifListener) {
+    db.ref(`notifications/${currentUser ? currentUser.uid : '_'}`).off('value', notifListener);
+    notifListener = null;
+  }
+  notifData = {};
+  notifPanelOpen = false;
+  updateNotifBadge();
+  const panel = document.getElementById('notif-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+async function writeNotification(targetUid, notif) {
+  if (!targetUid || !currentUser || currentUser.isAnonymous) return;
+  try {
+    const newKey = db.ref(`notifications/${targetUid}`).push().key;
+    await db.ref(`notifications/${targetUid}/${newKey}`).set(notif);
+  } catch (err) {
+    console.error('Failed to write notification:', err);
+  }
+}
+
+function maybePruneNotifications(targetUid) {
+  // Prune oldest notifications beyond NOTIF_MAX (fire-and-forget)
+  db.ref(`notifications/${targetUid}`)
+    .orderByChild('timestamp')
+    .once('value', (snap) => {
+      if (!snap.exists() || snap.numChildren() <= NOTIF_MAX) return;
+      const excess = snap.numChildren() - NOTIF_MAX;
+      const updates = {};
+      let count = 0;
+      snap.forEach(child => {
+        if (count < excess) {
+          updates[`notifications/${targetUid}/${child.key}`] = null;
+        }
+        count++;
+      });
+      db.ref().update(updates).catch(() => {});
+    });
+}
+
+// Bell button toggle
+(function setupNotifBell() {
+  const bellBtn = document.getElementById('notif-bell-btn');
+  if (!bellBtn) return;
+
+  bellBtn.addEventListener('click', () => {
+    if (notifPanelOpen) {
+      closeNotifPanel();
+    } else {
+      openNotifPanel();
+    }
+  });
+
+  bellBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeNotifPanel();
+      bellBtn.focus();
+    }
+  });
+})();
+
+// Mark-all-read button
+(function setupMarkAllRead() {
+  const btn = document.getElementById('notif-mark-all-read');
+  if (!btn) return;
+  btn.addEventListener('click', markAllNotifsRead);
+})();
+
+// Keyboard Escape closes panel
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && notifPanelOpen) {
+    closeNotifPanel();
+    const bellBtn = document.getElementById('notif-bell-btn');
+    if (bellBtn) bellBtn.focus();
+  }
+});
+
+// Close panel when clicking outside
+document.addEventListener('click', (e) => {
+  if (!notifPanelOpen) return;
+  const panel = document.getElementById('notif-panel');
+  const bellBtn = document.getElementById('notif-bell-btn');
+  if (panel && !panel.contains(e.target) && bellBtn && !bellBtn.contains(e.target)) {
+    closeNotifPanel();
+  }
+});
 
 // ========================================
 // Permalink: Toast + Deep-link
@@ -1891,6 +2234,7 @@ auth.onAuthStateChanged(async (user) => {
     userAlias = null;
     userBio = null;
     userWebsite = null;
+    teardownNotificationInbox();
   }
 
   // Clean up on full sign-out from any state
@@ -1922,11 +2266,17 @@ auth.onAuthStateChanged(async (user) => {
     restoreDraft();
     initPromptCard();
     updateMyPostsBtnVisibility();
+    // Show notification bell and set up inbox listener
+    const bellBtnEl = document.getElementById('notif-bell-btn');
+    if (bellBtnEl) bellBtnEl.style.display = '';
+    setupNotificationInbox(user);
   } else if (user && user.isAnonymous) {
     // Anonymous / guest user — show header sign-in button for account upgrade
     userInfo.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'none';
+    const bellBtnAnon = document.getElementById('notif-bell-btn');
+    if (bellBtnAnon) bellBtnAnon.style.display = 'none';
     // Restore guest name from sessionStorage if page was refreshed (guestDisplayName is reset on each load)
     if (!guestDisplayName) {
       guestDisplayName = sessionStorage.getItem('guestDisplayName');
@@ -1948,6 +2298,9 @@ auth.onAuthStateChanged(async (user) => {
     postSection.style.display = 'none';
     loginBtnHeader.style.display = 'inline-flex';
     if (postAsGuestBtnHeader) postAsGuestBtnHeader.style.display = 'inline-flex';
+    const bellBtnSignedOut = document.getElementById('notif-bell-btn');
+    if (bellBtnSignedOut) bellBtnSignedOut.style.display = 'none';
+    closeNotifPanel();
     hideNewMessagesBanner();
     hidePromptCard();
     clearDraft();
@@ -1989,6 +2342,7 @@ let realtimeRemovedListener = null;
 let realtimeChangedListener = null;
 let oldestMessageTimestamp = null;
 let newestMessageTimestamp = null;
+let initialMessageLoadComplete = false;
 let isLoadingMore = false;
 let hasMoreMessages = true;
 let totalMessagesListener = null;
@@ -2012,6 +2366,7 @@ async function startListeningMessages() {
   // Reset state
   oldestMessageTimestamp = null;
   newestMessageTimestamp = null;
+  initialMessageLoadComplete = false;
   hasMoreMessages = true;
   deepLinkHandled = false;
   newMessageCount = 0;
@@ -2132,6 +2487,9 @@ async function startListeningMessages() {
         applySortOrder();
         filterMessages();
         maybeFireMentionNotification(msg);
+        if (initialMessageLoadComplete) {
+          maybeWriteInboxMentionNotification(msg);
+        }
 
         // Show banner and update tab title when user is scrolled down or tab is hidden
         if (window.scrollY > 200 || document.hidden) {
@@ -2143,6 +2501,7 @@ async function startListeningMessages() {
         }
       }
     });
+    Promise.resolve().then(() => { initialMessageLoadComplete = true; });
 
     // 3. Listen for REMOVED messages
     realtimeRemovedListener = db.ref('messages').on('child_removed', (childSnapshot) => {
@@ -3621,6 +3980,22 @@ function createMessageCard(msg, user, isNew) {
           updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
 
+          // Write inbox notification for the message author (if not replying to own message)
+          if (msg.authorId && msg.authorId !== user.uid && !msg.isGuest) {
+            const replySnippet = validation.text.length > 80
+              ? validation.text.slice(0, 80)
+              : validation.text;
+            writeNotification(msg.authorId, {
+              type: 'reply',
+              fromAuthor: userAlias || user.displayName || 'Anonymous',
+              fromAuthorId: user.uid,
+              msgId: msg.id,
+              snippet: replySnippet,
+              timestamp: Date.now(),
+              read: false,
+            }).then(() => maybePruneNotifications(msg.authorId));
+          }
+
           // Auto-subscribe to thread when replying (non-author only)
           if (user.uid !== msg.authorId && !isSubscribed(msg.id)) {
             addSubscription(msg.id);
@@ -3815,6 +4190,7 @@ function createMessageCard(msg, user, isNew) {
     if (initialReplyLoadComplete) {
       maybeFireReplyNotification(msg, reply);
       maybeFireSubscriptionNotification(msg, reply);
+      maybeWriteInboxMentionNotificationFromReply(msg, reply);
       if (currentSort === SORT_ACTIVE) applySortOrder();
     }
   });
@@ -6036,5 +6412,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, maybeWriteInboxMentionNotification, maybeWriteInboxMentionNotificationFromReply, writeNotification, setupNotificationInbox, teardownNotificationInbox, updateNotifBadge, renderNotifPanel, markNotifRead, markAllNotifsRead, openNotifPanel, closeNotifPanel, formatRelativeTime, maybePruneNotifications, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker };
 }
