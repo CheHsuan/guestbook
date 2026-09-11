@@ -145,6 +145,14 @@ const voiceErrorMsg = document.getElementById('voice-error-msg');
 const voiceUploadProgress = document.getElementById('voice-upload-progress');
 const voiceUploadFill = document.getElementById('voice-upload-fill');
 const voiceUploadLabel = document.getElementById('voice-upload-label');
+const moodToggleBtn = document.getElementById('mood-toggle-btn');
+const moodChip = document.getElementById('mood-chip');
+const moodChipEmoji = document.getElementById('mood-chip-emoji');
+const moodChipLabel = document.getElementById('mood-chip-label');
+const moodChipClear = document.getElementById('mood-chip-clear');
+const moodPickerBackdrop = document.getElementById('mood-picker-backdrop');
+const moodPickerEl = document.getElementById('mood-picker');
+const moodPickerGrid = document.getElementById('mood-picker-grid');
 
 // ========================================
 // State
@@ -162,6 +170,7 @@ let selectedImageFile = null;
 let imagePreviewObjectUrl = null;
 let imageUploadTask = null;
 let voiceMode = false;
+let selectedMood = null; // { emoji, label } or null
 let voiceBlob = null;
 let voiceMediaRecorder = null;
 let voiceRecordingTimer = null;
@@ -3102,6 +3111,14 @@ function createMessageCard(msg, user, isNew) {
   header.appendChild(avatarEl);
   header.appendChild(authorEl);
 
+  if (msg.mood && MOOD_VALID_EMOJIS.has(msg.mood)) {
+    const moodBadge = document.createElement('span');
+    moodBadge.className = 'message-mood';
+    moodBadge.textContent = msg.mood;
+    moodBadge.setAttribute('aria-label', 'Feeling ' + msg.mood);
+    header.appendChild(moodBadge);
+  }
+
   if (msg.isGuest) {
     const guestBadge = document.createElement('span');
     guestBadge.className = 'guest-badge';
@@ -3439,7 +3456,8 @@ function createMessageCard(msg, user, isNew) {
       shareText = 'Check out this GIF on Guestbook';
     } else {
       const rawText = msg.text || (msg.poll && msg.poll.question) || '';
-      shareText = msg.author + ': ' + rawText.slice(0, 100);
+      const moodStr = (msg.mood && MOOD_VALID_EMOJIS.has(msg.mood)) ? ' ' + msg.mood : '';
+      shareText = msg.author + moodStr + ': ' + rawText.slice(0, 100);
     }
 
     if (navigator.share) {
@@ -5148,6 +5166,168 @@ if (voiceToggleBtn) {
 setupTypingInputListeners();
 
 // ========================================
+// Mood Emoji Feature
+// ========================================
+
+const MOOD_OPTIONS = [
+  { emoji: '😊', label: 'Happy' },
+  { emoji: '😂', label: 'LOL' },
+  { emoji: '❤️', label: 'Loved' },
+  { emoji: '🎉', label: 'Excited' },
+  { emoji: '😢', label: 'Sad' },
+  { emoji: '😤', label: 'Frustrated' },
+  { emoji: '🤔', label: 'Thinking' },
+  { emoji: '😴', label: 'Tired' },
+  { emoji: '🔥', label: 'Hyped' },
+  { emoji: '👋', label: 'Hi' },
+  { emoji: '🙏', label: 'Grateful' },
+  { emoji: '😶', label: 'No words' },
+];
+
+const MOOD_VALID_EMOJIS = new Set(MOOD_OPTIONS.map(m => m.emoji));
+
+function buildMoodPickerGrid() {
+  if (!moodPickerGrid) return;
+  moodPickerGrid.innerHTML = '';
+  MOOD_OPTIONS.forEach(({ emoji, label }, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mood-emoji-btn';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('tabindex', index === 0 ? '0' : '-1');
+    if (selectedMood && selectedMood.emoji === emoji) {
+      btn.setAttribute('aria-selected', 'true');
+    }
+
+    const emojiSpan = document.createElement('span');
+    emojiSpan.textContent = emoji;
+    emojiSpan.setAttribute('aria-hidden', 'true');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'mood-emoji-label';
+    labelSpan.textContent = label;
+
+    btn.appendChild(emojiSpan);
+    btn.appendChild(labelSpan);
+    btn.addEventListener('click', () => selectMood(emoji, label));
+    moodPickerGrid.appendChild(btn);
+  });
+}
+
+function openMoodPicker() {
+  if (!moodPickerEl || !moodPickerBackdrop || !moodToggleBtn) return;
+  buildMoodPickerGrid();
+
+  // Position the picker below the mood toggle button
+  const btnRect = moodToggleBtn.getBoundingClientRect();
+  moodPickerEl.style.top = (btnRect.bottom + window.scrollY + 6) + 'px';
+  moodPickerEl.style.left = Math.max(8, btnRect.left + window.scrollX) + 'px';
+
+  moodPickerEl.style.display = '';
+  moodPickerBackdrop.style.display = '';
+  moodPickerBackdrop.removeAttribute('aria-hidden');
+
+  const firstBtn = moodPickerGrid ? moodPickerGrid.querySelector('.mood-emoji-btn') : null;
+  if (firstBtn) firstBtn.focus();
+}
+
+function closeMoodPicker() {
+  if (!moodPickerEl || !moodPickerBackdrop) return;
+  moodPickerEl.style.display = 'none';
+  moodPickerBackdrop.style.display = 'none';
+  moodPickerBackdrop.setAttribute('aria-hidden', 'true');
+}
+
+function selectMood(emoji, label) {
+  selectedMood = { emoji, label };
+  closeMoodPicker();
+  updateMoodUI();
+}
+
+function clearMood() {
+  selectedMood = null;
+  updateMoodUI();
+}
+
+function updateMoodUI() {
+  if (!moodToggleBtn || !moodChip) return;
+  if (selectedMood) {
+    moodToggleBtn.textContent = selectedMood.emoji + ' Mood';
+    moodToggleBtn.setAttribute('aria-pressed', 'true');
+    moodChipEmoji.textContent = selectedMood.emoji;
+    moodChipLabel.textContent = selectedMood.label;
+    moodChip.style.display = '';
+  } else {
+    moodToggleBtn.innerHTML = '&#x1F60A; Mood';
+    moodToggleBtn.setAttribute('aria-pressed', 'false');
+    moodChip.style.display = 'none';
+  }
+}
+
+// Keyboard navigation inside the mood picker (roving tabindex + Escape)
+if (moodPickerEl) {
+  moodPickerEl.addEventListener('keydown', (e) => {
+    const btns = Array.from(moodPickerGrid ? moodPickerGrid.querySelectorAll('.mood-emoji-btn') : []);
+    if (!btns.length) return;
+    const focused = document.activeElement;
+    const idx = btns.indexOf(focused);
+
+    if (e.key === 'Escape') {
+      closeMoodPicker();
+      if (moodToggleBtn) moodToggleBtn.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (idx !== -1) {
+        e.preventDefault();
+        const { emoji, label } = MOOD_OPTIONS[idx];
+        selectMood(emoji, label);
+        if (moodToggleBtn) moodToggleBtn.focus();
+      }
+      return;
+    }
+
+    const cols = 4;
+    let next = -1;
+    if (e.key === 'ArrowRight') next = idx + 1;
+    else if (e.key === 'ArrowLeft') next = idx - 1;
+    else if (e.key === 'ArrowDown') next = idx + cols;
+    else if (e.key === 'ArrowUp') next = idx - cols;
+    else if (e.key === 'Tab') {
+      // Allow natural tab to move forward through buttons
+      return;
+    }
+
+    if (next >= 0 && next < btns.length) {
+      e.preventDefault();
+      btns[idx].setAttribute('tabindex', '-1');
+      btns[next].setAttribute('tabindex', '0');
+      btns[next].focus();
+    }
+  });
+}
+
+if (moodPickerBackdrop) {
+  moodPickerBackdrop.addEventListener('click', () => closeMoodPicker());
+}
+
+if (moodToggleBtn) {
+  moodToggleBtn.addEventListener('click', () => {
+    if (moodPickerEl && moodPickerEl.style.display !== 'none') {
+      closeMoodPicker();
+    } else if (selectedMood) {
+      clearMood();
+    } else {
+      openMoodPicker();
+    }
+  });
+}
+
+if (moodChipClear) {
+  moodChipClear.addEventListener('click', () => clearMood());
+}
+
+// ========================================
 // Bookmark badge + saved panel setup
 // ========================================
 updateSavedBadge();
@@ -5669,6 +5849,7 @@ postForm.addEventListener('submit', async (e) => {
       timestamp: firebase.database.ServerValue.TIMESTAMP,
       photoURL: currentUser.photoURL || '',
       ...(isGuest && { isGuest: true }),
+      ...(selectedMood && MOOD_VALID_EMOJIS.has(selectedMood.emoji) && { mood: selectedMood.emoji }),
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
@@ -5688,12 +5869,13 @@ postForm.addEventListener('submit', async (e) => {
       showToast('Message posted! Guest messages expire in 24 hours. Sign in with Google to manage a persistent profile.');
     }
 
-    // Success — clear input, draft, and stop typing indicator
+    // Success — clear input, draft, mood, and stop typing indicator
     if (!isGuest) stopTyping();
     clearDraft();
     messageInput.value = '';
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
+    clearMood();
 
   } catch (error) {
     console.error('Post error:', error);
@@ -5854,5 +6036,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker };
 }

@@ -27,10 +27,16 @@ const APP_HTML = `
     <form id="post-form">
       <button type="button" id="poll-toggle-btn" aria-pressed="false"></button>
       <button type="button" id="gif-toggle-btn" aria-pressed="false"></button>
+      <button type="button" id="mood-toggle-btn" aria-pressed="false"></button>
       <div id="text-composer">
         <input id="message-input" type="text" />
         <span id="char-counter">0 / 250</span>
         <span id="draft-label" class="draft-label" style="display:none;"></span>
+      </div>
+      <div id="mood-chip" style="display:none;">
+        <span id="mood-chip-emoji"></span>
+        <span id="mood-chip-label"></span>
+        <button type="button" id="mood-chip-clear">×</button>
       </div>
       <div id="poll-composer" style="display:none">
         <input id="poll-question-input" type="text" maxlength="120" />
@@ -111,6 +117,10 @@ const APP_HTML = `
     </div>
     <div id="author-panel-body"></div>
   </aside>
+  <div id="mood-picker-backdrop" style="display:none;"></div>
+  <div id="mood-picker" style="display:none;">
+    <div id="mood-picker-grid"></div>
+  </div>
   <div id="gif-picker-backdrop" style="display:none;"></div>
   <div id="gif-picker" style="display:none;">
     <span id="gif-picker-title"></span>
@@ -563,6 +573,129 @@ describe('createMessageCard', () => {
     expect(card.querySelectorAll('script').length).toBe(0);
     const flagSpan = card.querySelector('.message-country-flag');
     expect(flagSpan.title).toBe('Posted from <script>alert(1)</script>');
+  });
+
+  // --- Mood emoji badge ---
+  test('renders mood badge when mood field is a valid emoji', () => {
+    const msg = { ...baseMsg, mood: '😊' };
+    const card = createMessageCard(msg, null);
+    const badge = card.querySelector('.message-mood');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toBe('😊');
+  });
+
+  test('mood badge has aria-label with "Feeling" prefix', () => {
+    const msg = { ...baseMsg, mood: '🎉' };
+    const card = createMessageCard(msg, null);
+    const badge = card.querySelector('.message-mood');
+    expect(badge.getAttribute('aria-label')).toBe('Feeling 🎉');
+  });
+
+  test('mood badge is placed immediately after the author element', () => {
+    const msg = { ...baseMsg, mood: '😊' };
+    const card = createMessageCard(msg, null);
+    const header = card.querySelector('.message-header');
+    const children = Array.from(header.children);
+    const authorIdx = children.findIndex(el => el.classList.contains('message-author'));
+    const moodIdx = children.findIndex(el => el.classList.contains('message-mood'));
+    expect(moodIdx).toBe(authorIdx + 1);
+  });
+
+  test('does not render mood badge when mood field is absent', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.message-mood')).toBeNull();
+  });
+
+  test('silently omits mood badge for an unknown emoji not in the fixed set', () => {
+    const msg = { ...baseMsg, mood: '🦄' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.message-mood')).toBeNull();
+  });
+
+  test('silently omits mood badge when mood is an empty string', () => {
+    const msg = { ...baseMsg, mood: '' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.message-mood')).toBeNull();
+  });
+
+  test('mood badge uses textContent (not innerHTML) — no XSS risk', () => {
+    const msg = { ...baseMsg, mood: '😊' };
+    const card = createMessageCard(msg, null);
+    const badge = card.querySelector('.message-mood');
+    expect(badge.children.length).toBe(0);
+  });
+
+  test('card without mood renders identically to baseline (backward compat)', () => {
+    const withMood = createMessageCard({ ...baseMsg, mood: '😊' }, null);
+    const withoutMood = createMessageCard(baseMsg, null);
+    // message-mood only present in withMood
+    expect(withMood.querySelector('.message-mood')).not.toBeNull();
+    expect(withoutMood.querySelector('.message-mood')).toBeNull();
+    // All other shared elements still present in both
+    expect(withoutMood.querySelector('.message-author')).not.toBeNull();
+    expect(withoutMood.querySelector('.message-time')).not.toBeNull();
+    expect(withoutMood.querySelector('.message-text')).not.toBeNull();
+  });
+});
+
+// --- Mood feature: MOOD_OPTIONS and MOOD_VALID_EMOJIS ---
+describe('mood feature constants', () => {
+  let MOOD_OPTIONS;
+  let MOOD_VALID_EMOJIS;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ MOOD_OPTIONS, MOOD_VALID_EMOJIS } = require('../public/app.js'));
+  });
+
+  test('MOOD_OPTIONS has exactly 12 entries', () => {
+    expect(MOOD_OPTIONS.length).toBe(12);
+  });
+
+  test('every MOOD_OPTIONS entry has emoji and label strings', () => {
+    for (const { emoji, label } of MOOD_OPTIONS) {
+      expect(typeof emoji).toBe('string');
+      expect(emoji.length).toBeGreaterThan(0);
+      expect(typeof label).toBe('string');
+      expect(label.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('MOOD_VALID_EMOJIS is a Set containing all MOOD_OPTIONS emojis', () => {
+    for (const { emoji } of MOOD_OPTIONS) {
+      expect(MOOD_VALID_EMOJIS.has(emoji)).toBe(true);
+    }
+  });
+
+  test('MOOD_VALID_EMOJIS size matches MOOD_OPTIONS length', () => {
+    expect(MOOD_VALID_EMOJIS.size).toBe(MOOD_OPTIONS.length);
+  });
+
+  test('required moods are present: 😊 🎉 😢 ❤️', () => {
+    expect(MOOD_VALID_EMOJIS.has('😊')).toBe(true);
+    expect(MOOD_VALID_EMOJIS.has('🎉')).toBe(true);
+    expect(MOOD_VALID_EMOJIS.has('😢')).toBe(true);
+    expect(MOOD_VALID_EMOJIS.has('❤️')).toBe(true);
   });
 });
 

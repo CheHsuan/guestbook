@@ -114,6 +114,12 @@
               <button type="button" id="gif-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Post a GIF">GIF</button>
               <button type="button" id="image-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach an image">&#x1F4F7; Image</button>
               <button type="button" id="voice-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Record a voice message" style="display:none;">&#x1F399;&#xFE0F; Voice</button>
+              <button type="button" id="mood-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach a mood">&#x1F60A; Mood</button>
+            </div>
+            <div id="mood-chip" class="mood-chip" style="display:none;" aria-live="polite">
+              <span id="mood-chip-emoji" class="mood-chip-emoji" aria-hidden="true"></span>
+              <span id="mood-chip-label" class="mood-chip-label"></span>
+              <button type="button" id="mood-chip-clear" class="mood-chip-clear" aria-label="Clear mood">&#xD7;</button>
             </div>
             <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp" style="display:none;" aria-hidden="true">
             <div id="voice-composer" class="voice-composer" style="display:none;">
@@ -292,6 +298,12 @@
     <span>·</span>
     <a href="/terms">Terms of Service</a>
   </footer>
+
+  <!-- Mood Picker Popup -->
+  <div id="mood-picker-backdrop" class="mood-picker-backdrop" style="display:none;" aria-hidden="true"></div>
+  <div id="mood-picker" class="mood-picker" style="display:none;" role="dialog" aria-modal="true" aria-label="Choose a mood">
+    <div id="mood-picker-grid" class="mood-picker-grid"></div>
+  </div>
 
   <!-- GIF Picker Modal -->
   <div id="gif-picker-backdrop" class="gif-picker-backdrop" style="display:none;" aria-hidden="true"></div>
