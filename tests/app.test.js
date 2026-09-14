@@ -3831,6 +3831,131 @@ describe('@mention author pool', () => {
     const aliceResults = getAuthorSuggestions('A');
     expect(aliceResults).toContain('Alice');
   });
+
+  test('trackAuthor stores authorId and photoURL alongside timestamp', () => {
+    let openAuthorPanelCalled = false;
+    ({ trackAuthor, getAuthorSuggestions } = require('../public/app.js'));
+    trackAuthor('Alice', 1000, 'uid-alice', 'https://example.com/alice.jpg');
+    // getAuthorSuggestions still returns names correctly
+    expect(getAuthorSuggestions('A')).toContain('Alice');
+  });
+
+  test('trackAuthor does not overwrite entry when a lower timestamp is provided', () => {
+    trackAuthor('Alice', 5000, 'uid-alice', 'https://example.com/alice.jpg');
+    trackAuthor('Alice', 1000, 'uid-alice-old', 'https://example.com/old.jpg');
+    // Suggestion still works — only one entry named Alice
+    expect(getAuthorSuggestions('A')).toContain('Alice');
+    expect(getAuthorSuggestions('A').filter(n => n === 'Alice').length).toBe(1);
+  });
+});
+
+// --- @mention click-to-author-panel wiring ---
+describe('@mention click-to-author-panel wiring', () => {
+  let createMessageCard;
+  let trackAuthor;
+
+  const mentionMsg = {
+    id: 'msg-click-mention-1',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    photoURL: 'https://example.com/alice.jpg',
+    text: 'Hey @Bob check this out',
+    timestamp: 1000,
+  };
+
+  function setupApp() {
+    jest.resetModules();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    document.body.innerHTML = APP_HTML;
+    ({ createMessageCard, trackAuthor } = require('../public/app.js'));
+  }
+
+  beforeEach(() => {
+    setupApp();
+  });
+
+  test('clicking a .mention with known author opens the author panel', () => {
+    trackAuthor('Bob', 2000, 'uid-bob', 'https://example.com/bob.jpg');
+
+    const card = createMessageCard(mentionMsg, null);
+    document.getElementById('messages-container').appendChild(card);
+
+    const mentionEl = card.querySelector('.mention');
+    expect(mentionEl).not.toBeNull();
+    expect(mentionEl.textContent).toBe('@Bob');
+
+    mentionEl.click();
+
+    const panel = document.getElementById('author-panel');
+    expect(panel.classList.contains('author-panel--open')).toBe(true);
+    expect(document.getElementById('author-panel-name').textContent).toBe('Bob');
+  });
+
+  test('clicking a .mention with unknown author shows a toast', () => {
+    // Bob is NOT in the pool
+    const card = createMessageCard(mentionMsg, null);
+    document.getElementById('messages-container').appendChild(card);
+
+    const mentionEl = card.querySelector('.mention');
+    mentionEl.click();
+
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe('@Bob has no messages in the last 24 hours.');
+  });
+
+  test('clicking a .mention inside a reply card opens the author panel', () => {
+    trackAuthor('Alice', 1000, 'uid-alice', 'https://example.com/alice.jpg');
+
+    const { createReplyCard } = require('../public/app.js');
+    const reply = {
+      id: 'r-click-mention-1',
+      author: 'Charlie',
+      authorId: 'uid-charlie',
+      text: 'Thanks @Alice!',
+      timestamp: 3000,
+    };
+    const card = createReplyCard(reply, null, 'msg1');
+    document.getElementById('messages-container').appendChild(card);
+
+    const mentionEl = card.querySelector('.mention');
+    expect(mentionEl.textContent).toBe('@Alice');
+    mentionEl.click();
+
+    const panel = document.getElementById('author-panel');
+    expect(panel.classList.contains('author-panel--open')).toBe(true);
+    expect(document.getElementById('author-panel-name').textContent).toBe('Alice');
+  });
+
+  test('clicking a .mention does not trigger hashtag filter', () => {
+    trackAuthor('Bob', 2000, 'uid-bob', 'https://example.com/bob.jpg');
+
+    const card = createMessageCard(mentionMsg, null);
+    document.getElementById('messages-container').appendChild(card);
+
+    const mentionEl = card.querySelector('.mention');
+    mentionEl.click();
+
+    expect(document.getElementById('search-input').value).toBe('');
+  });
 });
 
 // --- getMentionPrefix ---

@@ -828,7 +828,7 @@ document.addEventListener('keydown', (e) => {
 // ========================================
 // Author Pool (for @mention autocomplete)
 // ========================================
-const authorPool = new Map(); // authorName -> most-recent timestamp
+const authorPool = new Map(); // authorName -> { timestamp, authorId, photoURL }
 
 // ========================================
 // Hashtag Pool (for # autocomplete)
@@ -867,11 +867,11 @@ function getHashtagSuggestions(prefix) {
   return matches.slice(0, 5);
 }
 
-function trackAuthor(name, timestamp) {
+function trackAuthor(name, timestamp, authorId, photoURL) {
   if (!name) return;
   const existing = authorPool.get(name);
-  if (!existing || timestamp > existing) {
-    authorPool.set(name, timestamp || 0);
+  if (!existing || timestamp > existing.timestamp) {
+    authorPool.set(name, { timestamp: timestamp || 0, authorId: authorId || null, photoURL: photoURL || null });
   }
 }
 
@@ -879,9 +879,9 @@ function getAuthorSuggestions(prefix) {
   if (!prefix) return [];
   const lower = prefix.toLowerCase();
   const matches = [];
-  for (const [name, ts] of authorPool.entries()) {
+  for (const [name, data] of authorPool.entries()) {
     if (name.toLowerCase().startsWith(lower)) {
-      matches.push({ name, ts });
+      matches.push({ name, ts: data.timestamp });
     }
   }
   matches.sort((a, b) => b.ts - a.ts);
@@ -1450,10 +1450,23 @@ if (myPostsBtn) {
 
 messagesContainer.addEventListener('click', (e) => {
   const hashtag = e.target.closest('.hashtag');
-  if (!hashtag) return;
-  searchInput.value = hashtag.textContent;
-  filterMessages();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (hashtag) {
+    searchInput.value = hashtag.textContent;
+    filterMessages();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  const mention = e.target.closest('.mention');
+  if (mention) {
+    const mentionedName = mention.textContent.slice(1); // strip leading '@'
+    const entry = authorPool.get(mentionedName);
+    if (entry && entry.authorId) {
+      openAuthorPanel(entry.authorId, mentionedName, entry.photoURL);
+    } else {
+      showToast(`@${mentionedName} has no messages in the last 24 hours.`);
+    }
+  }
 });
 
 // ========================================
@@ -2070,7 +2083,7 @@ async function startListeningMessages() {
       oldestNewMsgId = _oldestNewMsgId;
 
       messages.forEach(msg => {
-        trackAuthor(msg.author, msg.timestamp);
+        trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
         const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
         const card = createMessageCard(msg, currentUser, showBadge);
         messagesContainer.insertBefore(card, loadingState);
@@ -2125,7 +2138,7 @@ async function startListeningMessages() {
 
         if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) return; // silently suppress muted authors/keywords
 
-        trackAuthor(msg.author, msg.timestamp);
+        trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
 
         const card = createMessageCard(msg, currentUser);
         messagesContainer.insertBefore(card, loadingState);
@@ -2293,7 +2306,7 @@ async function loadMoreMessages() {
     }
 
     messages.forEach(msg => {
-      trackAuthor(msg.author, msg.timestamp);
+      trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
       const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
       const card = createMessageCard(msg, currentUser, showBadge);
       messagesContainer.insertBefore(card, loadingState);

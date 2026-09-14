@@ -2505,6 +2505,11 @@ body {
 .mention {
   font-weight: 700;
   color: var(--accent);
+  cursor: pointer;
+}
+
+.mention:hover {
+  text-decoration: underline;
 }
 
 /* ========================================
