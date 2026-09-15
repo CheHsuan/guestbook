@@ -222,6 +222,61 @@ try {
   if (_savedType && VALID_TYPES.has(_savedType)) currentTypeFilter = _savedType;
 } catch (_) {}
 
+// ========================================
+// URL State Management
+// ========================================
+
+function syncStateToUrl(usePushState) {
+  try {
+    const params = new URLSearchParams();
+    const q = searchInput.value.trim();
+    if (q) params.set('q', q);
+    if (currentSort !== SORT_NEWEST) params.set('sort', currentSort);
+    if (currentTypeFilter !== TYPE_ALL) params.set('type', currentTypeFilter);
+
+    const search = params.toString() ? '?' + params.toString() : '';
+    const url = location.pathname + search + location.hash;
+    if (usePushState) {
+      history.pushState(null, '', url);
+    } else {
+      history.replaceState(null, '', url);
+    }
+    updateCopyLinkBtn();
+  } catch (_) {}
+}
+
+function updateCopyLinkBtn() {
+  const btn = document.getElementById('copy-link-btn');
+  if (!btn) return;
+  const q = searchInput.value.trim();
+  const hasFilter = !!q || currentSort !== SORT_NEWEST || currentTypeFilter !== TYPE_ALL;
+  btn.style.display = hasFilter ? '' : 'none';
+}
+
+// Read URL params at load time — before startListeningMessages fires
+(function readUrlParams() {
+  try {
+    const params = new URLSearchParams(location.search);
+
+    const q = params.get('q');
+    if (q !== null) {
+      const truncated = q.slice(0, 250);
+      searchInput.value = truncated;
+      searchClearBtn.style.display = truncated ? '' : 'none';
+    }
+
+    const sort = params.get('sort');
+    if (sort === SORT_NEWEST || sort === SORT_OLDEST || sort === SORT_ACTIVE || sort === SORT_VIEWS) {
+      currentSort = sort;
+    }
+
+    const type = params.get('type');
+    if (type && VALID_TYPES.has(type)) {
+      currentTypeFilter = type;
+    }
+  } catch (_) {}
+})();
+
 function getSortComparator(sort) {
   if (sort === SORT_OLDEST) {
     return (a, b) => Number(a.dataset.timestamp) - Number(b.dataset.timestamp);
@@ -1042,6 +1097,7 @@ newMessagesBanner.addEventListener('click', () => {
   if (searchInput.value) {
     searchInput.value = '';
     filterMessages();
+    syncStateToUrl(false);
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
   hideNewMessagesBanner();
@@ -1222,6 +1278,7 @@ function renderTrendingHashtags() {
     btn.addEventListener('click', () => {
       searchInput.value = tag;
       filterMessages();
+      syncStateToUrl(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
@@ -1288,6 +1345,7 @@ function updateTypeFilterRow() {
       try { localStorage.setItem(TYPE_FILTER_KEY, currentTypeFilter); } catch (_) {}
       updateTypeFilterRow();
       filterMessages();
+      syncStateToUrl(true);
     });
 
     row.appendChild(btn);
@@ -1419,13 +1477,35 @@ function updateMyPostsBtnVisibility() {
 searchInput.addEventListener('input', () => {
   searchClearBtn.style.display = searchInput.value ? '' : 'none';
   clearTimeout(searchDebounceTimer);
-  searchDebounceTimer = setTimeout(filterMessages, 200);
+  searchDebounceTimer = setTimeout(() => {
+    filterMessages();
+    syncStateToUrl(false);
+  }, 200);
 });
 
 searchClearBtn.addEventListener('click', () => {
   searchInput.value = '';
   filterMessages();
+  syncStateToUrl(false);
 });
+
+(function initCopyLinkBtn() {
+  const btn = document.getElementById('copy-link-btn');
+  if (!btn) return;
+  btn.innerHTML = LINK_ICON + ' Copy link';
+  btn.addEventListener('click', () => {
+    try {
+      navigator.clipboard.writeText(location.href).then(() => {
+        showToast('Link copied!');
+      }).catch(() => {
+        showToast('Could not copy link.');
+      });
+    } catch (_) {
+      showToast('Could not copy link.');
+    }
+  });
+  updateCopyLinkBtn();
+})();
 
 if (myPostsBtn) {
   myPostsBtn.addEventListener('click', () => {
@@ -1453,6 +1533,7 @@ messagesContainer.addEventListener('click', (e) => {
   if (hashtag) {
     searchInput.value = hashtag.textContent;
     filterMessages();
+    syncStateToUrl(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
@@ -4192,6 +4273,7 @@ function attachHashtagAutocomplete(textarea, relativeParent) {
     try { localStorage.setItem(SORT_KEY, sort); } catch (_) {}
     updateSortUI(sort);
     applySortOrder();
+    syncStateToUrl(true);
   });
 })();
 
@@ -6049,5 +6131,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn };
 }
