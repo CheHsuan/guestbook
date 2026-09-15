@@ -110,6 +110,12 @@
         "countryName": {
           ".validate": "newData.isString() && newData.val().length <= 100"
         },
+        "mood": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 10"
+        },
+        "pinned": {
+          ".validate": "newData.isBoolean()"
+        },
         "views": {
           ".write": "root.child('messages').child($message_id).exists()",
           ".validate": "newData.isNumber() && newData.val() > 0"
