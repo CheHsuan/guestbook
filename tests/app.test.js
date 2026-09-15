@@ -645,6 +645,152 @@ describe('createMessageCard', () => {
   });
 });
 
+// --- Pin feature ---
+describe('pin feature', () => {
+  let createMessageCard;
+  let mocks;
+
+  const baseMsg = {
+    id: 'pin-msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = mocks.firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+  }
+
+  beforeEach(setupModule);
+
+  test('pin button not shown when user is null', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-pin')).toBeNull();
+  });
+
+  test('pin button not shown for another user\'s message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', isAnonymous: false });
+    expect(card.querySelector('.btn-pin')).toBeNull();
+  });
+
+  test('pin button not shown for anonymous (guest) users', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice', isAnonymous: true });
+    expect(card.querySelector('.btn-pin')).toBeNull();
+  });
+
+  test('pin button shown for own non-anonymous messages', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice', isAnonymous: false });
+    expect(card.querySelector('.btn-pin')).not.toBeNull();
+  });
+
+  test('pin button label is "📌 Pin" when message is not pinned', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice', isAnonymous: false });
+    expect(card.querySelector('.btn-pin').textContent).toBe('📌 Pin');
+  });
+
+  test('pin button label is "📌 Unpin" when message is already pinned', () => {
+    const pinnedMsg = { ...baseMsg, pinned: true };
+    const card = createMessageCard(pinnedMsg, { uid: 'uid-alice', isAnonymous: false });
+    expect(card.querySelector('.btn-pin').textContent).toBe('📌 Unpin');
+  });
+
+  test('pinned badge shown when msg.pinned is true', () => {
+    const pinnedMsg = { ...baseMsg, pinned: true };
+    const card = createMessageCard(pinnedMsg, null);
+    const badge = card.querySelector('.pinned-badge');
+    expect(badge).not.toBeNull();
+    expect(badge.textContent).toContain('Pinned');
+  });
+
+  test('no pinned badge when msg.pinned is falsy', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.pinned-badge')).toBeNull();
+  });
+
+  test('is-pinned class applied when msg.pinned is true', () => {
+    const pinnedMsg = { ...baseMsg, pinned: true };
+    const card = createMessageCard(pinnedMsg, null);
+    expect(card.classList.contains('is-pinned')).toBe(true);
+  });
+
+  test('is-pinned class not applied when msg.pinned is falsy', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.classList.contains('is-pinned')).toBe(false);
+  });
+
+  test('dataset.pinned is "1" when msg.pinned is true', () => {
+    const pinnedMsg = { ...baseMsg, pinned: true };
+    const card = createMessageCard(pinnedMsg, null);
+    expect(card.dataset.pinned).toBe('1');
+  });
+
+  test('dataset.pinned is "0" when msg.pinned is falsy', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.dataset.pinned).toBe('0');
+  });
+
+  test('clicking pin button on unpinned message calls Firebase update with pinned: true', async () => {
+    const ownUser = { uid: 'uid-alice', isAnonymous: false };
+    const card = createMessageCard(baseMsg, ownUser);
+
+    card.querySelector('.btn-pin').click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledWith({ pinned: true });
+  });
+
+  test('clicking pin button on already-pinned message calls Firebase update with pinned: false', async () => {
+    const ownUser = { uid: 'uid-alice', isAnonymous: false };
+    const pinnedMsg = { ...baseMsg, pinned: true };
+    const card = createMessageCard(pinnedMsg, ownUser);
+
+    card.querySelector('.btn-pin').click();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.update).toHaveBeenCalledWith({ pinned: false });
+  });
+
+  test('clicking pin button queries messages by authorId to unpin previous', async () => {
+    const ownUser = { uid: 'uid-alice', isAnonymous: false };
+    const card = createMessageCard(baseMsg, ownUser);
+
+    card.querySelector('.btn-pin').click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mocks.dbRef.orderByChild).toHaveBeenCalledWith('authorId');
+    expect(mocks.dbRef.equalTo).toHaveBeenCalledWith('uid-alice');
+    expect(mocks.dbRef.once).toHaveBeenCalledWith('value');
+  });
+});
+
 // --- Mood feature: MOOD_OPTIONS and MOOD_VALID_EMOJIS ---
 describe('mood feature constants', () => {
   let MOOD_OPTIONS;

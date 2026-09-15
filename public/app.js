@@ -299,8 +299,26 @@ function getSortComparator(sort) {
 function applySortOrder() {
   const cards = Array.from(messagesContainer.querySelectorAll('.message-card'));
   if (cards.length === 0) return;
-  cards.sort(getSortComparator(currentSort));
-  cards.forEach(card => messagesContainer.insertBefore(card, loadingState));
+
+  const pinnedCards = cards.filter(c => c.dataset.pinned === '1');
+  const unpinnedCards = cards.filter(c => c.dataset.pinned !== '1');
+
+  pinnedCards.sort((a, b) => Number(b.dataset.timestamp) - Number(a.dataset.timestamp));
+  unpinnedCards.sort(getSortComparator(currentSort));
+
+  const existingDivider = messagesContainer.querySelector('.pinned-divider');
+  if (existingDivider) existingDivider.remove();
+
+  pinnedCards.forEach(card => messagesContainer.insertBefore(card, loadingState));
+
+  if (pinnedCards.length > 0 && unpinnedCards.length > 0) {
+    const divider = document.createElement('div');
+    divider.className = 'pinned-divider';
+    divider.setAttribute('aria-hidden', 'true');
+    messagesContainer.insertBefore(divider, loadingState);
+  }
+
+  unpinnedCards.forEach(card => messagesContainer.insertBefore(card, loadingState));
 }
 
 // ========================================
@@ -2311,6 +2329,34 @@ async function startListeningMessages() {
         }
         if (currentSort === SORT_VIEWS) applySortOrder();
       }
+
+      if (typeof updatedData.pinned === 'boolean') {
+        card.dataset.pinned = updatedData.pinned ? '1' : '0';
+        card.classList.toggle('is-pinned', updatedData.pinned);
+
+        const existingBadge = card.querySelector('.pinned-badge');
+        if (updatedData.pinned && !existingBadge) {
+          const pinnedBadge = document.createElement('span');
+          pinnedBadge.className = 'pinned-badge';
+          pinnedBadge.textContent = '📌 Pinned';
+          const textEl2 = card.querySelector('.message-text');
+          if (textEl2) {
+            card.insertBefore(pinnedBadge, textEl2);
+          } else {
+            card.insertBefore(pinnedBadge, card.querySelector('.message-header').nextSibling);
+          }
+        } else if (!updatedData.pinned && existingBadge) {
+          existingBadge.remove();
+        }
+
+        const pinBtnEl = card.querySelector('.btn-pin');
+        if (pinBtnEl) {
+          pinBtnEl.textContent = updatedData.pinned ? '📌 Unpin' : '📌 Pin';
+          pinBtnEl.setAttribute('aria-label', updatedData.pinned ? 'Unpin message' : 'Pin message');
+        }
+
+        applySortOrder();
+      }
     });
 
     // Assign scroll listener
@@ -3155,6 +3201,7 @@ function createMessageCard(msg, user, isNew) {
   card.dataset.views = String(msg.views || 0);
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
+  card.dataset.pinned = msg.pinned ? '1' : '0';
 
   if (isMuted(msg.authorId) || (msg.type !== 'audio' && isMutedByKeyword(msg.text))) {
     card.style.display = 'none';
@@ -3270,6 +3317,15 @@ function createMessageCard(msg, user, isNew) {
   }
 
   card.appendChild(header);
+
+  if (msg.pinned) {
+    card.classList.add('is-pinned');
+    const pinnedBadge = document.createElement('span');
+    pinnedBadge.className = 'pinned-badge';
+    pinnedBadge.textContent = '📌 Pinned';
+    card.appendChild(pinnedBadge);
+  }
+
   card.appendChild(textEl);
 
   // Render GIF image for gif messages
@@ -3506,6 +3562,40 @@ function createMessageCard(msg, user, isNew) {
     }
 
     card.appendChild(deleteBtn);
+
+    if (!user.isAnonymous) {
+      const pinBtn = document.createElement('button');
+      pinBtn.className = 'btn-pin';
+      pinBtn.textContent = msg.pinned ? '📌 Unpin' : '📌 Pin';
+      pinBtn.setAttribute('aria-label', msg.pinned ? 'Unpin message' : 'Pin message');
+      pinBtn.addEventListener('click', async () => {
+        const nowPinned = card.dataset.pinned === '1';
+        try {
+          if (!nowPinned) {
+            const snap = await db.ref('messages')
+              .orderByChild('authorId')
+              .equalTo(user.uid)
+              .once('value');
+            const updates = {};
+            snap.forEach(child => {
+              if (child.val().pinned && child.key !== msg.id) {
+                updates[`/messages/${child.key}/pinned`] = false;
+              }
+            });
+            if (Object.keys(updates).length > 0) {
+              await db.ref().update(updates);
+            }
+            await db.ref(`messages/${msg.id}`).update({ pinned: true });
+          } else {
+            await db.ref(`messages/${msg.id}`).update({ pinned: false });
+          }
+        } catch (err) {
+          console.error('Failed to toggle pin:', err);
+          alert('Failed to update pin. Please try again.');
+        }
+      });
+      card.appendChild(pinBtn);
+    }
   }
 
   // Card footer: reply count + reply button (reply button for all auth'd users)
