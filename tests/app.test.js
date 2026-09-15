@@ -59,6 +59,7 @@ const APP_HTML = `
   </div>
   <input id="search-input" type="search" />
   <button id="search-clear-btn" style="display:none"></button>
+  <button id="copy-link-btn" style="display:none"></button>
   <p id="search-results-count" style="display:none"></p>
   <div id="trending-section" class="trending-section" style="display:none;">
     <span class="trending-label">Trending</span>
@@ -237,6 +238,12 @@ function makeFirebaseMock() {
     storageRef,
   };
 }
+
+// Reset URL after every test so that readUrlParams() in subsequent module
+// loads does not pick up filter state left by syncStateToUrl() calls.
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+});
 
 // --- createMessageCard ---
 describe('createMessageCard', () => {
@@ -9999,6 +10006,198 @@ describe('image — clipboard paste event listener', () => {
     ];
     document.dispatchEvent(makePasteEvent(files));
     expect(URL.createObjectURL).toHaveBeenCalledWith(files[0]);
+  });
+});
+
+// ========================================
+// URL state management
+// ========================================
+describe('URL state management', () => {
+  function setupApp(url) {
+    if (url !== undefined) {
+      window.history.pushState({}, '', url);
+    }
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio;
+    global.validateWebsiteURL = utils.validateWebsiteURL;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    return require('../public/app.js');
+  }
+
+  describe('syncStateToUrl', () => {
+    let app;
+
+    beforeAll(() => {
+      app = setupApp('/');
+    });
+
+    test('calls history.replaceState when usePushState is false', () => {
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = 'hello';
+      app.syncStateToUrl(false);
+      expect(spy).toHaveBeenCalledWith(null, '', expect.stringContaining('q=hello'));
+      spy.mockRestore();
+    });
+
+    test('calls history.pushState when usePushState is true', () => {
+      const spy = jest.spyOn(window.history, 'pushState');
+      document.getElementById('search-input').value = 'world';
+      app.syncStateToUrl(true);
+      expect(spy).toHaveBeenCalledWith(null, '', expect.stringContaining('q=world'));
+      spy.mockRestore();
+    });
+
+    test('produces clean URL when all filters are at defaults', () => {
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '';
+      app.syncStateToUrl(false);
+      const [, , url] = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(url).not.toContain('?');
+      spy.mockRestore();
+    });
+
+    test('percent-encodes # in hashtag searches', () => {
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '#firebase';
+      app.syncStateToUrl(false);
+      const [, , url] = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(url).toContain('q=%23firebase');
+      spy.mockRestore();
+    });
+
+    test('omits q param when search input is empty', () => {
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '';
+      app.syncStateToUrl(false);
+      const [, , url] = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(url).not.toContain('q=');
+      spy.mockRestore();
+    });
+  });
+
+  describe('updateCopyLinkBtn', () => {
+    let app;
+
+    beforeAll(() => {
+      app = setupApp('/');
+    });
+
+    test('shows copy-link button when a search query is active', () => {
+      document.getElementById('search-input').value = 'test';
+      app.updateCopyLinkBtn();
+      expect(document.getElementById('copy-link-btn').style.display).toBe('');
+    });
+
+    test('hides copy-link button when no filters are active', () => {
+      document.getElementById('search-input').value = '';
+      app.updateCopyLinkBtn();
+      expect(document.getElementById('copy-link-btn').style.display).toBe('none');
+    });
+  });
+
+  describe('readUrlParams — ?q= param', () => {
+    beforeAll(() => {
+      setupApp('/?q=hello+world');
+    });
+
+    test('pre-fills search input from q param', () => {
+      expect(document.getElementById('search-input').value).toBe('hello world');
+    });
+
+    test('shows search-clear button when q param is present', () => {
+      expect(document.getElementById('search-clear-btn').style.display).toBe('');
+    });
+  });
+
+  describe('readUrlParams — ?q= truncation', () => {
+    beforeAll(() => {
+      setupApp('/?q=' + 'a'.repeat(300));
+    });
+
+    test('truncates q param to 250 chars', () => {
+      expect(document.getElementById('search-input').value.length).toBe(250);
+    });
+  });
+
+  describe('readUrlParams — ?sort=oldest param', () => {
+    beforeAll(() => {
+      setupApp('/?sort=oldest');
+    });
+
+    test('activates oldest sort button', () => {
+      expect(document.querySelector('[data-sort="oldest"]').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    test('deactivates newest sort button', () => {
+      expect(document.querySelector('[data-sort="newest"]').getAttribute('aria-pressed')).toBe('false');
+    });
+  });
+
+  describe('readUrlParams — ?sort=active param', () => {
+    beforeAll(() => {
+      setupApp('/?sort=active');
+    });
+
+    test('activates active sort button', () => {
+      expect(document.querySelector('[data-sort="active"]').getAttribute('aria-pressed')).toBe('true');
+    });
+  });
+
+  describe('readUrlParams — unrecognized params are ignored', () => {
+    beforeAll(() => {
+      setupApp('/?sort=invalid&type=unknown');
+    });
+
+    test('defaults to newest sort when sort param is unrecognized', () => {
+      expect(document.querySelector('[data-sort="newest"]').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    test('search input stays empty when no q param is present', () => {
+      expect(document.getElementById('search-input').value).toBe('');
+    });
+
+    test('search-clear button stays hidden when no q param', () => {
+      expect(document.getElementById('search-clear-btn').style.display).toBe('none');
+    });
+  });
+
+  describe('readUrlParams — ?type=poll param', () => {
+    let app;
+
+    beforeAll(() => {
+      app = setupApp('/?type=poll');
+    });
+
+    test('syncStateToUrl reflects type=poll in the URL after loading with type param', () => {
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '';
+      app.syncStateToUrl(false);
+      const calls = spy.mock.calls;
+      const url = calls[calls.length - 1][2];
+      expect(url).toContain('type=poll');
+      spy.mockRestore();
+    });
   });
 });
 
