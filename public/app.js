@@ -2300,7 +2300,7 @@ async function startListeningMessages() {
     // Check whether any messages exist before today so the ← prev button can be enabled/disabled
     db.ref('messages')
       .orderByChild('timestamp')
-      .endBefore(twentyFourHoursAgo)
+      .endBefore(getTodayUtcMidnight())
       .limitToLast(1)
       .once('value')
       .then(snap => {
