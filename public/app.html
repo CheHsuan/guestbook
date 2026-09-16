@@ -219,7 +219,7 @@
           <div id="muted-words-panel-list" class="muted-panel-list"></div>
         </section>
         <h2 class="section-title">
-          Messages from the last 24 hours
+          <span id="messages-section-title">Messages from the last 24 hours</span>
           <span id="message-count" class="message-count-badge">0</span>
           <div class="sort-controls">
             <div class="sort-group" id="sort-group" role="group" aria-label="Sort messages">
@@ -234,6 +234,17 @@
             </button>
           </div>
         </h2>
+        <!-- Archive date navigation bar -->
+        <div id="date-nav-bar" class="date-nav-bar">
+          <button id="date-nav-prev" class="date-nav-btn" aria-label="Previous day">&#x2190;</button>
+          <span id="date-nav-label" class="date-nav-label">Today</span>
+          <button id="date-nav-next" class="date-nav-btn" aria-label="Next day" disabled>&#x2192;</button>
+        </div>
+        <!-- Archive mode banner — shown when browsing a past day -->
+        <div id="archive-banner" class="archive-banner" style="display:none;" role="status" aria-live="polite">
+          Viewing archive for <strong id="archive-banner-date"></strong> — return to Today to post.
+          <button id="archive-back-btn" class="archive-back-btn">Back to today</button>
+        </div>
         <p id="sort-disclaimer" class="sort-disclaimer" style="display:none;">Sorting applies to messages loaded so far.</p>
         <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
         <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>

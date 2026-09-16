@@ -184,6 +184,14 @@ const replyCountMap = new Map(); // msgId -> current reply count (for delete war
 const replyListenerMap = new Map(); // msgId -> db ref (for cleanup)
 const replyExpandMap = new Map(); // msgId -> expand function (for deep-link auto-expand)
 const pollVoteListenerMap = new Map(); // msgId -> db ref (for cleanup)
+
+// ========================================
+// Archive Mode State
+// ========================================
+let isArchiveMode = false;
+let archiveDate = null; // Date object at UTC midnight of the archived day, or null (= live today)
+let messageFeedInitialized = false; // guards first-ever feed initialization
+const ARCHIVE_MESSAGE_LIMIT = 200;
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
@@ -274,6 +282,90 @@ function updateCopyLinkBtn() {
     if (type && VALID_TYPES.has(type)) {
       currentTypeFilter = type;
     }
+  } catch (_) {}
+})();
+
+// ========================================
+// Archive Helper Functions
+// ========================================
+
+function getTodayUtcMidnight() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+
+function getUtcDayBounds(date) {
+  const start = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0);
+  const end   = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999);
+  return { start, end };
+}
+
+function formatArchiveDateDisplay(date) {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+function formatArchiveDateForHash(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function updateArchiveHash() {
+  try {
+    if (isArchiveMode && archiveDate) {
+      const hashDate = formatArchiveDateForHash(archiveDate);
+      history.replaceState(null, '', location.pathname + location.search + '#archive-' + hashDate);
+    } else if (location.hash.startsWith('#archive-')) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } catch (_) {}
+}
+
+function updateArchiveUI() {
+  const prevBtn = document.getElementById('date-nav-prev');
+  const nextBtn = document.getElementById('date-nav-next');
+  const navLabel = document.getElementById('date-nav-label');
+  const archiveBanner = document.getElementById('archive-banner');
+  const archiveBannerDate = document.getElementById('archive-banner-date');
+  const sectionTitle = document.getElementById('messages-section-title');
+  const typingIndicatorEl = document.getElementById('typing-indicator');
+
+  if (isArchiveMode && archiveDate) {
+    const dateDisplay = formatArchiveDateDisplay(archiveDate);
+    if (navLabel) navLabel.textContent = dateDisplay;
+    if (nextBtn) nextBtn.disabled = false;
+    if (archiveBanner) archiveBanner.style.display = '';
+    if (archiveBannerDate) archiveBannerDate.textContent = dateDisplay;
+    if (sectionTitle) sectionTitle.textContent = 'Messages from ' + dateDisplay;
+    if (postSection) postSection.style.display = 'none';
+    if (typingIndicatorEl) { typingIndicatorEl.classList.remove('typing-indicator--visible'); typingIndicatorEl.style.display = 'none'; }
+    hideNewMessagesBanner();
+  } else {
+    if (navLabel) navLabel.textContent = 'Today';
+    if (nextBtn) nextBtn.disabled = true;
+    if (prevBtn) prevBtn.disabled = false;
+    if (archiveBanner) archiveBanner.style.display = 'none';
+    if (sectionTitle) sectionTitle.textContent = 'Messages from the last 24 hours';
+    // Post section visibility is restored by auth state (don't force-show here)
+  }
+}
+
+// Read archive hash at load time — immediately after URL params
+(function readArchiveHash() {
+  try {
+    const hash = location.hash;
+    if (!hash.startsWith('#archive-')) return;
+    const dateStr = hash.slice(9); // strip '#archive-'
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return;
+    const candidate = new Date(Date.UTC(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10)));
+    if (isNaN(candidate.getTime())) return;
+    // Only allow past days (not today or future)
+    if (candidate.getTime() >= getTodayUtcMidnight()) return;
+    isArchiveMode = true;
+    archiveDate = candidate;
+    updateArchiveUI();
   } catch (_) {}
 })();
 
@@ -2075,9 +2167,17 @@ auth.onAuthStateChanged(async (user) => {
     if (myPostsBtn) myPostsBtn.style.display = 'none';
   }
 
-  // Start the listener once; skip if already running to avoid duplicate listeners
-  if (!realtimeAddedListener) {
-    startListeningMessages();
+  // Initialize the message feed once. In archive mode use loadArchiveDay; otherwise start the live listener.
+  if (!messageFeedInitialized) {
+    messageFeedInitialized = true;
+    if (isArchiveMode && archiveDate) {
+      loadArchiveDay(archiveDate);
+    } else {
+      startListeningMessages();
+    }
+  } else if (isArchiveMode) {
+    // Re-entering auth state while in archive: keep post section hidden
+    if (postSection) postSection.style.display = 'none';
   }
 
   // Load alias after listener is started so tests see correct listener timing
@@ -2196,6 +2296,18 @@ async function startListeningMessages() {
     }
 
     handleDeepLink();
+
+    // Check whether any messages exist before today so the ← prev button can be enabled/disabled
+    db.ref('messages')
+      .orderByChild('timestamp')
+      .endBefore(twentyFourHoursAgo)
+      .limitToLast(1)
+      .once('value')
+      .then(snap => {
+        const prevBtn = document.getElementById('date-nav-prev');
+        if (prevBtn) prevBtn.disabled = !snap.exists();
+      })
+      .catch(() => {});
 
     // Start listening for true total count for the badge
     if (!totalMessagesListener) {
@@ -2512,6 +2624,151 @@ function stopListeningMessages() {
   newMessagesBanner.classList.remove('new-messages-banner--visible');
   newMessagesBanner.style.display = 'none';
 }
+
+// ========================================
+// Archive: Load a past day's messages
+// ========================================
+
+async function loadArchiveDay(date) {
+  isArchiveMode = true;
+  archiveDate = date;
+
+  stopListeningMessages();
+  updateArchiveUI();
+  updateArchiveHash();
+
+  // Show loading
+  loadingState.style.display = 'block';
+  emptyState.style.display = 'none';
+
+  // Clear stale cards
+  messagesContainer.querySelectorAll('.message-card').forEach(c => c.remove());
+  const existingLimitNotice = document.getElementById('archive-limit-notice');
+  if (existingLimitNotice) existingLimitNotice.remove();
+
+  const prevBtn = document.getElementById('date-nav-prev');
+  const nextBtn = document.getElementById('date-nav-next');
+  if (prevBtn) prevBtn.disabled = true;
+  if (nextBtn) nextBtn.disabled = true;
+
+  const { start, end } = getUtcDayBounds(date);
+
+  try {
+    const snap = await db.ref('messages')
+      .orderByChild('timestamp')
+      .startAt(start)
+      .endAt(end)
+      .limitToFirst(ARCHIVE_MESSAGE_LIMIT)
+      .once('value');
+
+    loadingState.style.display = 'none';
+
+    if (!snap.exists()) {
+      const emptyP = emptyState.querySelector('p');
+      if (emptyP) emptyP.textContent = 'No messages on this day.';
+      emptyState.style.display = 'block';
+      messageCount.textContent = '0';
+    } else {
+      emptyState.style.display = 'none';
+
+      const messages = [];
+      snap.forEach(child => messages.push({ id: child.key, ...child.val() }));
+      messages.sort((a, b) => b.timestamp - a.timestamp);
+
+      messages.forEach(msg => {
+        trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
+        const card = createMessageCard(msg, currentUser, false, true);
+        messagesContainer.insertBefore(card, loadingState);
+      });
+
+      const count = messages.length;
+      messageCount.textContent = count >= ARCHIVE_MESSAGE_LIMIT ? ARCHIVE_MESSAGE_LIMIT + '+' : String(count);
+
+      if (count >= ARCHIVE_MESSAGE_LIMIT) {
+        const limitNotice = document.createElement('p');
+        limitNotice.id = 'archive-limit-notice';
+        limitNotice.className = 'archive-limit-notice';
+        limitNotice.textContent = 'Showing first ' + ARCHIVE_MESSAGE_LIMIT + ' messages from this day.';
+        messagesContainer.insertBefore(limitNotice, loadingState);
+      }
+
+      applySortOrder();
+      filterMessages();
+      renderTrendingHashtags();
+      updateMyPostsBtnVisibility();
+    }
+
+    // Check if messages exist before this day to decide whether prev button is enabled
+    const prevSnap = await db.ref('messages')
+      .orderByChild('timestamp')
+      .endBefore(start)
+      .limitToLast(1)
+      .once('value');
+    if (prevBtn) prevBtn.disabled = !prevSnap.exists();
+
+    // Next is always enabled in archive mode (goes toward today)
+    if (nextBtn) nextBtn.disabled = false;
+
+  } catch (err) {
+    console.error('Error loading archive:', err);
+    loadingState.style.display = 'none';
+    emptyState.style.display = 'block';
+    if (prevBtn) prevBtn.disabled = false;
+    if (nextBtn) nextBtn.disabled = false;
+  }
+}
+
+function returnToToday() {
+  isArchiveMode = false;
+  archiveDate = null;
+
+  updateArchiveUI();
+  updateArchiveHash();
+
+  // Restore empty-state default text
+  const emptyP = emptyState.querySelector('p');
+  if (emptyP) emptyP.textContent = 'No messages yet. Be the first to leave one!';
+
+  // Remove archive-only elements
+  const limitNotice = document.getElementById('archive-limit-notice');
+  if (limitNotice) limitNotice.remove();
+
+  // Restore post section visibility based on current auth state
+  if (currentUser) {
+    if (!currentUser.isAnonymous || guestDisplayName) {
+      if (postSection) postSection.style.display = 'block';
+    }
+  }
+
+  startListeningMessages();
+}
+
+function navigatePrevDay() {
+  const current = archiveDate || new Date(getTodayUtcMidnight());
+  const prevDate = new Date(current.getTime() - 24 * 60 * 60 * 1000);
+  loadArchiveDay(prevDate);
+}
+
+function navigateNextDay() {
+  if (!isArchiveMode || !archiveDate) return;
+  const nextMs = archiveDate.getTime() + 24 * 60 * 60 * 1000;
+  if (nextMs >= getTodayUtcMidnight()) {
+    returnToToday();
+  } else {
+    loadArchiveDay(new Date(nextMs));
+  }
+}
+
+// Wire up date nav bar buttons
+(function initDateNavBar() {
+  const prevBtn = document.getElementById('date-nav-prev');
+  const nextBtn = document.getElementById('date-nav-next');
+  const backBtn = document.getElementById('archive-back-btn');
+
+  if (prevBtn) prevBtn.addEventListener('click', navigatePrevDay);
+  if (nextBtn) nextBtn.addEventListener('click', navigateNextDay);
+  if (backBtn) backBtn.addEventListener('click', returnToToday);
+})();
 
 // ========================================
 // Expiry Countdown
@@ -3192,7 +3449,7 @@ function createPollBody(msgId, options, user) {
 // ========================================
 // Create Message Card Element
 // ========================================
-function createMessageCard(msg, user, isNew) {
+function createMessageCard(msg, user, isNew, isArchive) {
   const card = document.createElement('div');
   card.className = 'message-card';
   card.id = `msg-${msg.id}`;
@@ -3224,9 +3481,12 @@ function createMessageCard(msg, user, isNew) {
     editedLabel.title = `Last edited at ${formatTimestamp(msg.editedAt)}`;
     timeEl.appendChild(editedLabel);
   }
-  timeEl.appendChild(createExpiryLabel(msg.timestamp));
+  // Expiry countdown is irrelevant for archived messages (they are already past 24 h)
+  if (!isArchive) {
+    timeEl.appendChild(createExpiryLabel(msg.timestamp));
+  }
 
-  if (isNew) {
+  if (isNew && !isArchive) {
     const newBadge = document.createElement('span');
     newBadge.className = 'new-since-visit-badge';
     newBadge.textContent = 'NEW';
@@ -6221,5 +6481,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT };
 }

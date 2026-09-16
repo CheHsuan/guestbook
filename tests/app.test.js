@@ -65,8 +65,18 @@ const APP_HTML = `
     <span class="trending-label">Trending</span>
     <div class="trending-chips"></div>
   </div>
+  <span id="messages-section-title">Messages from the last 24 hours</span>
+  <div id="date-nav-bar" class="date-nav-bar">
+    <button id="date-nav-prev" class="date-nav-btn" aria-label="Previous day">&#x2190;</button>
+    <span id="date-nav-label" class="date-nav-label">Today</span>
+    <button id="date-nav-next" class="date-nav-btn" aria-label="Next day" disabled>&#x2192;</button>
+  </div>
+  <div id="archive-banner" class="archive-banner" style="display:none;">
+    Viewing archive for <strong id="archive-banner-date"></strong>
+    <button id="archive-back-btn" class="archive-back-btn">Back to today</button>
+  </div>
   <div id="messages-container">
-    <div id="empty-state" style="display:none"></div>
+    <div id="empty-state" style="display:none"><p>No messages yet. Be the first to leave one!</p></div>
     <div id="search-empty-state" style="display:none"><p>No messages match your search.</p></div>
     <div id="loading-state" style="display:none"></div>
   </div>
@@ -176,7 +186,9 @@ function makeFirebaseMock() {
     orderByChild: jest.fn().mockReturnThis(),
     startAt: jest.fn().mockReturnThis(),
     startAfter: jest.fn().mockReturnThis(),
+    endAt: jest.fn().mockReturnThis(),
     endBefore: jest.fn().mockReturnThis(),
+    limitToFirst: jest.fn().mockReturnThis(),
     limitToLast: jest.fn().mockReturnThis(),
     equalTo: jest.fn().mockReturnThis(),
   };
@@ -1333,8 +1345,8 @@ describe('infinite scroll / loadMoreMessages', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 1 initial load + 1 alias load + 1 load-more = 3; second scroll was ignored by isLoadingMore guard
-    expect(mocks.dbRef.once.mock.calls.length).toBe(3);
+    // 1 initial load + 1 prev-day check + 1 alias load + 1 load-more = 4; second scroll was ignored by isLoadingMore guard
+    expect(mocks.dbRef.once.mock.calls.length).toBe(4);
   });
 });
 

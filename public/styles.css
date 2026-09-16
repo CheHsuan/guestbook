@@ -4020,3 +4020,90 @@ body {
   margin-left: 4px;
   vertical-align: middle;
 }
+
+/* ========================================
+   Archive date navigation bar
+   ======================================== */
+.date-nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0 6px;
+}
+
+.date-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  flex-shrink: 0;
+}
+
+.date-nav-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.date-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.date-nav-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 110px;
+  text-align: center;
+}
+
+/* ========================================
+   Archive banner
+   ======================================== */
+.archive-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.archive-back-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+
+.archive-back-btn:hover {
+  background: var(--bg-subtle);
+}
+
+/* ========================================
+   Archive 200-message limit notice
+   ======================================== */
+.archive-limit-notice {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 12px 0 4px;
+}
