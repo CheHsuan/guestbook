@@ -65,8 +65,18 @@ const APP_HTML = `
     <span class="trending-label">Trending</span>
     <div class="trending-chips"></div>
   </div>
+  <span id="messages-section-title">Messages from the last 24 hours</span>
+  <div id="date-nav-bar" class="date-nav-bar">
+    <button id="date-nav-prev" class="date-nav-btn" aria-label="Previous day">&#x2190;</button>
+    <span id="date-nav-label" class="date-nav-label">Today</span>
+    <button id="date-nav-next" class="date-nav-btn" aria-label="Next day" disabled>&#x2192;</button>
+  </div>
+  <div id="archive-banner" class="archive-banner" style="display:none;">
+    Viewing archive for <strong id="archive-banner-date"></strong>
+    <button id="archive-back-btn" class="archive-back-btn">Back to today</button>
+  </div>
   <div id="messages-container">
-    <div id="empty-state" style="display:none"></div>
+    <div id="empty-state" style="display:none"><p>No messages yet. Be the first to leave one!</p></div>
     <div id="search-empty-state" style="display:none"><p>No messages match your search.</p></div>
     <div id="loading-state" style="display:none"></div>
   </div>
@@ -176,7 +186,9 @@ function makeFirebaseMock() {
     orderByChild: jest.fn().mockReturnThis(),
     startAt: jest.fn().mockReturnThis(),
     startAfter: jest.fn().mockReturnThis(),
+    endAt: jest.fn().mockReturnThis(),
     endBefore: jest.fn().mockReturnThis(),
+    limitToFirst: jest.fn().mockReturnThis(),
     limitToLast: jest.fn().mockReturnThis(),
     equalTo: jest.fn().mockReturnThis(),
   };
@@ -1333,8 +1345,8 @@ describe('infinite scroll / loadMoreMessages', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 1 initial load + 1 alias load + 1 load-more = 3; second scroll was ignored by isLoadingMore guard
-    expect(mocks.dbRef.once.mock.calls.length).toBe(3);
+    // 1 initial load + 1 prev-day check + 1 alias load + 1 load-more = 4; second scroll was ignored by isLoadingMore guard
+    expect(mocks.dbRef.once.mock.calls.length).toBe(4);
   });
 });
 
@@ -10343,6 +10355,287 @@ describe('URL state management', () => {
       const url = calls[calls.length - 1][2];
       expect(url).toContain('type=poll');
       spy.mockRestore();
+    });
+  });
+});
+
+// ============================================================
+// Archive feature
+// ============================================================
+
+describe('archive feature', () => {
+  // Shared setup helper — loads app.js with the given URL (hash included)
+  function setupArchiveApp(url) {
+    if (url !== undefined) {
+      window.history.pushState({}, '', url);
+    }
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: true }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    const { firebase, authInstance, dbRef } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const app = require('../public/app.js');
+    return { app, dbRef };
+  }
+
+  // ── Pure date helpers ─────────────────────────────────────
+
+  describe('getTodayUtcMidnight', () => {
+    let getTodayUtcMidnight;
+
+    beforeAll(() => {
+      ({ getTodayUtcMidnight } = setupArchiveApp('/').app);
+    });
+
+    test('returns a number', () => {
+      expect(typeof getTodayUtcMidnight()).toBe('number');
+    });
+
+    test('equals Date.UTC for today at 00:00:00.000 UTC', () => {
+      const now = new Date();
+      const expected = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      expect(getTodayUtcMidnight()).toBe(expected);
+    });
+
+    test('time-of-day component is zero (exact midnight UTC)', () => {
+      const ts = getTodayUtcMidnight();
+      const d = new Date(ts);
+      expect(d.getUTCHours()).toBe(0);
+      expect(d.getUTCMinutes()).toBe(0);
+      expect(d.getUTCSeconds()).toBe(0);
+      expect(d.getUTCMilliseconds()).toBe(0);
+    });
+  });
+
+  describe('getUtcDayBounds', () => {
+    let getUtcDayBounds;
+
+    beforeAll(() => {
+      ({ getUtcDayBounds } = setupArchiveApp('/').app);
+    });
+
+    const fixedDate = new Date(Date.UTC(2026, 8, 11)); // 2026-09-11
+
+    test('start is exactly UTC midnight of the given date', () => {
+      const { start } = getUtcDayBounds(fixedDate);
+      const d = new Date(start);
+      expect(d.getUTCFullYear()).toBe(2026);
+      expect(d.getUTCMonth()).toBe(8);
+      expect(d.getUTCDate()).toBe(11);
+      expect(d.getUTCHours()).toBe(0);
+      expect(d.getUTCMinutes()).toBe(0);
+      expect(d.getUTCSeconds()).toBe(0);
+      expect(d.getUTCMilliseconds()).toBe(0);
+    });
+
+    test('end is 23:59:59.999 UTC of the given date', () => {
+      const { end } = getUtcDayBounds(fixedDate);
+      const d = new Date(end);
+      expect(d.getUTCFullYear()).toBe(2026);
+      expect(d.getUTCMonth()).toBe(8);
+      expect(d.getUTCDate()).toBe(11);
+      expect(d.getUTCHours()).toBe(23);
+      expect(d.getUTCMinutes()).toBe(59);
+      expect(d.getUTCSeconds()).toBe(59);
+      expect(d.getUTCMilliseconds()).toBe(999);
+    });
+
+    test('end - start equals 86399999 ms (full day minus 1 ms)', () => {
+      const { start, end } = getUtcDayBounds(fixedDate);
+      expect(end - start).toBe(86399999);
+    });
+  });
+
+  describe('formatArchiveDateDisplay', () => {
+    let formatArchiveDateDisplay;
+
+    beforeAll(() => {
+      ({ formatArchiveDateDisplay } = setupArchiveApp('/').app);
+    });
+
+    test('returns a non-empty string for a valid UTC date', () => {
+      const date = new Date(Date.UTC(2026, 8, 11));
+      expect(typeof formatArchiveDateDisplay(date)).toBe('string');
+      expect(formatArchiveDateDisplay(date).length).toBeGreaterThan(0);
+    });
+
+    test('includes the year, month abbreviation, and day', () => {
+      const date = new Date(Date.UTC(2026, 8, 11)); // Sep 11 2026
+      const result = formatArchiveDateDisplay(date);
+      expect(result).toMatch(/2026/);
+      expect(result).toMatch(/Sep/);
+      expect(result).toMatch(/11/);
+    });
+  });
+
+  describe('formatArchiveDateForHash', () => {
+    let formatArchiveDateForHash;
+
+    beforeAll(() => {
+      ({ formatArchiveDateForHash } = setupArchiveApp('/').app);
+    });
+
+    test('formats 2026-09-11 correctly', () => {
+      const date = new Date(Date.UTC(2026, 8, 11));
+      expect(formatArchiveDateForHash(date)).toBe('2026-09-11');
+    });
+
+    test('zero-pads single-digit month and day', () => {
+      const date = new Date(Date.UTC(2025, 0, 5)); // Jan 5 2025
+      expect(formatArchiveDateForHash(date)).toBe('2025-01-05');
+    });
+
+    test('output matches the #archive-YYYY-MM-DD hash regex', () => {
+      const date = new Date(Date.UTC(2026, 8, 11));
+      const hash = '#archive-' + formatArchiveDateForHash(date);
+      expect(hash).toMatch(/^#archive-\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test('today or future dates are rejected by readArchiveHash (hash sets no archive mode)', () => {
+      // Verify via the readArchiveHash IIFE: loading with today's date should NOT enter archive mode.
+      const now = new Date();
+      const todayHash = `#archive-${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+      const { app } = setupArchiveApp('/' + todayHash);
+      // archive-banner should remain hidden since the date is not in the past
+      expect(document.getElementById('archive-banner').style.display).toBe('none');
+    });
+  });
+
+  // ── createMessageCard with isArchive=true ─────────────────
+
+  describe('createMessageCard — isArchive=true', () => {
+    let createMessageCard;
+
+    beforeAll(() => {
+      ({ createMessageCard } = setupArchiveApp('/').app);
+    });
+
+    const archiveMsg = {
+      id: 'arc-1',
+      author: 'Bob',
+      text: 'A past message',
+      timestamp: Date.UTC(2026, 8, 11, 10, 0, 0), // 2026-09-11 10:00 UTC (past)
+      authorId: 'uid-bob',
+    };
+
+    test('does not append an expiry label when isArchive=true', () => {
+      const card = createMessageCard(archiveMsg, null, false, true);
+      expect(card.querySelector('.expiry-label')).toBeNull();
+    });
+
+    test('does not append a NEW badge when isNew=true and isArchive=true', () => {
+      const card = createMessageCard(archiveMsg, null, true, true);
+      expect(card.querySelector('.new-since-visit-badge')).toBeNull();
+    });
+
+    test('still renders author and text when isArchive=true', () => {
+      const card = createMessageCard(archiveMsg, null, false, true);
+      expect(card.querySelector('.message-author').textContent).toBe('Bob');
+      expect(card.querySelector('.message-text').textContent).toBe('A past message');
+    });
+
+    test('expiry label IS present when isArchive=false (sanity check)', () => {
+      const card = createMessageCard(archiveMsg, null, false, false);
+      expect(card.querySelector('.expiry-label')).not.toBeNull();
+    });
+  });
+
+  // ── Navigation ────────────────────────────────────────────
+
+  describe('navigatePrevDay — decrements date by one day', () => {
+    let app;
+
+    beforeAll(() => {
+      // Load in archive mode for 2026-09-11 (a known past day)
+      ({ app } = setupArchiveApp('/#archive-2026-09-11'));
+    });
+
+    test('navigatePrevDay loads 2026-09-10 (one day earlier)', () => {
+      // navigatePrevDay calls loadArchiveDay which sets archiveDate and updates the UI.
+      // The easiest observable side effect is the date-nav-label text updating to the
+      // display string of the previous day (formatArchiveDateDisplay(2026-09-10)).
+      const expected = app.formatArchiveDateDisplay(new Date(Date.UTC(2026, 8, 10)));
+      app.navigatePrevDay();
+      expect(document.getElementById('date-nav-label').textContent).toBe(expected);
+    });
+  });
+
+  describe('navigateNextDay — transitions to today when archiveDate is yesterday', () => {
+    let app;
+
+    beforeAll(() => {
+      // Compute yesterday's hash at run time so the test remains correct on any day.
+      const now = new Date();
+      const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - 86400000);
+      const y = yesterday.getUTCFullYear();
+      const m = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(yesterday.getUTCDate()).padStart(2, '0');
+      ({ app } = setupArchiveApp(`/#archive-${y}-${m}-${d}`));
+    });
+
+    test('navigateNextDay resets label to "Today"', () => {
+      app.navigateNextDay();
+      expect(document.getElementById('date-nav-label').textContent).toBe('Today');
+    });
+
+    test('navigateNextDay hides archive banner', () => {
+      expect(document.getElementById('archive-banner').style.display).toBe('none');
+    });
+  });
+
+  describe('navigateNextDay — navigates forward within archive', () => {
+    let app;
+
+    beforeAll(() => {
+      // Load at 2026-09-10; next day (2026-09-11) is still in the past
+      ({ app } = setupArchiveApp('/#archive-2026-09-10'));
+    });
+
+    test('navigateNextDay loads 2026-09-11 and updates the nav label', () => {
+      const expected = app.formatArchiveDateDisplay(new Date(Date.UTC(2026, 8, 11)));
+      app.navigateNextDay();
+      expect(document.getElementById('date-nav-label').textContent).toBe(expected);
+    });
+  });
+
+  describe('returnToToday — restores live UI', () => {
+    let app;
+
+    beforeAll(() => {
+      ({ app } = setupArchiveApp('/#archive-2026-09-11'));
+      app.returnToToday();
+    });
+
+    test('date-nav-label resets to "Today"', () => {
+      expect(document.getElementById('date-nav-label').textContent).toBe('Today');
+    });
+
+    test('archive banner is hidden', () => {
+      expect(document.getElementById('archive-banner').style.display).toBe('none');
+    });
+
+    test('messages-section-title resets to live copy', () => {
+      expect(document.getElementById('messages-section-title').textContent).toBe('Messages from the last 24 hours');
     });
   });
 });
