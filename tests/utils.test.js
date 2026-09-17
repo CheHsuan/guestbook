@@ -222,6 +222,18 @@ describe('sanitizeText', () => {
         const result = sanitizeText('Tom & Jerry');
         expect(result).toContain('&amp;');
     });
+
+    test('escapes single quotes', () => {
+        const result = sanitizeText("it's a test");
+        expect(result).toContain('&#039;');
+    });
+
+    test('escapes & before other characters to prevent double-escaping', () => {
+        // Input already contains &amp; — the & must be escaped first so the
+        // output is &amp;amp; rather than the raw entity &amp; passing through.
+        expect(sanitizeText('&amp;')).toBe('&amp;amp;');
+        expect(sanitizeText('&lt;')).toBe('&amp;lt;');
+    });
 });
 
 // ========================================
