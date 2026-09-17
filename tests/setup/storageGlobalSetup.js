@@ -7,14 +7,13 @@ const { join } = require('path');
 const { tmpdir } = require('os');
 const path = require('path');
 
-const DB_PORT = 9000;
+const STORAGE_PORT = 9199;
 const PROJECT_ID = 'demo-guestbook';
-const PID_FILE = join(tmpdir(), 'guestbook-firebase-emulator.pid');
-const TEMP_CONFIG = join(tmpdir(), 'guestbook-firebase-db-test.json');
+const PID_FILE = join(tmpdir(), 'guestbook-storage-emulator.pid');
+const TEMP_CONFIG = join(tmpdir(), 'guestbook-firebase-storage-test.json');
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const FIREBASE_BIN = path.join(PROJECT_ROOT, 'node_modules', '.bin', 'firebase');
 
-// Firebase emulator requires Java 21+. Try common installation paths.
 const JAVA21_CANDIDATES = [
   '/usr/lib/jvm/temurin-21-jdk-amd64',
   '/usr/lib/jvm/java-21-openjdk-amd64',
@@ -39,7 +38,7 @@ function portIsOpen(port) {
 }
 
 module.exports = async function () {
-  if (await portIsOpen(DB_PORT)) {
+  if (await portIsOpen(STORAGE_PORT)) {
     writeFileSync(PID_FILE, 'external');
     return;
   }
@@ -52,14 +51,14 @@ module.exports = async function () {
   }
 
   writeFileSync(TEMP_CONFIG, JSON.stringify({
-    database: { rules: path.join(PROJECT_ROOT, 'database.rules.json') },
+    storage: { rules: path.join(PROJECT_ROOT, 'storage.rules') },
     emulators: {
-      database: { port: DB_PORT, host: '0.0.0.0' },
+      storage: { port: STORAGE_PORT, host: '0.0.0.0' },
       ui: { enabled: false },
     },
   }));
 
-  const proc = spawn('node', [FIREBASE_BIN, '-c', TEMP_CONFIG, 'emulators:start', '--only', 'database', '--project', PROJECT_ID], {
+  const proc = spawn('node', [FIREBASE_BIN, '-c', TEMP_CONFIG, 'emulators:start', '--only', 'storage', '--project', PROJECT_ID], {
     cwd: PROJECT_ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
@@ -70,7 +69,7 @@ module.exports = async function () {
 
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error('Firebase emulator did not start within 90s'));
+      reject(new Error('Firebase Storage emulator did not start within 90s'));
     }, 90000);
 
     proc.stdout.on('data', chunk => {
@@ -95,7 +94,7 @@ module.exports = async function () {
     proc.on('exit', code => {
       if (code !== 0 && code !== null) {
         clearTimeout(timeout);
-        reject(new Error(`Firebase emulator exited with code ${code}`));
+        reject(new Error(`Firebase Storage emulator exited with code ${code}`));
       }
     });
   });
