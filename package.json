@@ -38,6 +38,14 @@
         ],
         "globalSetup": "<rootDir>/tests/setup/rulesGlobalSetup.js",
         "globalTeardown": "<rootDir>/tests/setup/rulesGlobalTeardown.js"
+      },
+      {
+        "displayName": "storage",
+        "testMatch": [
+          "<rootDir>/tests/storage.rules.test.js"
+        ],
+        "globalSetup": "<rootDir>/tests/setup/storageGlobalSetup.js",
+        "globalTeardown": "<rootDir>/tests/setup/storageGlobalTeardown.js"
       }
     ]
   }
