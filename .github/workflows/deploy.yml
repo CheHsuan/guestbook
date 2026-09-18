@@ -41,7 +41,7 @@ jobs:
         run: npx -y firebase-tools hosting:channel:deploy preview-${{ github.event.release.tag_name }} --expires 1d
 
   live:
-    name: Deploy Hosting and Database to Live
+    name: Deploy Hosting, Database, and Storage to Live
     runs-on: ubuntu-latest
     needs: [preview]
     environment: production
@@ -74,5 +74,5 @@ jobs:
         run: |
           node -e "require('fs').writeFileSync('public/config.js', 'window.TENOR_API_KEY = ' + JSON.stringify(process.env.TENOR_API_KEY || '') + ';\n')"
 
-      - name: Deploy Hosting and Database Rules
-        run: npx -y firebase-tools deploy --only hosting,database
+      - name: Deploy Hosting, Database Rules, and Storage Rules
+        run: npx -y firebase-tools deploy --only hosting,database,storage
