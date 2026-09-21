@@ -1467,6 +1467,7 @@ function updateTypeFilterRow() {
 function filterMessages() {
   renderTrendingHashtags();
   updateTypeFilterRow();
+  renderSparkline();
 
   if (myPostsActive && currentUser) {
     const cards = messagesContainer.querySelectorAll('.message-card');
@@ -1659,6 +1660,135 @@ messagesContainer.addEventListener('click', (e) => {
     }
   }
 });
+
+// ========================================
+// Hourly Activity Sparkline
+// ========================================
+
+// Pure function: given an array of timestamps and the ms-since-epoch start of
+// the current clock-hour, returns a 24-element array where index 0 is the
+// oldest hour and index 23 is the current (live) hour.
+function computeSparklineBuckets(timestamps, currentHourStartMs) {
+  const buckets = new Array(24).fill(0);
+  for (let i = 0; i < timestamps.length; i++) {
+    const idx = 23 + Math.floor((timestamps[i] - currentHourStartMs) / 3600000);
+    if (idx >= 0 && idx < 24) {
+      buckets[idx]++;
+    }
+  }
+  return buckets;
+}
+
+function positionSparklineTooltip(tooltip, clientX, clientY) {
+  tooltip.style.left = (clientX + 10) + 'px';
+  tooltip.style.top = (clientY - 38) + 'px';
+}
+
+// Renders (or hides) the 24-bar hourly sparkline above the message list.
+// Hidden conditions: archive mode, active search/type/my-posts filter, fewer than
+// 2 messages, viewport narrower than 300 px.
+// When a search or type-filter is active, the chart is hidden rather than showing
+// filtered counts — partial-dataset bars would be misleading for time-of-day context.
+function renderSparkline() {
+  const container = document.getElementById('activity-sparkline');
+  if (!container) return;
+
+  if (isArchiveMode) { container.style.display = 'none'; return; }
+  if (loadingState && loadingState.style.display !== 'none') { container.style.display = 'none'; return; }
+
+  const hasActiveFilter = !!(searchInput.value.trim()) || currentTypeFilter !== TYPE_ALL || myPostsActive;
+  if (hasActiveFilter) { container.style.display = 'none'; return; }
+
+  const cards = messagesContainer.querySelectorAll('.message-card');
+  const timestamps = [];
+  cards.forEach(card => {
+    const ts = Number(card.dataset.timestamp);
+    if (ts) timestamps.push(ts);
+  });
+
+  if (timestamps.length < 2) { container.style.display = 'none'; return; }
+  if (typeof window !== 'undefined' && window.innerWidth < 300) { container.style.display = 'none'; return; }
+
+  const now = new Date();
+  const currentHourStartMs = new Date(
+    now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0
+  ).getTime();
+
+  const buckets = computeSparklineBuckets(timestamps, currentHourStartMs);
+  const maxCount = Math.max(...buckets);
+
+  const CHART_H = 40;
+  const MIN_H = 1;
+  const BAR_W = 9;
+  const GAP = 1;
+  const TOTAL_W = 24 * (BAR_W + GAP); // 240
+
+  const svgNS = 'http://www.w3.org/2000/svg';
+  let svg = container.querySelector('svg');
+  if (!svg) {
+    svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Message activity over the last 24 hours');
+    svg.setAttribute('viewBox', '0 0 ' + TOTAL_W + ' ' + CHART_H);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.style.width = '100%';
+    svg.style.height = CHART_H + 'px';
+    svg.style.display = 'block';
+    container.appendChild(svg);
+  } else {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+  }
+
+  let tooltip = document.getElementById('sparkline-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'sparkline-tooltip';
+    tooltip.className = 'sparkline-tooltip';
+    tooltip.setAttribute('aria-hidden', 'true');
+    tooltip.style.display = 'none';
+    document.body.appendChild(tooltip);
+  }
+
+  buckets.forEach(function(count, i) {
+    const barH = maxCount > 0 ? Math.max(MIN_H, Math.round((count / maxCount) * CHART_H)) : MIN_H;
+    const x = i * (BAR_W + GAP);
+    const y = CHART_H - barH;
+    const isCurrentHour = (i === 23);
+
+    const rect = document.createElementNS(svgNS, 'rect');
+    rect.setAttribute('x', String(x));
+    rect.setAttribute('y', String(y));
+    rect.setAttribute('width', String(BAR_W));
+    rect.setAttribute('height', String(barH));
+    rect.setAttribute('aria-hidden', 'true');
+    rect.setAttribute('class', isCurrentHour ? 'sparkline-bar sparkline-bar--current' : 'sparkline-bar');
+
+    const hourDate = new Date(currentHourStartMs - (23 - i) * 3600000);
+    const hourLabel = hourDate.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+    const tooltipText = (count === 1 ? '1 message' : count + ' messages') + ' · ' + hourLabel;
+
+    rect.addEventListener('mouseenter', function(e) {
+      tooltip.textContent = tooltipText;
+      tooltip.style.display = '';
+      positionSparklineTooltip(tooltip, e.clientX, e.clientY);
+    });
+    rect.addEventListener('mousemove', function(e) {
+      positionSparklineTooltip(tooltip, e.clientX, e.clientY);
+    });
+    rect.addEventListener('mouseleave', function() { tooltip.style.display = 'none'; });
+    rect.addEventListener('touchstart', function(e) {
+      tooltip.textContent = tooltipText;
+      tooltip.style.display = '';
+      const touch = e.touches[0];
+      positionSparklineTooltip(tooltip, touch.clientX, touch.clientY);
+    }, { passive: true });
+    rect.addEventListener('touchend', function() { tooltip.style.display = 'none'; });
+
+    svg.appendChild(rect);
+  });
+
+  container.style.display = '';
+}
 
 // ========================================
 // Display Name (alias)
@@ -2292,6 +2422,7 @@ async function startListeningMessages() {
       updateNewSinceSummary(newCount);
       renderTrendingHashtags();
       updateMyPostsBtnVisibility();
+      renderSparkline();
       pruneExpiredSubscriptions();
     }
 
@@ -2395,6 +2526,7 @@ async function startListeningMessages() {
           searchResultsCount.style.display = 'none';
           renderTrendingHashtags();
           updateMyPostsBtnVisibility();
+          renderSparkline();
         } else {
           filterMessages();
           updateMyPostsBtnVisibility();
@@ -6481,5 +6613,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline };
 }

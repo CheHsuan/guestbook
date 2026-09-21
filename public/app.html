@@ -250,6 +250,8 @@
         <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>
         <p id="new-since-visit-summary" class="new-since-visit-summary" style="display:none;" role="button" tabindex="0"></p>
         <div id="typing-indicator" class="typing-indicator" style="display:none;" aria-live="polite" aria-atomic="true"></div>
+        <!-- Activity sparkline — hidden when archive mode, fewer than 2 messages, or filters active -->
+        <div id="activity-sparkline" style="display:none;" aria-hidden="true"></div>
         <div id="messages-container" class="messages-container">
           <!-- Messages will be rendered here by JS -->
           <div id="empty-state" class="empty-state">

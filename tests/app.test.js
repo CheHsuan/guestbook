@@ -94,6 +94,7 @@ const APP_HTML = `
   <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
   <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
+  <div id="activity-sparkline" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
   <button id="muted-words-badge" style="display:none;"></button>
@@ -10637,6 +10638,272 @@ describe('archive feature', () => {
     test('messages-section-title resets to live copy', () => {
       expect(document.getElementById('messages-section-title').textContent).toBe('Messages from the last 24 hours');
     });
+  });
+});
+
+// =====================================================================
+// computeSparklineBuckets — pure function unit tests
+// =====================================================================
+describe('computeSparklineBuckets', () => {
+  let computeSparklineBuckets;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ computeSparklineBuckets } = require('../public/app.js'));
+  });
+
+  // Fixed anchor: epoch ms for exactly the start of hour 0 on some arbitrary date.
+  // currentHourStartMs = 1000 * 3600 * 100 (100 hours after epoch, nice round number)
+  const HOUR_MS = 3600000;
+  const ANCHOR = HOUR_MS * 100; // start of "current hour" for these tests
+
+  test('returns 24-element array', () => {
+    const result = computeSparklineBuckets([], ANCHOR);
+    expect(result).toHaveLength(24);
+  });
+
+  test('returns all zeros for empty timestamps', () => {
+    const result = computeSparklineBuckets([], ANCHOR);
+    expect(result.every(v => v === 0)).toBe(true);
+  });
+
+  test('places a timestamp in the current hour (bucket 23)', () => {
+    const ts = ANCHOR + 1800000; // 30 min into current hour
+    const result = computeSparklineBuckets([ts], ANCHOR);
+    expect(result[23]).toBe(1);
+    expect(result.slice(0, 23).every(v => v === 0)).toBe(true);
+  });
+
+  test('places a timestamp exactly at current-hour start in bucket 23', () => {
+    const result = computeSparklineBuckets([ANCHOR], ANCHOR);
+    expect(result[23]).toBe(1);
+  });
+
+  test('places a timestamp one hour ago in bucket 22', () => {
+    const ts = ANCHOR - HOUR_MS + 1; // 1 ms into the previous hour
+    const result = computeSparklineBuckets([ts], ANCHOR);
+    expect(result[22]).toBe(1);
+  });
+
+  test('places a timestamp 23 hours ago in bucket 0', () => {
+    const ts = ANCHOR - 23 * HOUR_MS + 1;
+    const result = computeSparklineBuckets([ts], ANCHOR);
+    expect(result[0]).toBe(1);
+  });
+
+  test('drops timestamps older than 24 hours', () => {
+    const ts = ANCHOR - 24 * HOUR_MS - 1; // just before the 24-hour window
+    const result = computeSparklineBuckets([ts], ANCHOR);
+    expect(result.every(v => v === 0)).toBe(true);
+  });
+
+  test('counts multiple timestamps in the same bucket', () => {
+    const ts1 = ANCHOR + 100;
+    const ts2 = ANCHOR + 200;
+    const ts3 = ANCHOR + 300;
+    const result = computeSparklineBuckets([ts1, ts2, ts3], ANCHOR);
+    expect(result[23]).toBe(3);
+  });
+
+  test('distributes timestamps across different buckets correctly', () => {
+    const ts0 = ANCHOR - 23 * HOUR_MS + 1; // bucket 0
+    const ts10 = ANCHOR - 13 * HOUR_MS + 1; // bucket 10
+    const ts23 = ANCHOR + 1; // bucket 23
+    const result = computeSparklineBuckets([ts0, ts10, ts23], ANCHOR);
+    expect(result[0]).toBe(1);
+    expect(result[10]).toBe(1);
+    expect(result[23]).toBe(1);
+    const otherBuckets = result.filter((_, i) => i !== 0 && i !== 10 && i !== 23);
+    expect(otherBuckets.every(v => v === 0)).toBe(true);
+  });
+
+  test('handles the boundary between bucket 22 and 23 exactly', () => {
+    const endOfBucket22 = ANCHOR - 1; // 1 ms before current hour → bucket 22
+    const startOfBucket23 = ANCHOR;   // exactly current hour start → bucket 23
+    const result = computeSparklineBuckets([endOfBucket22, startOfBucket23], ANCHOR);
+    expect(result[22]).toBe(1);
+    expect(result[23]).toBe(1);
+  });
+});
+
+// =====================================================================
+// renderSparkline — DOM behaviour tests
+// =====================================================================
+describe('renderSparkline', () => {
+  let renderSparkline;
+
+  function setupSparklineApp() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    return require('../public/app.js');
+  }
+
+  function addCard(container, ts) {
+    const card = document.createElement('div');
+    card.className = 'message-card';
+    card.dataset.timestamp = String(ts);
+    container.insertBefore(card, container.querySelector('#loading-state') || null);
+    return card;
+  }
+
+  beforeEach(() => {
+    const app = setupSparklineApp();
+    renderSparkline = app.renderSparkline;
+  });
+
+  test('is hidden when no messages exist', () => {
+    const container = document.getElementById('activity-sparkline');
+    renderSparkline();
+    expect(container.style.display).toBe('none');
+  });
+
+  test('is hidden when only one message exists', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now());
+    const container = document.getElementById('activity-sparkline');
+    renderSparkline();
+    expect(container.style.display).toBe('none');
+  });
+
+  test('is visible when 2+ messages exist (no active filter)', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    const container = document.getElementById('activity-sparkline');
+    renderSparkline();
+    expect(container.style.display).not.toBe('none');
+  });
+
+  test('renders an SVG element', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const svg = document.querySelector('#activity-sparkline svg');
+    expect(svg).not.toBeNull();
+  });
+
+  test('SVG has role="img" and aria-label for accessibility', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const svg = document.querySelector('#activity-sparkline svg');
+    expect(svg.getAttribute('role')).toBe('img');
+    expect(svg.getAttribute('aria-label')).toBe('Message activity over the last 24 hours');
+  });
+
+  test('renders exactly 24 bar rects', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const bars = document.querySelectorAll('#activity-sparkline svg rect');
+    expect(bars).toHaveLength(24);
+  });
+
+  test('all bars have aria-hidden="true"', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const bars = document.querySelectorAll('#activity-sparkline svg rect');
+    bars.forEach(bar => {
+      expect(bar.getAttribute('aria-hidden')).toBe('true');
+    });
+  });
+
+  test('current-hour bar has sparkline-bar--current class', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const bars = document.querySelectorAll('#activity-sparkline svg rect');
+    const lastBar = bars[bars.length - 1]; // index 23 = current hour
+    expect(lastBar.getAttribute('class')).toContain('sparkline-bar--current');
+  });
+
+  test('past-hour bars do not have sparkline-bar--current class', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    renderSparkline();
+    const bars = document.querySelectorAll('#activity-sparkline svg rect');
+    // All bars except the last should not have the current class
+    for (let i = 0; i < 23; i++) {
+      expect(bars[i].getAttribute('class')).not.toContain('sparkline-bar--current');
+    }
+  });
+
+  test('is hidden when search input has a value', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    document.getElementById('search-input').value = 'hello';
+    renderSparkline();
+    expect(document.getElementById('activity-sparkline').style.display).toBe('none');
+    document.getElementById('search-input').value = '';
+  });
+
+  test('is visible after search is cleared', () => {
+    const msgContainer = document.getElementById('messages-container');
+    addCard(msgContainer, Date.now() - 3600000);
+    addCard(msgContainer, Date.now());
+    document.getElementById('search-input').value = '';
+    renderSparkline();
+    expect(document.getElementById('activity-sparkline').style.display).not.toBe('none');
+  });
+
+  test('tallest bar occupies the full chart height', () => {
+    const msgContainer = document.getElementById('messages-container');
+    // Put 5 messages in the current hour and 1 in a past hour
+    const now = Date.now();
+    for (let i = 0; i < 5; i++) addCard(msgContainer, now);
+    addCard(msgContainer, now - 3600000);
+    renderSparkline();
+    const bars = document.querySelectorAll('#activity-sparkline svg rect');
+    const maxHeight = Math.max(...Array.from(bars).map(b => Number(b.getAttribute('height'))));
+    // Chart height is 40; tallest bar should equal 40
+    expect(maxHeight).toBe(40);
   });
 });
 
