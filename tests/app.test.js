@@ -9068,6 +9068,121 @@ describe('image — createMessageCard renders image card', () => {
 });
 
 // ========================================
+// Lightbox — openLightbox
+// ========================================
+describe('openLightbox', () => {
+  let openLightbox;
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ openLightbox } = require('../public/app.js'));
+  });
+
+  afterEach(() => {
+    document.querySelectorAll('.lightbox-backdrop').forEach(el => el.remove());
+  });
+
+  test('appends .lightbox-backdrop to body', () => {
+    openLightbox('https://example.com/img.jpg', 'Test image');
+    expect(document.querySelector('.lightbox-backdrop')).not.toBeNull();
+  });
+
+  test('renders an img with the correct src', () => {
+    openLightbox('https://example.com/photo.jpg', 'A photo');
+    const img = document.querySelector('.lightbox-img');
+    expect(img).not.toBeNull();
+    expect(img.src).toContain('photo.jpg');
+  });
+
+  test('renders an img with the correct alt', () => {
+    openLightbox('https://example.com/photo.jpg', 'A photo');
+    const img = document.querySelector('.lightbox-img');
+    expect(img.alt).toBe('A photo');
+  });
+
+  test('renders a close button', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    expect(document.querySelector('.lightbox-close')).not.toBeNull();
+  });
+
+  test('close button removes backdrop when clicked', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    const closeBtn = document.querySelector('.lightbox-close');
+    closeBtn.click();
+    // backdrop removal is async (setTimeout 200ms); class is removed synchronously
+    expect(document.querySelector('.lightbox-backdrop').classList.contains('lightbox-backdrop--visible')).toBe(false);
+  });
+
+  test('Escape key dismisses the lightbox', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.lightbox-backdrop').classList.contains('lightbox-backdrop--visible')).toBe(false);
+  });
+
+  test('clicking backdrop (not image or close btn) dismisses the lightbox', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    const backdrop = document.querySelector('.lightbox-backdrop');
+    backdrop.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    // Click on backdrop itself — target is backdrop
+    // Simulate direct target by triggering the event handler manually via a click on backdrop
+    // Since jsdom may not set e.target correctly, check the class removal
+    expect(backdrop.classList.contains('lightbox-backdrop--visible')).toBe(false);
+  });
+
+  test('img onerror shows .lightbox-error and hides img', () => {
+    openLightbox('https://example.com/broken.jpg', 'Alt');
+    const img = document.querySelector('.lightbox-img');
+    img.dispatchEvent(new Event('error'));
+    expect(document.querySelector('.lightbox-error')).not.toBeNull();
+    expect(img.style.display).toBe('none');
+  });
+
+  test('.lightbox-error message text is set', () => {
+    openLightbox('https://example.com/broken.jpg', 'Alt');
+    const img = document.querySelector('.lightbox-img');
+    img.dispatchEvent(new Event('error'));
+    const errEl = document.querySelector('.lightbox-error');
+    expect(errEl.textContent).toBe('Image failed to load.');
+  });
+
+  test('Tab key does not throw and keeps focus on close button', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    const closeBtn = document.querySelector('.lightbox-close');
+    const evt = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    expect(() => document.dispatchEvent(evt)).not.toThrow();
+    // After Tab, close button should receive focus
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  test('backdrop has role="dialog" and aria-modal="true"', () => {
+    openLightbox('https://example.com/img.jpg', 'Alt');
+    const backdrop = document.querySelector('.lightbox-backdrop');
+    expect(backdrop.getAttribute('role')).toBe('dialog');
+    expect(backdrop.getAttribute('aria-modal')).toBe('true');
+  });
+});
+
+// ========================================
 // Daily Writing Prompt
 // ========================================
 describe('Daily Writing Prompt', () => {
