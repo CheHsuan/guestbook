@@ -5425,6 +5425,9 @@ function renderImageComposerPreview(file, objectUrl) {
 function openLightbox(src, alt) {
   const backdrop = document.createElement('div');
   backdrop.className = 'lightbox-backdrop';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  backdrop.setAttribute('aria-label', alt || 'Image');
 
   const img = document.createElement('img');
   img.className = 'lightbox-img';
@@ -5436,24 +5439,43 @@ function openLightbox(src, alt) {
   closeBtn.textContent = '✕';
   closeBtn.setAttribute('aria-label', 'Close image');
 
+  img.addEventListener('error', () => {
+    img.style.display = 'none';
+    const errEl = document.createElement('p');
+    errEl.className = 'lightbox-error';
+    errEl.textContent = 'Image failed to load.';
+    backdrop.insertBefore(errEl, closeBtn);
+  });
+
   backdrop.appendChild(img);
   backdrop.appendChild(closeBtn);
   document.body.appendChild(backdrop);
 
-  requestAnimationFrame(() => backdrop.classList.add('lightbox-backdrop--visible'));
+  requestAnimationFrame(() => {
+    backdrop.classList.add('lightbox-backdrop--visible');
+    closeBtn.focus();
+  });
 
   const close = () => {
     backdrop.classList.remove('lightbox-backdrop--visible');
     setTimeout(() => {
       if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
-    }, 260);
+    }, 200);
     document.removeEventListener('keydown', onKeyDown);
   };
 
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
   closeBtn.addEventListener('click', close);
 
-  const onKeyDown = (e) => { if (e.key === 'Escape') close(); };
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      close();
+    } else if (e.key === 'Tab') {
+      // Focus trap: only focusable element is closeBtn
+      e.preventDefault();
+      closeBtn.focus();
+    }
+  };
   document.addEventListener('keydown', onKeyDown);
 }
 
