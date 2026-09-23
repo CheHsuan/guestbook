@@ -231,6 +231,20 @@ try {
 } catch (_) {}
 
 // ========================================
+// View Mode (Compact / Normal)
+// ========================================
+const VIEW_MODE_KEY = 'guestbook_view_mode';
+const VIEW_NORMAL = 'normal';
+const VIEW_COMPACT = 'compact';
+const COMPACT_PREVIEW_LENGTH = 60;
+
+let currentViewMode = VIEW_NORMAL;
+try {
+  const _savedViewMode = localStorage.getItem(VIEW_MODE_KEY);
+  if (_savedViewMode === VIEW_COMPACT) currentViewMode = VIEW_COMPACT;
+} catch (_) {}
+
+// ========================================
 // URL State Management
 // ========================================
 
@@ -411,6 +425,68 @@ function applySortOrder() {
   }
 
   unpinnedCards.forEach(card => messagesContainer.insertBefore(card, loadingState));
+}
+
+// ========================================
+// View Mode — Compact / Normal
+// ========================================
+function setViewMode(mode) {
+  currentViewMode = mode;
+  try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch (_) {}
+
+  const isCompact = mode === VIEW_COMPACT;
+  if (messagesContainer) {
+    messagesContainer.classList.toggle('compact-mode', isCompact);
+  }
+
+  if (isCompact) {
+    // Auto-expand cards that are currently highlighted by a deep link
+    if (messagesContainer) {
+      messagesContainer.querySelectorAll('.message-card.permalink-highlight').forEach(card => {
+        expandCardCompact(card);
+      });
+    }
+  } else {
+    // Exiting compact mode — collapse all expanded cards
+    if (messagesContainer) {
+      messagesContainer.querySelectorAll('.message-card.compact-expanded').forEach(card => {
+        collapseCardCompact(card);
+      });
+    }
+  }
+
+  const btn = document.getElementById('density-toggle-btn');
+  if (btn) {
+    btn.setAttribute('aria-pressed', isCompact ? 'true' : 'false');
+    btn.setAttribute('aria-label', isCompact ? 'Switch to normal view' : 'Switch to compact view');
+    btn.title = isCompact ? 'Switch to normal view' : 'Switch to compact view';
+  }
+}
+
+function toggleViewMode() {
+  setViewMode(currentViewMode === VIEW_COMPACT ? VIEW_NORMAL : VIEW_COMPACT);
+}
+
+function expandCardCompact(card) {
+  if (!card || card.classList.contains('compact-expanded')) return;
+  card.classList.add('compact-expanded');
+  const row = card.querySelector('.compact-row');
+  if (row) {
+    row.setAttribute('aria-expanded', 'true');
+    const chevronEl = row.querySelector('.compact-chevron');
+    if (chevronEl) chevronEl.textContent = '▲';
+  }
+}
+
+function collapseCardCompact(card) {
+  if (!card) return;
+  card.classList.remove('compact-expanded');
+  const row = card.querySelector('.compact-row');
+  if (row) {
+    row.setAttribute('aria-expanded', 'false');
+    const chevronEl = row.querySelector('.compact-chevron');
+    if (chevronEl) chevronEl.textContent = '▼';
+  }
 }
 
 // ========================================
@@ -916,6 +992,7 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
           if (card) {
             card.scrollIntoView({ behavior: 'smooth' });
             card.classList.add('permalink-highlight');
+            expandCardCompact(card);
             setTimeout(() => card.classList.remove('permalink-highlight'), 2000);
           }
         };
@@ -1330,6 +1407,7 @@ function handleDeepLink() {
     if (expandFn) expandFn();
     targetEl.scrollIntoView({ behavior: 'smooth' });
     targetEl.classList.add('permalink-highlight');
+    expandCardCompact(targetEl);
     setTimeout(() => targetEl.classList.remove('permalink-highlight'), 2000);
   } else if (!hasMoreMessages) {
     deepLinkHandled = true;
@@ -2599,6 +2677,20 @@ async function startListeningMessages() {
           pinBtnEl.setAttribute('aria-label', updatedData.pinned ? 'Unpin message' : 'Pin message');
         }
 
+        const compactRowEl = card.querySelector('.compact-row');
+        if (compactRowEl) {
+          const existingCompactPin = compactRowEl.querySelector('.compact-pin');
+          if (updatedData.pinned && !existingCompactPin) {
+            const pinMark = document.createElement('span');
+            pinMark.className = 'compact-pin';
+            pinMark.textContent = '📌';
+            pinMark.setAttribute('aria-label', 'Pinned');
+            compactRowEl.insertBefore(pinMark, compactRowEl.firstChild);
+          } else if (!updatedData.pinned && existingCompactPin) {
+            existingCompactPin.remove();
+          }
+        }
+
         applySortOrder();
       }
     });
@@ -3579,6 +3671,66 @@ function createPollBody(msgId, options, user) {
 }
 
 // ========================================
+// Compact Row Helpers
+// ========================================
+function getCompactPreviewText(msg) {
+  if (msg.type === 'poll') {
+    const q = msg.text || (msg.poll && msg.poll.question) || '';
+    return '📊 ' + (q.slice(0, COMPACT_PREVIEW_LENGTH) || 'Poll');
+  }
+  if (msg.type === 'gif') return 'GIF';
+  if (msg.type === 'image') return msg.text || '📷 Image';
+  if (msg.type === 'audio') return msg.text || '🎙️ Voice message';
+  return msg.text || '';
+}
+
+function createCompactRow(msg) {
+  const row = document.createElement('div');
+  row.className = 'compact-row';
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+  row.setAttribute('aria-expanded', 'false');
+
+  if (msg.pinned) {
+    const pinMark = document.createElement('span');
+    pinMark.className = 'compact-pin';
+    pinMark.textContent = '📌';
+    pinMark.setAttribute('aria-label', 'Pinned');
+    row.appendChild(pinMark);
+  }
+
+  const avatarEl = createAvatarElement(msg.photoURL, msg.author);
+  avatarEl.classList.add('compact-avatar');
+  row.appendChild(avatarEl);
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'compact-author';
+  authorEl.textContent = msg.author; // textContent — XSS safe
+  row.appendChild(authorEl);
+
+  const previewEl = document.createElement('span');
+  previewEl.className = 'compact-preview';
+  const rawPreview = getCompactPreviewText(msg);
+  previewEl.textContent = rawPreview.length > COMPACT_PREVIEW_LENGTH
+    ? rawPreview.slice(0, COMPACT_PREVIEW_LENGTH) + '…'
+    : rawPreview;
+  row.appendChild(previewEl);
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'compact-time';
+  timeEl.textContent = formatTimestamp(msg.timestamp);
+  row.appendChild(timeEl);
+
+  const chevron = document.createElement('span');
+  chevron.className = 'compact-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
+  chevron.textContent = '▼';
+  row.appendChild(chevron);
+
+  return row;
+}
+
+// ========================================
 // Create Message Card Element
 // ========================================
 function createMessageCard(msg, user, isNew, isArchive) {
@@ -4308,6 +4460,26 @@ function createMessageCard(msg, user, isNew, isArchive) {
 
   card.appendChild(cardFooter);
   card.appendChild(repliesSection);
+
+  // Compact row — used in dense view mode
+  const compactRow = createCompactRow(msg);
+  card.appendChild(compactRow);
+
+  function toggleCompactExpand() {
+    if (card.classList.contains('compact-expanded')) {
+      collapseCardCompact(card);
+    } else {
+      expandCardCompact(card);
+    }
+  }
+
+  compactRow.addEventListener('click', toggleCompactExpand);
+  compactRow.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleCompactExpand();
+    }
+  });
 
   // Set up real-time listeners for replies
   const allRepliesData = []; // ordered buffer of all reply objects (source of truth for DOM sync)
@@ -6609,6 +6781,13 @@ async function handleAvatarRemove() {
   }
 }
 
+(function initDensityToggle() {
+  const btn = document.getElementById('density-toggle-btn');
+  if (!btn) return;
+  setViewMode(currentViewMode);
+  btn.addEventListener('click', toggleViewMode);
+}());
+
 (function wireAvatarUpload() {
   const avatarUploadBtn = document.getElementById('avatar-upload-btn');
   const avatarFileInput = document.getElementById('avatar-file-input');
@@ -6635,5 +6814,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }
