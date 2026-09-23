@@ -4171,3 +4171,197 @@ body {
   pointer-events: none;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* ========================================
+   Density Toggle Button
+   ======================================== */
+.density-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.density-toggle-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.density-toggle-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.density-toggle-btn[aria-pressed="true"] {
+  background: var(--text-primary);
+  color: var(--bg);
+  border-color: var(--text-primary);
+}
+
+.density-toggle-btn[aria-pressed="true"]:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--bg);
+}
+
+/* ========================================
+   Compact View Mode
+   ======================================== */
+
+/* Compact row — hidden in normal mode */
+.compact-row {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.compact-row:hover {
+  background: var(--bg-subtle);
+}
+
+.compact-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Compact avatar (24×24) */
+.compact-row .compact-avatar,
+.compact-row .message-avatar,
+.compact-row .avatar-fallback {
+  width: 24px !important;
+  height: 24px !important;
+  font-size: 0.65rem !important;
+  flex-shrink: 0;
+}
+
+/* Compact author name */
+.compact-author {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+  flex-shrink: 0;
+}
+
+/* Compact message preview */
+.compact-preview {
+  flex: 1;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Compact timestamp */
+.compact-time {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Expand/collapse chevron */
+.compact-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+/* Pinned indicator in compact row */
+.compact-pin {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+/* Compact mode: show compact rows */
+.compact-mode .message-card > .compact-row {
+  display: flex;
+}
+
+/* Compact mode: reduced card padding */
+.compact-mode .message-card {
+  padding: 0 4px;
+}
+
+/* Compact mode: hide all normal card children except the compact row */
+.compact-mode .message-card:not(.compact-expanded) > :not(.compact-row) {
+  display: none;
+}
+
+/* Compact expanded: show full card content below compact row */
+.compact-mode .message-card.compact-expanded {
+  padding: 0 4px 12px;
+}
+
+.compact-mode .message-card.compact-expanded > .compact-row {
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+/* Compact expanded: restore the flex layout for message header */
+.compact-mode .message-card.compact-expanded > .message-header {
+  display: flex;
+}
+
+/* Compact expanded: restore block display for text/media/other direct children */
+.compact-mode .message-card.compact-expanded > .message-text,
+.compact-mode .message-card.compact-expanded > .pinned-badge,
+.compact-mode .message-card.compact-expanded > .gif-message-img,
+.compact-mode .message-card.compact-expanded > .image-message-img,
+.compact-mode .message-card.compact-expanded > .voice-message-player {
+  display: block;
+}
+
+/* Compact expanded: restore flex for card footer and poll body */
+.compact-mode .message-card.compact-expanded > .card-footer {
+  display: flex;
+}
+
+.compact-mode .message-card.compact-expanded > .poll-body {
+  display: flex;
+}
+
+/* Compact expanded: restore replies section */
+.compact-mode .message-card.compact-expanded > .replies-section {
+  display: flex;
+}
+
+/* Compact expanded: restore action buttons */
+.compact-mode .message-card.compact-expanded > .btn-edit,
+.compact-mode .message-card.compact-expanded > .btn-delete,
+.compact-mode .message-card.compact-expanded > .btn-pin {
+  display: inline-flex;
+}
+
+/* On mobile (< 480px): truncate author name more aggressively */
+@media (max-width: 480px) {
+  .compact-author {
+    max-width: 60px;
+  }
+}

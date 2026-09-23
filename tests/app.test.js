@@ -89,6 +89,7 @@ const APP_HTML = `
       <button class="sort-btn" data-sort="views" aria-pressed="false">Most Viewed</button>
     </div>
     <button id="my-posts-btn" class="my-posts-btn" aria-pressed="false" style="display:none;">My Posts</button>
+    <button id="density-toggle-btn" class="density-toggle-btn" aria-pressed="false" aria-label="Switch to compact view">☰</button>
   </div>
   <p id="sort-disclaimer" style="display:none;"></p>
   <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
@@ -11019,6 +11020,271 @@ describe('renderSparkline', () => {
     const maxHeight = Math.max(...Array.from(bars).map(b => Number(b.getAttribute('height'))));
     // Chart height is 40; tallest bar should equal 40
     expect(maxHeight).toBe(40);
+  });
+});
+
+// --- Compact view mode ---
+describe('compact view mode', () => {
+  let getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode,
+      expandCardCompact, collapseCardCompact, createMessageCard,
+      VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({
+      getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode,
+      expandCardCompact, collapseCardCompact, createMessageCard,
+      VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH,
+    } = require('../public/app.js'));
+  });
+
+  afterEach(() => {
+    // Reset container to normal mode after each test
+    const container = document.getElementById('messages-container');
+    if (container) container.classList.remove('compact-mode');
+    // Reset button
+    const btn = document.getElementById('density-toggle-btn');
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', 'Switch to compact view');
+    }
+  });
+
+  const baseMsg = { id: 'm1', author: 'Bob', text: 'Hello there', timestamp: Date.now(), authorId: 'uid-bob' };
+
+  // --- getCompactPreviewText ---
+  describe('getCompactPreviewText', () => {
+    test('returns text for text message', () => {
+      expect(getCompactPreviewText({ type: 'text', text: 'Nice day' })).toBe('Nice day');
+    });
+
+    test('returns empty string for text message with no text', () => {
+      expect(getCompactPreviewText({ type: 'text', text: '' })).toBe('');
+    });
+
+    test('returns GIF label for gif message', () => {
+      expect(getCompactPreviewText({ type: 'gif', gifUrl: 'https://example.com/a.gif' })).toBe('GIF');
+    });
+
+    test('returns poll prefix with question text', () => {
+      const result = getCompactPreviewText({ type: 'poll', text: 'Fav color?', poll: { question: 'Fav color?' } });
+      expect(result).toBe('📊 Fav color?');
+    });
+
+    test('returns poll fallback when no question text', () => {
+      const result = getCompactPreviewText({ type: 'poll', text: '', poll: {} });
+      expect(result).toBe('📊 Poll');
+    });
+
+    test('returns image label when no text', () => {
+      expect(getCompactPreviewText({ type: 'image', imageUrl: 'https://example.com/img.jpg' })).toBe('📷 Image');
+    });
+
+    test('returns image text when present', () => {
+      expect(getCompactPreviewText({ type: 'image', text: 'A photo', imageUrl: 'https://example.com/img.jpg' })).toBe('A photo');
+    });
+
+    test('returns voice message label for audio type', () => {
+      expect(getCompactPreviewText({ type: 'audio', audioUrl: 'https://example.com/v.mp3' })).toBe('🎙️ Voice message');
+    });
+
+    test('truncates text to COMPACT_PREVIEW_LENGTH', () => {
+      const long = 'x'.repeat(COMPACT_PREVIEW_LENGTH + 10);
+      const result = getCompactPreviewText({ type: 'text', text: long });
+      expect(result.length).toBe(COMPACT_PREVIEW_LENGTH);
+    });
+  });
+
+  // --- createCompactRow ---
+  describe('createCompactRow', () => {
+    test('creates element with compact-row class', () => {
+      const row = createCompactRow(baseMsg);
+      expect(row.className).toBe('compact-row');
+    });
+
+    test('has correct ARIA attributes', () => {
+      const row = createCompactRow(baseMsg);
+      expect(row.getAttribute('role')).toBe('button');
+      expect(row.getAttribute('tabindex')).toBe('0');
+      expect(row.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    test('shows author name via textContent (XSS safe)', () => {
+      const xssMsg = { ...baseMsg, author: '<script>alert(1)</script>' };
+      const row = createCompactRow(xssMsg);
+      expect(row.querySelector('.compact-author').textContent).toBe('<script>alert(1)</script>');
+      expect(row.innerHTML).not.toContain('<script>');
+    });
+
+    test('shows chevron ▼', () => {
+      const row = createCompactRow(baseMsg);
+      expect(row.querySelector('.compact-chevron').textContent).toBe('▼');
+    });
+
+    test('shows 📌 indicator for pinned messages', () => {
+      const pinnedMsg = { ...baseMsg, pinned: true };
+      const row = createCompactRow(pinnedMsg);
+      const pin = row.querySelector('.compact-pin');
+      expect(pin).not.toBeNull();
+      expect(pin.textContent).toBe('📌');
+    });
+
+    test('does not show 📌 indicator for non-pinned messages', () => {
+      const row = createCompactRow(baseMsg);
+      expect(row.querySelector('.compact-pin')).toBeNull();
+    });
+
+    test('preview text is truncated with ellipsis when over COMPACT_PREVIEW_LENGTH', () => {
+      const longMsg = { ...baseMsg, text: 'a'.repeat(COMPACT_PREVIEW_LENGTH + 5) };
+      const row = createCompactRow(longMsg);
+      const preview = row.querySelector('.compact-preview').textContent;
+      expect(preview).toMatch(/…$/);
+      expect(preview.length).toBe(COMPACT_PREVIEW_LENGTH + 1); // 60 chars + ellipsis
+    });
+
+    test('preview text is not truncated when at or under COMPACT_PREVIEW_LENGTH', () => {
+      const exactMsg = { ...baseMsg, text: 'a'.repeat(COMPACT_PREVIEW_LENGTH - 1) };
+      const row = createCompactRow(exactMsg);
+      const preview = row.querySelector('.compact-preview').textContent;
+      expect(preview).not.toMatch(/…$/);
+    });
+  });
+
+  // --- createMessageCard includes compact row ---
+  describe('createMessageCard compact row integration', () => {
+    test('card includes a compact-row element', () => {
+      const card = createMessageCard(baseMsg, null);
+      expect(card.querySelector('.compact-row')).not.toBeNull();
+    });
+
+    test('compact row shows correct author', () => {
+      const card = createMessageCard(baseMsg, null);
+      expect(card.querySelector('.compact-author').textContent).toBe('Bob');
+    });
+  });
+
+  // --- setViewMode ---
+  describe('setViewMode', () => {
+    test('adds compact-mode class to messages container', () => {
+      setViewMode(VIEW_COMPACT);
+      expect(document.getElementById('messages-container').classList.contains('compact-mode')).toBe(true);
+    });
+
+    test('removes compact-mode class when switching to normal', () => {
+      setViewMode(VIEW_COMPACT);
+      setViewMode(VIEW_NORMAL);
+      expect(document.getElementById('messages-container').classList.contains('compact-mode')).toBe(false);
+    });
+
+    test('updates density toggle button aria-pressed', () => {
+      const btn = document.getElementById('density-toggle-btn');
+      setViewMode(VIEW_COMPACT);
+      expect(btn.getAttribute('aria-pressed')).toBe('true');
+      setViewMode(VIEW_NORMAL);
+      expect(btn.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    test('updates density toggle button aria-label', () => {
+      const btn = document.getElementById('density-toggle-btn');
+      setViewMode(VIEW_COMPACT);
+      expect(btn.getAttribute('aria-label')).toBe('Switch to normal view');
+      setViewMode(VIEW_NORMAL);
+      expect(btn.getAttribute('aria-label')).toBe('Switch to compact view');
+    });
+
+    test('collapses compact-expanded cards when returning to normal mode', () => {
+      const container = document.getElementById('messages-container');
+      const card = document.createElement('div');
+      card.className = 'message-card compact-expanded';
+      const row = document.createElement('div');
+      row.className = 'compact-row';
+      row.setAttribute('aria-expanded', 'true');
+      const chevron = document.createElement('span');
+      chevron.className = 'compact-chevron';
+      chevron.textContent = '▲';
+      row.appendChild(chevron);
+      card.appendChild(row);
+      container.appendChild(card);
+
+      setViewMode(VIEW_NORMAL);
+      expect(card.classList.contains('compact-expanded')).toBe(false);
+      expect(row.getAttribute('aria-expanded')).toBe('false');
+      expect(chevron.textContent).toBe('▼');
+
+      container.removeChild(card);
+    });
+  });
+
+  // --- expandCardCompact / collapseCardCompact ---
+  describe('expandCardCompact and collapseCardCompact', () => {
+    function makeCardWithRow() {
+      const card = document.createElement('div');
+      card.className = 'message-card';
+      const row = document.createElement('div');
+      row.className = 'compact-row';
+      row.setAttribute('aria-expanded', 'false');
+      const chevron = document.createElement('span');
+      chevron.className = 'compact-chevron';
+      chevron.textContent = '▼';
+      row.appendChild(chevron);
+      card.appendChild(row);
+      return card;
+    }
+
+    test('expandCardCompact adds compact-expanded class', () => {
+      const card = makeCardWithRow();
+      expandCardCompact(card);
+      expect(card.classList.contains('compact-expanded')).toBe(true);
+    });
+
+    test('expandCardCompact sets aria-expanded to true and chevron to ▲', () => {
+      const card = makeCardWithRow();
+      expandCardCompact(card);
+      expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('true');
+      expect(card.querySelector('.compact-chevron').textContent).toBe('▲');
+    });
+
+    test('expandCardCompact is idempotent', () => {
+      const card = makeCardWithRow();
+      expandCardCompact(card);
+      expandCardCompact(card);
+      expect(card.classList.contains('compact-expanded')).toBe(true);
+    });
+
+    test('collapseCardCompact removes compact-expanded class', () => {
+      const card = makeCardWithRow();
+      expandCardCompact(card);
+      collapseCardCompact(card);
+      expect(card.classList.contains('compact-expanded')).toBe(false);
+    });
+
+    test('collapseCardCompact sets aria-expanded to false and chevron to ▼', () => {
+      const card = makeCardWithRow();
+      expandCardCompact(card);
+      collapseCardCompact(card);
+      expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('false');
+      expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
+    });
   });
 });
 
