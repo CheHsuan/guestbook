@@ -3679,9 +3679,9 @@ function getCompactPreviewText(msg) {
     return '📊 ' + (q.slice(0, COMPACT_PREVIEW_LENGTH) || 'Poll');
   }
   if (msg.type === 'gif') return 'GIF';
-  if (msg.type === 'image') return msg.text ? msg.text.slice(0, COMPACT_PREVIEW_LENGTH) : '📷 Image';
+  if (msg.type === 'image') return msg.text || '📷 Image';
   if (msg.type === 'audio') return msg.text || '🎙️ Voice message';
-  return (msg.text || '').slice(0, COMPACT_PREVIEW_LENGTH);
+  return msg.text || '';
 }
 
 function createCompactRow(msg) {
@@ -3711,7 +3711,7 @@ function createCompactRow(msg) {
   const previewEl = document.createElement('span');
   previewEl.className = 'compact-preview';
   const rawPreview = getCompactPreviewText(msg);
-  previewEl.textContent = rawPreview.length >= COMPACT_PREVIEW_LENGTH
+  previewEl.textContent = rawPreview.length > COMPACT_PREVIEW_LENGTH
     ? rawPreview.slice(0, COMPACT_PREVIEW_LENGTH) + '…'
     : rawPreview;
   row.appendChild(previewEl);

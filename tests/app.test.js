@@ -11108,10 +11108,10 @@ describe('compact view mode', () => {
       expect(getCompactPreviewText({ type: 'audio', audioUrl: 'https://example.com/v.mp3' })).toBe('🎙️ Voice message');
     });
 
-    test('truncates text to COMPACT_PREVIEW_LENGTH', () => {
+    test('returns full text without truncating (truncation is done by createCompactRow)', () => {
       const long = 'x'.repeat(COMPACT_PREVIEW_LENGTH + 10);
       const result = getCompactPreviewText({ type: 'text', text: long });
-      expect(result.length).toBe(COMPACT_PREVIEW_LENGTH);
+      expect(result.length).toBe(COMPACT_PREVIEW_LENGTH + 10);
     });
   });
 
@@ -11164,6 +11164,13 @@ describe('compact view mode', () => {
 
     test('preview text is not truncated when at or under COMPACT_PREVIEW_LENGTH', () => {
       const exactMsg = { ...baseMsg, text: 'a'.repeat(COMPACT_PREVIEW_LENGTH - 1) };
+      const row = createCompactRow(exactMsg);
+      const preview = row.querySelector('.compact-preview').textContent;
+      expect(preview).not.toMatch(/…$/);
+    });
+
+    test('preview text at exactly COMPACT_PREVIEW_LENGTH chars is not truncated', () => {
+      const exactMsg = { ...baseMsg, text: 'a'.repeat(COMPACT_PREVIEW_LENGTH) };
       const row = createCompactRow(exactMsg);
       const preview = row.querySelector('.compact-preview').textContent;
       expect(preview).not.toMatch(/…$/);
