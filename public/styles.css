@@ -2332,6 +2332,56 @@ body {
 }
 
 /* ========================================
+   Author Panel — Export row
+   ======================================== */
+.author-panel-export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.author-panel-export-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex: 0 0 100%;
+}
+
+.author-panel-export-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+  min-width: 0;
+}
+
+.author-panel-export-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.author-panel-export-btn:disabled,
+.author-panel-export-btn--loading {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.author-panel-export-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* ========================================
    Saved Badge (header)
    ======================================== */
 .saved-badge {

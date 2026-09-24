@@ -833,10 +833,60 @@ function closeAuthorPanel() {
   }, 260);
 }
 
+async function triggerExportDownload(uid, format, btns) {
+  btns.forEach(btn => { btn.disabled = true; btn.classList.add('author-panel-export-btn--loading'); });
+
+  try {
+    const snapshot = await db.ref('messages').orderByChild('authorId').equalTo(uid).once('value');
+
+    const messages = [];
+    snapshot.forEach(child => {
+      messages.push({ id: child.key, ...child.val() });
+    });
+
+    if (messages.length === 0) {
+      showToast("You haven't posted any messages yet.");
+      return;
+    }
+
+    messages.sort((a, b) => a.timestamp - b.timestamp);
+
+    const dateStr = formatDateYMD(new Date());
+    const filename = `guestbook-messages-${dateStr}.${format}`;
+
+    let content;
+    if (format === 'csv') {
+      content = messagesToCSV(messages);
+    } else {
+      content = messagesToJSON(messages);
+    }
+
+    const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Downloaded ${messages.length} message${messages.length === 1 ? '' : 's'}.`);
+  } catch (err) {
+    console.error('Export failed:', err);
+    showToast('Export failed. Please try again.');
+  } finally {
+    btns.forEach(btn => { btn.disabled = false; btn.classList.remove('author-panel-export-btn--loading'); });
+  }
+}
+
 async function openAuthorPanel(authorId, authorName, photoURL) {
-  // Remove stale mute button from previous open
+  // Remove stale buttons from previous open
   const existingMuteBtn = authorPanelEl.querySelector('.author-panel-mute-btn');
   if (existingMuteBtn) existingMuteBtn.remove();
+  const existingExportRow = authorPanelEl.querySelector('.author-panel-export-row');
+  if (existingExportRow) existingExportRow.remove();
 
   // Populate header immediately
   authorPanelAvatarEl.innerHTML = '';
@@ -1007,6 +1057,35 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
 
         authorPanelBodyEl.appendChild(preview);
       });
+    }
+
+    // Add export buttons for own profile
+    if (currentUser && authorId === currentUser.uid) {
+      const exportRow = document.createElement('div');
+      exportRow.className = 'author-panel-export-row';
+
+      const exportLabel = document.createElement('span');
+      exportLabel.className = 'author-panel-export-label';
+      exportLabel.textContent = 'Export my messages';
+
+      const jsonBtn = document.createElement('button');
+      jsonBtn.type = 'button';
+      jsonBtn.className = 'author-panel-export-btn';
+      jsonBtn.textContent = 'Download JSON';
+
+      const csvBtn = document.createElement('button');
+      csvBtn.type = 'button';
+      csvBtn.className = 'author-panel-export-btn';
+      csvBtn.textContent = 'Download CSV';
+
+      const exportBtns = [jsonBtn, csvBtn];
+      jsonBtn.addEventListener('click', () => triggerExportDownload(authorId, 'json', exportBtns));
+      csvBtn.addEventListener('click', () => triggerExportDownload(authorId, 'csv', exportBtns));
+
+      exportRow.appendChild(exportLabel);
+      exportRow.appendChild(jsonBtn);
+      exportRow.appendChild(csvBtn);
+      authorPanelBodyEl.appendChild(exportRow);
     }
 
     // Add mute/unmute button for non-self profiles
