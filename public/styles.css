@@ -2015,6 +2015,94 @@ body {
 }
 
 /* ========================================
+   Share as Image Button
+   ======================================== */
+.btn-share-image {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-share-image svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-card:hover .btn-share-image {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-share-image:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-share-image:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .btn-share-image {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ========================================
+   Share as Image Dropdown
+   ======================================== */
+.share-image-dropdown {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+  min-width: 160px;
+}
+
+.share-image-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  transition: background var(--transition);
+}
+
+.share-image-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+.share-image-dropdown-item:hover {
+  background: var(--bg-subtle);
+}
+
+.share-image-dropdown-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+/* ========================================
    Bookmark Button
    ======================================== */
 .btn-bookmark {

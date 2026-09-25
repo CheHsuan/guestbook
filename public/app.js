@@ -42,6 +42,7 @@ const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+const SHARE_IMAGE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -3515,6 +3516,298 @@ function createAvatarElement(photoURL, author) {
 }
 
 // ========================================
+// Share as Image (Canvas API)
+// ========================================
+
+// Wrap text onto multiple canvas lines. Returns the y-coordinate after the last line.
+function canvasWrapText(ctx, text, x, startY, maxWidth, lineHeight, maxY) {
+  if (!text) return startY;
+  const words = text.split(' ');
+  let line = '';
+  let y = startY;
+  for (let i = 0; i < words.length; i++) {
+    const testLine = line ? line + ' ' + words[i] : words[i];
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      if (y + lineHeight > maxY) break;
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      line = words[i];
+    } else {
+      line = testLine;
+    }
+  }
+  if (line && y + lineHeight <= maxY) {
+    ctx.fillText(line, x, y);
+    y += lineHeight;
+  }
+  return y;
+}
+
+function generateShareImageCard(params) {
+  const { author, timeStr, text, photoURL, type, mood } = params;
+
+  const canvas = document.createElement('canvas');
+  if (!canvas.getContext) return Promise.reject(new Error('Canvas not supported'));
+
+  const W = 800, H = 420;
+  const PAD = 20;
+  const INNER_X = PAD + 12;
+
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return Promise.reject(new Error('Canvas not supported'));
+
+  const isDark = typeof document !== 'undefined' &&
+    document.documentElement.getAttribute('data-theme') === 'dark';
+  const bgColor        = isDark ? '#000000' : '#ffffff';
+  const borderColor    = isDark ? '#2f3336' : '#eff3f4';
+  const textPrimary    = isDark ? '#e7e9ea' : '#0f1419';
+  const textSecondary  = isDark ? '#71767b' : '#536471';
+  const accentColor    = '#1d9bf0';
+
+  function render(avatarImg) {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD + 0.5, PAD + 0.5, W - PAD * 2 - 1, H - PAD * 2 - 1);
+
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(PAD, PAD, W - PAD * 2, 3);
+
+    const AVATAR_R = 16;
+    const avatarCX = INNER_X + AVATAR_R;
+    const avatarCY = PAD + 3 + 12 + AVATAR_R;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avatarCX, avatarCY, AVATAR_R, 0, Math.PI * 2);
+    ctx.clip();
+    if (avatarImg) {
+      ctx.drawImage(avatarImg, avatarCX - AVATAR_R, avatarCY - AVATAR_R, AVATAR_R * 2, AVATAR_R * 2);
+    } else {
+      const colorIndex = (author ? author.charCodeAt(0) : 0) % AVATAR_FALLBACK_COLORS.length;
+      ctx.fillStyle = AVATAR_FALLBACK_COLORS[colorIndex];
+      ctx.fillRect(avatarCX - AVATAR_R, avatarCY - AVATAR_R, AVATAR_R * 2, AVATAR_R * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(author ? author.charAt(0).toUpperCase() : '?', avatarCX, avatarCY);
+    }
+    ctx.restore();
+
+    const nameX = avatarCX + AVATAR_R + 10;
+    ctx.fillStyle = textPrimary;
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const authorTrunc = author ? author.slice(0, 40) : '';
+    ctx.fillText(authorTrunc, nameX, avatarCY);
+    const authorW = ctx.measureText(authorTrunc).width;
+
+    ctx.fillStyle = textSecondary;
+    ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(' · ' + timeStr, nameX + authorW, avatarCY);
+
+    let displayText = '';
+    let typeLabel = '';
+    if (type === 'poll') {
+      displayText = typeof text === 'string' ? text : '';
+      typeLabel = '📊 Poll';
+    } else if (type === 'gif') {
+      displayText = (typeof text === 'string' && text) ? text : 'GIF';
+    } else {
+      displayText = typeof text === 'string' ? text : '';
+    }
+    if (displayText.length > 200) {
+      displayText = displayText.slice(0, 200) + '…';
+    }
+
+    const BOTTOM_RESERVE = PAD + 26;
+    let curY = avatarCY + AVATAR_R + 16;
+
+    if (typeLabel) {
+      ctx.fillStyle = textSecondary;
+      ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      ctx.fillText(typeLabel, INNER_X, curY);
+      curY += 20;
+    }
+
+    const fontSize = displayText.length > 0 && displayText.length < 10 ? 32 : 22;
+    const lineH = Math.round(fontSize * 1.45);
+    ctx.fillStyle = textPrimary;
+    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    curY = canvasWrapText(ctx, displayText, INNER_X, curY, W - PAD * 2 - 24, lineH, H - BOTTOM_RESERVE);
+
+    if (mood && curY + 28 <= H - BOTTOM_RESERVE) {
+      ctx.font = '22px serif';
+      ctx.fillText(mood, INNER_X, curY);
+    }
+
+    ctx.fillStyle = textSecondary;
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('guestbook.slashstack.app', W - PAD - 12, H - PAD - 8);
+
+    return new Promise(function(resolve, reject) {
+      canvas.toBlob(function(blob) {
+        if (blob) resolve(blob);
+        else reject(new Error('Canvas toBlob failed'));
+      }, 'image/png');
+    });
+  }
+
+  if (photoURL) {
+    return new Promise(function(resolve) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const t = setTimeout(function() { img.src = ''; resolve(render(null)); }, 3000);
+      img.onload = function() { clearTimeout(t); resolve(render(img)); };
+      img.onerror = function() { clearTimeout(t); resolve(render(null)); };
+      img.src = photoURL;
+    });
+  }
+  return render(null);
+}
+
+function showShareImageDropdown(blob, anchorEl) {
+  const existing = document.querySelector('.share-image-dropdown');
+  if (existing) existing.remove();
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'share-image-dropdown';
+  dropdown.setAttribute('role', 'menu');
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'share-image-dropdown-item';
+  copyBtn.setAttribute('role', 'menuitem');
+  copyBtn.textContent = 'Copy image';
+  copyBtn.addEventListener('click', async function() {
+    dropdown.remove();
+    try {
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        showToast('Image copied!');
+      } else {
+        showToast('Copy not supported in this browser.');
+      }
+    } catch (_) {
+      showToast('Could not copy image.');
+    }
+  });
+
+  const dlBtn = document.createElement('button');
+  dlBtn.className = 'share-image-dropdown-item';
+  dlBtn.setAttribute('role', 'menuitem');
+  dlBtn.textContent = 'Download PNG';
+  dlBtn.addEventListener('click', function() {
+    dropdown.remove();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'guestbook-message.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+    showToast('Downloading…');
+  });
+
+  dropdown.appendChild(copyBtn);
+  dropdown.appendChild(dlBtn);
+  document.body.appendChild(dropdown);
+
+  const rect = anchorEl.getBoundingClientRect();
+  dropdown.style.position = 'fixed';
+  dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+  dropdown.style.top = (rect.bottom + 4) + 'px';
+  dropdown.style.zIndex = '500';
+
+  function onOutside(e) {
+    if (!dropdown.contains(e.target)) {
+      dropdown.remove();
+      document.removeEventListener('click', onOutside, true);
+    }
+  }
+  setTimeout(function() { document.addEventListener('click', onOutside, true); }, 0);
+  copyBtn.focus();
+}
+
+async function shareMessageAsImage(msg, card, btn) {
+  const testCanvas = document.createElement('canvas');
+  if (!testCanvas.getContext) {
+    showToast('Image sharing is not supported in this browser.');
+    return;
+  }
+
+  const authorEl = card.querySelector('.message-author');
+  const timeEl   = card.querySelector('.message-time');
+  const textEl   = card.querySelector('.message-text');
+
+  const author = authorEl ? authorEl.textContent : (msg.author || '');
+
+  let timeStr = '';
+  if (timeEl) {
+    for (let i = 0; i < timeEl.childNodes.length; i++) {
+      const node = timeEl.childNodes[i];
+      if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+        timeStr = node.textContent.trim();
+        break;
+      }
+    }
+  }
+
+  const msgType = msg.type || 'text';
+  let text = '';
+  if (msgType === 'poll') {
+    text = (msg.poll && typeof msg.poll.question === 'string') ? msg.poll.question : '';
+  } else if (msgType === 'gif') {
+    text = (typeof msg.gifAlt === 'string' && msg.gifAlt) ? msg.gifAlt : 'GIF';
+  } else if (textEl) {
+    text = textEl.textContent || '';
+  }
+
+  const mood = (msg.mood && MOOD_VALID_EMOJIS.has(msg.mood)) ? msg.mood : '';
+
+  let blob;
+  try {
+    blob = await generateShareImageCard({
+      author,
+      timeStr,
+      text,
+      photoURL: msg.photoURL || null,
+      type: msgType,
+      mood,
+    });
+  } catch (_) {
+    showToast('Could not generate image.');
+    return;
+  }
+
+  if (navigator.canShare) {
+    const file = new File([blob], 'guestbook-message.png', { type: 'image/png' });
+    try {
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Guestbook message' });
+        return;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+    }
+  }
+
+  showShareImageDropdown(blob, btn);
+}
+
+// ========================================
 // Poll Body (feed card)
 // ========================================
 function createPollBody(msgId, options, user) {
@@ -4452,6 +4745,24 @@ function createMessageCard(msg, user, isNew, isArchive) {
 
   cardFooter.appendChild(bookmarkBtn);
   cardFooter.appendChild(shareBtn);
+
+  // Share as image button — visible to all visitors (not gated on auth)
+  const shareImageBtn = document.createElement('button');
+  shareImageBtn.className = 'btn-share-image';
+  shareImageBtn.setAttribute('aria-label', 'Share as image');
+  shareImageBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+  shareImageBtn.innerHTML = SHARE_IMAGE_ICON; // static SVG — no user data
+
+  if (!isMobile) {
+    card.addEventListener('mouseenter', () => shareImageBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => shareImageBtn.setAttribute('tabindex', '-1'));
+  }
+
+  shareImageBtn.addEventListener('click', function() {
+    shareMessageAsImage(msg, card, shareImageBtn);
+  });
+
+  cardFooter.appendChild(shareImageBtn);
 
   // Replies section (hidden until replies exist)
   const repliesSection = document.createElement('div');
@@ -6814,5 +7125,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, generateShareImageCard, canvasWrapText };
 }
