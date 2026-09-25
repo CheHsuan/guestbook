@@ -2815,6 +2815,189 @@ describe('share button', () => {
   });
 });
 
+// --- share as image button ---
+describe('share as image button', () => {
+  let createMessageCard;
+  let generateShareImageCard;
+  let canvasWrapText;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, generateShareImageCard, canvasWrapText } = require('../public/app.js'));
+
+    // Mock canvas API (jsdom does not implement it)
+    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
+      fillRect: jest.fn(),
+      fillText: jest.fn(),
+      measureText: jest.fn().mockReturnValue({ width: 50 }),
+      beginPath: jest.fn(),
+      arc: jest.fn(),
+      clip: jest.fn(),
+      drawImage: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+      strokeRect: jest.fn(),
+      fillStyle: '',
+      strokeStyle: '',
+      lineWidth: 0,
+      font: '',
+      textAlign: '',
+      textBaseline: '',
+    });
+    HTMLCanvasElement.prototype.toBlob = jest.fn().mockImplementation(function(cb) {
+      cb(new Blob(['png-data'], { type: 'image/png' }));
+    });
+  });
+
+  const baseMsg = {
+    id: 'si-msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  test('renders .btn-share-image on every card', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-share-image')).not.toBeNull();
+  });
+
+  test('.btn-share-image has aria-label="Share as image"', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-share-image').getAttribute('aria-label')).toBe('Share as image');
+  });
+
+  test('.btn-share-image has tabindex="-1" in non-touch environment', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-share-image').getAttribute('tabindex')).toBe('-1');
+  });
+
+  test('.btn-share-image appears after .btn-share in the footer', () => {
+    const card = createMessageCard(baseMsg, null);
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const shareIdx = children.findIndex(el => el.classList.contains('btn-share'));
+    const shareImgIdx = children.findIndex(el => el.classList.contains('btn-share-image'));
+    expect(shareImgIdx).toBeGreaterThan(shareIdx);
+  });
+
+  test('generateShareImageCard resolves to a Blob for a standard text message', async () => {
+    const blob = await generateShareImageCard({
+      author: 'Alice',
+      timeStr: '3:42 PM',
+      text: 'Hello world',
+      photoURL: null,
+      type: 'text',
+      mood: '',
+    });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('image/png');
+  });
+
+  test('generateShareImageCard truncates text longer than 200 chars', async () => {
+    const ctx = HTMLCanvasElement.prototype.getContext();
+    ctx.fillText.mockClear();
+
+    const longText = 'a'.repeat(250);
+    await generateShareImageCard({
+      author: 'Bob',
+      timeStr: '4:00 PM',
+      text: longText,
+      photoURL: null,
+      type: 'text',
+      mood: '',
+    });
+    // fillText should never be called with a string longer than 201 chars (200 + '…')
+    const calls = ctx.fillText.mock.calls;
+    calls.forEach(([text]) => {
+      if (typeof text === 'string') {
+        expect(text.length).toBeLessThanOrEqual(201);
+      }
+    });
+  });
+
+  test('generateShareImageCard uses poll question for poll type', async () => {
+    const ctx = HTMLCanvasElement.prototype.getContext();
+    ctx.fillText.mockClear();
+
+    await generateShareImageCard({
+      author: 'Alice',
+      timeStr: '5:00 PM',
+      text: 'What is your favourite color?',
+      photoURL: null,
+      type: 'poll',
+      mood: '',
+    });
+    const allText = ctx.fillText.mock.calls.map(([t]) => t).join(' ');
+    expect(allText).toContain('📊 Poll');
+  });
+
+  test('generateShareImageCard draws GIF placeholder for gif type when no alt text', async () => {
+    const ctx = HTMLCanvasElement.prototype.getContext();
+    ctx.fillText.mockClear();
+
+    await generateShareImageCard({
+      author: 'Alice',
+      timeStr: '5:00 PM',
+      text: '',
+      photoURL: null,
+      type: 'gif',
+      mood: '',
+    });
+    const allText = ctx.fillText.mock.calls.map(([t]) => t).join(' ');
+    expect(allText).toContain('GIF');
+  });
+
+  test('generateShareImageCard draws watermark', async () => {
+    const ctx = HTMLCanvasElement.prototype.getContext();
+    ctx.fillText.mockClear();
+
+    await generateShareImageCard({
+      author: 'Alice',
+      timeStr: '3:00 PM',
+      text: 'Test',
+      photoURL: null,
+      type: 'text',
+      mood: '',
+    });
+    const allText = ctx.fillText.mock.calls.map(([t]) => t).join(' ');
+    expect(allText).toContain('guestbook.slashstack.app');
+  });
+
+  test('canvasWrapText returns startY when text is empty', () => {
+    const mockCtx = { measureText: jest.fn().mockReturnValue({ width: 0 }), fillText: jest.fn() };
+    const result = canvasWrapText(mockCtx, '', 20, 100, 760, 32, 400);
+    expect(result).toBe(100);
+  });
+
+  test('canvasWrapText renders a single short line without wrapping', () => {
+    const mockCtx = { measureText: jest.fn().mockReturnValue({ width: 10 }), fillText: jest.fn() };
+    const result = canvasWrapText(mockCtx, 'Hello', 20, 100, 760, 32, 400);
+    expect(mockCtx.fillText).toHaveBeenCalledTimes(1);
+    expect(result).toBe(132); // 100 + lineH 32
+  });
+});
+
 // --- handleDeepLink ---
 describe('handleDeepLink', () => {
   let handleDeepLink;
