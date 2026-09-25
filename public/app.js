@@ -4898,6 +4898,393 @@ function attachHashtagAutocomplete(textarea, relativeParent) {
 }
 
 // ========================================
+// Emoji Shortcode Autocomplete
+// ========================================
+
+const EMOJI_DATA = {
+  // Smileys & Emotions
+  grinning: '😀', smiley: '😃', smile: '😄', grin: '😁', laughing: '😆',
+  sweat_smile: '😅', rofl: '🤣', joy: '😂', slightly_smiling_face: '🙂',
+  upside_down_face: '🙃', wink: '😉', blush: '😊', innocent: '😇',
+  heart_eyes: '😍', kissing_heart: '😘', kissing: '😗',
+  kissing_smiling_eyes: '😙', kissing_closed_eyes: '😚', yum: '😋',
+  stuck_out_tongue: '😛', stuck_out_tongue_winking_eye: '😜', zany_face: '🤪',
+  stuck_out_tongue_closed_eyes: '😝', money_mouth_face: '🤑', hugs: '🤗',
+  hand_over_mouth: '🤭', shushing_face: '🤫', thinking: '🤔',
+  zipper_mouth_face: '🤐', raised_eyebrow: '🤨', neutral_face: '😐',
+  expressionless: '😑', no_mouth: '😶', smirk: '😏', unamused: '😒',
+  roll_eyes: '🙄', grimacing: '😬', lying_face: '🤥', relieved: '😌',
+  pensive: '😔', sleepy: '😪', drooling_face: '🤤', sleeping: '😴',
+  mask: '😷', face_with_thermometer: '🤒', face_with_head_bandage: '🤕',
+  nauseated_face: '🤢', sneezing_face: '🤧', hot_face: '🥵', cold_face: '🥶',
+  woozy_face: '🥴', dizzy_face: '😵', exploding_head: '🤯',
+  cowboy_hat_face: '🤠', partying_face: '🥳', sunglasses: '😎',
+  nerd_face: '🤓', monocle_face: '🧐', confused: '😕', worried: '😟',
+  slightly_frowning_face: '🙁', open_mouth: '😮', hushed: '😯',
+  astonished: '😲', flushed: '😳', pleading_face: '🥺', fearful: '😨',
+  cold_sweat: '😰', disappointed_relieved: '😥', cry: '😢', sob: '😭',
+  scream: '😱', confounded: '😖', persevere: '😣', disappointed: '😞',
+  sweat: '😓', weary: '😩', tired_face: '😫', yawning_face: '🥱',
+  triumph: '😤', rage: '😡', angry: '😠', skull: '💀',
+  skull_and_crossbones: '☠️', poop: '💩', clown_face: '🤡',
+  japanese_ogre: '👹', japanese_goblin: '👺', ghost: '👻', alien: '👽',
+  space_invader: '👾', robot: '🤖',
+  // Gestures & Body
+  wave: '👋', raised_back_of_hand: '🤚', raised_hand: '✋',
+  vulcan_salute: '🖖', ok_hand: '👌', pinching_hand: '🤏', v: '✌️',
+  crossed_fingers: '🤞', love_you_gesture: '🤟', sign_of_the_horns: '🤘',
+  call_me_hand: '🤙', point_left: '👈', point_right: '👉',
+  point_up_2: '👆', middle_finger: '🖕', point_down: '👇', point_up: '☝️',
+  thumbs_up: '👍', thumbs_down: '👎', fist: '✊', punch: '👊',
+  left_facing_fist: '🤛', right_facing_fist: '🤜', clap: '👏',
+  raised_hands: '🙌', open_hands: '👐', palms_up_together: '🤲',
+  handshake: '🤝', pray: '🙏', writing_hand: '✍️', nail_care: '💅',
+  selfie: '🤳', muscle: '💪', mechanical_arm: '🦾', mechanical_leg: '🦿',
+  ear: '👂', nose: '👃', brain: '🧠', tooth: '🦷', bone: '🦴',
+  eyes: '👀', eye: '👁️', tongue: '👅', lips: '👄',
+  // People
+  baby: '👶', boy: '👦', girl: '👧', man: '👨', woman: '👩',
+  older_man: '👴', older_woman: '👵', person: '🧑', angel: '👼',
+  santa: '🎅', mrs_claus: '🤶', superhero: '🦸', supervillain: '🦹',
+  mage: '🧙', fairy: '🧚', vampire: '🧛', mermaid: '🧜', elf: '🧝',
+  genie: '🧞', zombie: '🧟', shrug: '🤷', construction_worker: '👷',
+  guard: '💂', detective: '🕵️', princess: '👸', prince: '🤴',
+  bride: '👰', groom: '🤵', man_dancing: '🕺', dancer: '💃',
+  juggling: '🤹', family: '👪', couple: '👫',
+  two_men_holding_hands: '👬', two_women_holding_hands: '👭',
+  // Hearts & Symbols
+  heart: '❤️', orange_heart: '🧡', yellow_heart: '💛', green_heart: '💚',
+  blue_heart: '💙', purple_heart: '💜', brown_heart: '🤎',
+  black_heart: '🖤', white_heart: '🤍', broken_heart: '💔',
+  heavy_heart_exclamation: '❣️', two_hearts: '💕', revolving_hearts: '💞',
+  heartbeat: '💓', heartpulse: '💗', sparkling_heart: '💖', cupid: '💘',
+  gift_heart: '💝', heart_decoration: '💟', hundred: '💯', boom: '💥',
+  anger: '💢', speech_balloon: '💬', thought_balloon: '💭', zzz: '💤',
+  exclamation: '❗', question: '❓', heavy_check_mark: '✔️', x: '❌',
+  negative_squared_cross_mark: '❎', o: '⭕', stop_sign: '🛑',
+  no_entry: '⛔', prohibited: '🚫', warning: '⚠️', zap: '⚡',
+  recycle: '♻️', infinity: '♾️', tada: '🎉', ribbon: '🎀', gift: '🎁',
+  balloon: '🎈', confetti_ball: '🎊', sparkles: '✨', star: '⭐',
+  star2: '🌟', dizzy: '💫', fire: '🔥', rainbow: '🌈', cloud: '☁️',
+  sunny: '☀️', snowflake: '❄️', umbrella: '☂️', droplet: '💧',
+  sweat_drops: '💦', ocean: '🌊',
+  // Animals
+  dog: '🐶', cat: '🐱', mouse: '🐭', hamster: '🐹', rabbit: '🐰',
+  fox_face: '🦊', bear: '🐻', panda_face: '🐼', koala: '🐨',
+  tiger: '🐯', lion: '🦁', cow: '🐮', pig: '🐷', pig_nose: '🐽',
+  frog: '🐸', monkey_face: '🐵', see_no_evil: '🙈', hear_no_evil: '🙉',
+  speak_no_evil: '🙊', monkey: '🐒', chicken: '🐔', penguin: '🐧',
+  bird: '🐦', baby_chick: '🐤', duck: '🦆', eagle: '🦅', owl: '🦉',
+  bat: '🦇', wolf: '🐺', boar: '🐗', horse: '🐴', unicorn: '🦄',
+  bee: '🐝', bug: '🐛', butterfly: '🦋', snail: '🐌', shell: '🐚',
+  ant: '🐜', mosquito: '🦟', cricket: '🦗', spider: '🕷️',
+  scorpion: '🦂', turtle: '🐢', snake: '🐍', lizard: '🦎',
+  dragon_face: '🐲', dragon: '🐉', sauropod: '🦕', t_rex: '🦖',
+  whale: '🐳', dolphin: '🐬', fish: '🐟', tropical_fish: '🐠',
+  blowfish: '🐡', shark: '🦈', octopus: '🐙', crab: '🦀',
+  lobster: '🦞', shrimp: '🦐', squid: '🦑', deer: '🦌',
+  giraffe: '🦒', zebra: '🦓', elephant: '🐘', rhinoceros: '🦏',
+  hippopotamus: '🦛', gorilla: '🦍', orangutan: '🦧', flamingo: '🦩',
+  peacock: '🦚', parrot: '🦜', sloth: '🦥', otter: '🦦', skunk: '🦨',
+  kangaroo: '🦘', badger: '🦡', hedgehog: '🦔',
+  // Food & Drink
+  apple: '🍎', green_apple: '🍏', pear: '🍐', tangerine: '🍊',
+  lemon: '🍋', banana: '🍌', watermelon: '🍉', grapes: '🍇',
+  strawberry: '🍓', melon: '🍈', cherries: '🍒', peach: '🍑',
+  mango: '🥭', pineapple: '🍍', coconut: '🥥', kiwi_fruit: '🥝',
+  tomato: '🍅', eggplant: '🍆', avocado: '🥑', broccoli: '🥦',
+  leafy_green: '🥬', cucumber: '🥒', hot_pepper: '🌶️', corn: '🌽',
+  carrot: '🥕', garlic: '🧄', onion: '🧅', potato: '🥔',
+  sweet_potato: '🍠', mushroom: '🍄', peanuts: '🥜', chestnut: '🌰',
+  bread: '🍞', croissant: '🥐', baguette_bread: '🥖', pretzel: '🥨',
+  bagel: '🥯', waffle: '🧇', pancakes: '🥞', cheese: '🧀',
+  hamburger: '🍔', fries: '🍟', pizza: '🍕', hot_dog: '🌭',
+  sandwich: '🥪', taco: '🌮', burrito: '🌯', egg: '🥚', cooking: '🍳',
+  spaghetti: '🍝', ramen: '🍜', curry: '🍛', rice: '🍚',
+  rice_ball: '🍙', bento: '🍱', sushi: '🍣', fried_shrimp: '🍤',
+  fish_cake: '🍥', dumpling: '🥟', ice_cream: '🍦', shaved_ice: '🍧',
+  ice_cream2: '🍨', doughnut: '🍩', cookie: '🍪', birthday: '🎂',
+  cake: '🍰', cupcake: '🧁', pie: '🥧', chocolate_bar: '🍫',
+  candy: '🍬', lollipop: '🍭', honey_pot: '🍯', coffee: '☕',
+  tea: '🍵', milk_glass: '🥛', wine_glass: '🍷', cocktail: '🍸',
+  tropical_drink: '🍹', beer: '🍺', beers: '🍻',
+  clinking_glasses: '🥂', tumbler_glass: '🥃', cup_with_straw: '🥤',
+  beverage_box: '🧃', bubble_tea: '🧋', salt: '🧂',
+  fork_and_knife: '🍴', spoon: '🥄', chopsticks: '🥢',
+  // Travel & Places
+  earth_africa: '🌍', earth_americas: '🌎', earth_asia: '🌏',
+  globe_with_meridians: '🌐', world_map: '🗺️', compass: '🧭',
+  mount_fuji: '🗻', camping: '🏕️', beach_umbrella: '🏖️',
+  desert: '🏜️', desert_island: '🏝️', national_park: '🏞️',
+  stadium: '🏟️', house: '🏠', school: '🏫', hospital: '🏥',
+  bank: '🏦', hotel: '🏨', convenience_store: '🏪', church: '⛪',
+  mosque: '🕌', synagogue: '🕍', european_castle: '🏰',
+  japanese_castle: '🏯', bridge_at_night: '🌉', fountain: '⛲',
+  tent: '⛺', foggy: '🌁', night_with_stars: '🌃', cityscape: '🏙️',
+  sunrise_over_mountains: '🌄', sunrise: '🌅', city_sunset: '🌇',
+  milky_way: '🌌', fireworks: '🎆', sparkler: '🎇',
+  partly_sunny: '⛅', lightning: '🌩️', rain: '🌧️', snowman: '⛄',
+  wind_face: '🌬️', tornado: '🌪️', fog: '🌫️', full_moon: '🌕',
+  new_moon: '🌑', crescent_moon: '🌙', comet: '☄️',
+  // Activities & Sports
+  soccer: '⚽', basketball: '🏀', football: '🏈', baseball: '⚾',
+  softball: '🥎', tennis: '🎾', volleyball: '🏐', rugby_football: '🏉',
+  flying_disc: '🥏', boomerang: '🪃', bowling: '🎳',
+  cricket_game: '🏏', field_hockey: '🏑', ice_hockey: '🏒',
+  lacrosse: '🥍', ping_pong: '🏓', badminton: '🏸',
+  boxing_glove: '🥊', martial_arts_uniform: '🥋', goal_net: '🥅',
+  golf: '⛳', ice_skate: '⛸️', fishing_pole_and_fish: '🎣',
+  diving_mask: '🤿', ski: '🎿', sled: '🛷', curling_stone: '🥌',
+  dart: '🎯', skateboard: '🛹', trophy: '🏆', medal_sports: '🏅',
+  first_place_medal: '🥇', second_place_medal: '🥈',
+  third_place_medal: '🥉', ticket: '🎫', circus_tent: '🎪',
+  performing_arts: '🎭', art: '🎨', slot_machine: '🎰',
+  game_die: '🎲', chess_pawn: '♟️', joystick: '🕹️',
+  // Nature
+  hibiscus: '🌺', sunflower: '🌻', rose: '🌹', wilted_flower: '🥀',
+  tulip: '🌷', seedling: '🌱', evergreen_tree: '🌲',
+  deciduous_tree: '🌳', palm_tree: '🌴', cactus: '🌵',
+  ear_of_rice: '🌾', herb: '🌿', shamrock: '☘️',
+  four_leaf_clover: '🍀', maple_leaf: '🍁', fallen_leaf: '🍂',
+  leaves: '🍃', blossom: '🌼', cherry_blossom: '🌸', bouquet: '💐',
+  // Objects
+  phone: '📱', calling: '📲', telephone_receiver: '📞',
+  telephone: '☎️', laptop: '💻', desktop_computer: '🖥️',
+  keyboard: '⌨️', computer_mouse: '🖱️', printer: '🖨️',
+  battery: '🔋', electric_plug: '🔌', bulb: '💡', flashlight: '🔦',
+  candle: '🕯️', money_with_wings: '💸', dollar: '💵', yen: '💴',
+  euro: '💶', pound: '💷', moneybag: '💰', gem: '💎',
+  credit_card: '💳', chart_with_upwards_trend: '📈',
+  chart_with_downwards_trend: '📉', bar_chart: '📊',
+  clipboard: '📋', calendar: '📅', card_index: '📇',
+  wastebasket: '🗑️', file_folder: '📁', open_file_folder: '📂',
+  newspaper: '📰', notebook: '📓', books: '📚', open_book: '📖',
+  link: '🔗', paperclip: '📎', scissors: '✂️', pencil: '✏️',
+  pen: '🖊️', black_nib: '✒️', crayon: '🖍️',
+  magnifying_glass_left: '🔍', magnifying_glass_right: '🔎',
+  lock: '🔒', unlock: '🔓', key: '🔑', old_key: '🗝️',
+  hammer: '🔨', axe: '🪓', wrench: '🔧', screwdriver: '🪛',
+  nut_and_bolt: '🔩', toolbox: '🧰', chains: '⛓️', gun: '🔫',
+  bomb: '💣', knife: '🔪', shield: '🛡️', coffin: '⚰️', urn: '⚱️',
+  crystal_ball: '🔮', magic_wand: '🪄', shopping_cart: '🛒',
+  door: '🚪', bed: '🛏️', couch_and_lamp: '🛋️', chair: '🪑',
+  toilet: '🚽', shower: '🚿', bathtub: '🛁', soap: '🧼',
+  toothbrush: '🪥', mirror: '🪞', broom: '🧹', basket: '🧺',
+  bucket: '🪣', lotion_bottle: '🧴', thread: '🧵', yarn: '🧶',
+  nazar_amulet: '🧿', teddy_bear: '🧸', pinata: '🪅',
+  nesting_dolls: '🪆', moyai: '🗿', briefcase: '💼',
+  luggage: '🧳', shopping_bags: '🛍️', backpack: '🎒',
+  pushpin: '📌', round_pushpin: '📍', triangular_ruler: '📐',
+  straight_ruler: '📏', scroll: '📜', memo: '📝',
+  microscope: '🔬', telescope: '🔭', satellite: '📡',
+  syringe: '💉', stethoscope: '🩺', pill: '💊',
+  adhesive_bandage: '🩹', drop_of_blood: '🩸',
+  thermometer: '🌡️', dna: '🧬', test_tube: '🧪',
+  petri_dish: '🧫', alembic: '⚗️', abacus: '🧮',
+  envelope: '✉️', email: '📧', inbox_tray: '📥',
+  outbox_tray: '📤', package: '📦', mailbox: '📫',
+  // Transport
+  car: '🚗', taxi: '🚕', bus: '🚌', trolleybus: '🚎',
+  racing_car: '🏎️', police_car: '🚓', ambulance: '🚑',
+  fire_engine: '🚒', minibus: '🚐', truck: '🚚', bike: '🚲',
+  motorcycle: '🏍️', kick_scooter: '🛴', airplane: '✈️',
+  helicopter: '🚁', rocket: '🚀', flying_saucer: '🛸',
+  ship: '🚢', boat: '⛵', speedboat: '🚤', anchor: '⚓',
+  train: '🚂', train2: '🚃', subway: '🚇', monorail: '🚝',
+  bullettrain_side: '🚄', bullettrain_front: '🚅', fuelpump: '⛽',
+  // Music & Entertainment
+  musical_note: '🎵', notes: '🎶', microphone: '🎤',
+  headphones: '🎧', radio: '📻', saxophone: '🎷', guitar: '🎸',
+  musical_keyboard: '🎹', trumpet: '🎺', violin: '🎻', banjo: '🪕',
+  drum: '🥁', bell: '🔔', no_bell: '🔕', mega: '📣',
+  loudspeaker: '📢', mute: '🔇', loud_sound: '🔊', sound: '🔉',
+  christmas_tree: '🎄', jack_o_lantern: '🎃', wind_chime: '🎐',
+  label: '🏷️', bookmark: '🔖',
+};
+
+/**
+ * Returns the emoji :shortcode prefix the user is currently typing, or null.
+ * Trigger: ':' preceded by a non-word character (or start-of-string),
+ * followed by ≥1 alphanumeric/underscore chars up to the cursor.
+ */
+function getEmojiPrefix(textarea) {
+  const val = textarea.value;
+  const pos = textarea.selectionStart;
+  let i = pos - 1;
+  while (i >= 0 && /[a-zA-Z0-9_]/.test(val[i])) i--;
+  if (i >= 0 && val[i] === ':') {
+    // Reject if ':' is preceded by a word character (e.g. "don't:")
+    if (i > 0 && /[a-zA-Z0-9_]/.test(val[i - 1])) return null;
+    const prefix = val.slice(i + 1, pos);
+    if (prefix.length === 0) return null;
+    if (prefix.length > 30) return null;
+    return { prefix, colonIndex: i };
+  }
+  return null;
+}
+
+/**
+ * Returns up to 6 emoji matches for the given prefix, sorted by shortcode
+ * length (shorter = more common / more likely intended).
+ */
+function getEmojiSuggestions(prefix) {
+  if (!prefix) return [];
+  const lower = prefix.toLowerCase();
+  const matches = [];
+  for (const shortcode of Object.keys(EMOJI_DATA)) {
+    if (shortcode.startsWith(lower)) {
+      matches.push({ emoji: EMOJI_DATA[shortcode], shortcode });
+    }
+  }
+  matches.sort((a, b) => a.shortcode.length - b.shortcode.length);
+  return matches.slice(0, 6);
+}
+
+function attachEmojiAutocomplete(textarea, relativeParent) {
+  let dropdown = null;
+  let activeIndex = -1;
+  let currentColonIndex = -1;
+  let currentSuggestions = [];
+
+  function removeDropdown() {
+    if (dropdown) {
+      dropdown.remove();
+      dropdown = null;
+    }
+    activeIndex = -1;
+    currentColonIndex = -1;
+    currentSuggestions = [];
+    textarea.removeAttribute('aria-expanded');
+  }
+
+  function selectItem(suggestion) {
+    const val = textarea.value;
+    const pos = textarea.selectionStart;
+    const before = val.slice(0, currentColonIndex);
+    const after = val.slice(pos);
+    const inserted = suggestion.emoji + ' ';
+    textarea.value = before + inserted + after;
+    const newCursor = before.length + inserted.length;
+    textarea.setSelectionRange(newCursor, newCursor);
+    removeDropdown();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function setActiveIndex(idx) {
+    const items = dropdown ? dropdown.querySelectorAll('.emoji-dropdown-item') : [];
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.remove('active');
+      items[activeIndex].setAttribute('aria-selected', 'false');
+    }
+    activeIndex = idx;
+    if (activeIndex >= 0 && activeIndex < items.length) {
+      items[activeIndex].classList.add('active');
+      items[activeIndex].setAttribute('aria-selected', 'true');
+      items[activeIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function renderDropdown(suggestions) {
+    currentSuggestions = suggestions;
+    if (!dropdown) {
+      dropdown = document.createElement('div');
+      dropdown.className = 'emoji-dropdown';
+      dropdown.setAttribute('role', 'listbox');
+      dropdown.setAttribute('aria-label', 'Emoji suggestions');
+      relativeParent.appendChild(dropdown);
+    }
+
+    const taRect = textarea.getBoundingClientRect();
+    const parentRect = relativeParent.getBoundingClientRect();
+    dropdown.style.top = (taRect.bottom - parentRect.top + relativeParent.scrollTop) + 'px';
+    dropdown.style.left = (taRect.left - parentRect.left) + 'px';
+    dropdown.style.width = taRect.width + 'px';
+
+    dropdown.innerHTML = '';
+    activeIndex = -1;
+    textarea.setAttribute('aria-expanded', 'true');
+
+    suggestions.forEach((suggestion) => {
+      const item = document.createElement('div');
+      item.className = 'emoji-dropdown-item';
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', 'false');
+
+      const emojiSpan = document.createElement('span');
+      emojiSpan.className = 'emoji-dropdown-char';
+      emojiSpan.textContent = suggestion.emoji;
+      emojiSpan.setAttribute('aria-hidden', 'true');
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'emoji-dropdown-name';
+      nameSpan.textContent = ':' + suggestion.shortcode + ':';
+
+      item.appendChild(emojiSpan);
+      item.appendChild(nameSpan);
+
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        selectItem(suggestion);
+      });
+
+      dropdown.appendChild(item);
+    });
+  }
+
+  textarea.addEventListener('input', () => {
+    const match = getEmojiPrefix(textarea);
+    if (!match) {
+      removeDropdown();
+      return;
+    }
+    const { prefix, colonIndex } = match;
+    currentColonIndex = colonIndex;
+    const suggestions = getEmojiSuggestions(prefix);
+    if (suggestions.length === 0) {
+      removeDropdown();
+      return;
+    }
+    renderDropdown(suggestions);
+  });
+
+  textarea.addEventListener('keydown', (e) => {
+    if (!dropdown) return;
+    const items = dropdown.querySelectorAll('.emoji-dropdown-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(Math.min(activeIndex + 1, items.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(Math.max(activeIndex - 1, 0));
+    } else if (e.key === 'Enter' && activeIndex >= 0) {
+      e.preventDefault();
+      selectItem(currentSuggestions[activeIndex]);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const idx = activeIndex >= 0 ? activeIndex : 0;
+      if (currentSuggestions[idx]) selectItem(currentSuggestions[idx]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('click', () => {
+    if (!dropdown) return;
+    const match = getEmojiPrefix(textarea);
+    if (!match || match.colonIndex !== currentColonIndex) {
+      removeDropdown();
+    }
+  });
+
+  textarea.addEventListener('blur', () => {
+    setTimeout(removeDropdown, 150);
+  });
+
+  return { removeDropdown };
+}
+
+// ========================================
 // Sort Control
 // ========================================
 (function initSortControl() {
@@ -6231,9 +6618,10 @@ if (mutedWordsInputEl) {
 // Add formatting toolbar above the main message textarea
 messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
-// Attach @mention and #hashtag autocomplete to the main message textarea
+// Attach @mention, #hashtag, and :emoji autocomplete to the main message textarea
 attachMentionAutocomplete(messageInput, messageInput.parentElement);
 attachHashtagAutocomplete(messageInput, messageInput.parentElement);
+attachEmojiAutocomplete(messageInput, messageInput.parentElement);
 
 // Set platform-appropriate keyboard shortcut hint
 if (submitHint) submitHint.textContent = SUBMIT_HINT_TEXT;
@@ -6814,5 +7202,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, getEmojiPrefix, getEmojiSuggestions, EMOJI_DATA, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }

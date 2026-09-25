@@ -11295,3 +11295,178 @@ describe('compact view mode', () => {
   });
 });
 
+// ============================================================
+// Emoji shortcode autocomplete
+// ============================================================
+describe('getEmojiPrefix', () => {
+  let getEmojiPrefix;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    ({ getEmojiPrefix } = require('../public/app.js'));
+  });
+
+  function makeTextarea(value, cursor) {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.selectionStart = cursor;
+    ta.selectionEnd = cursor;
+    return ta;
+  }
+
+  test('returns prefix when typing :smile at end', () => {
+    const ta = makeTextarea(':smile', 6);
+    const result = getEmojiPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('smile');
+    expect(result.colonIndex).toBe(0);
+  });
+
+  test('returns prefix mid-sentence', () => {
+    const ta = makeTextarea('Hello :thumbs', 13);
+    const result = getEmojiPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('thumbs');
+    expect(result.colonIndex).toBe(6);
+  });
+
+  test('returns null for lone colon with no following letters', () => {
+    const ta = makeTextarea(':', 1);
+    expect(getEmojiPrefix(ta)).toBeNull();
+  });
+
+  test('returns null when colon is preceded by a word character (e.g. don\'t:)', () => {
+    const ta = makeTextarea("don't:smile", 11);
+    expect(getEmojiPrefix(ta)).toBeNull();
+  });
+
+  test('returns null for :) emoticon (: followed by non-alphanumeric)', () => {
+    const ta = makeTextarea(':)', 1);
+    expect(getEmojiPrefix(ta)).toBeNull();
+  });
+
+  test('returns null when prefix exceeds 30 characters', () => {
+    const longPrefix = 'a'.repeat(31);
+    const ta = makeTextarea(':' + longPrefix, 1 + longPrefix.length);
+    expect(getEmojiPrefix(ta)).toBeNull();
+  });
+
+  test('accepts underscore in prefix', () => {
+    const ta = makeTextarea(':thumbs_up', 10);
+    const result = getEmojiPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('thumbs_up');
+  });
+
+  test('returns null when cursor is not at end of token', () => {
+    // Cursor is right after the colon (no chars typed yet)
+    const ta = makeTextarea(':smile', 1);
+    expect(getEmojiPrefix(ta)).toBeNull();
+  });
+});
+
+describe('getEmojiSuggestions', () => {
+  let getEmojiSuggestions;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    ({ getEmojiSuggestions } = require('../public/app.js'));
+  });
+
+  test('returns empty array for empty prefix', () => {
+    expect(getEmojiSuggestions('')).toEqual([]);
+  });
+
+  test('returns matches for "thumbs"', () => {
+    const results = getEmojiSuggestions('thumbs');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every(r => r.shortcode.startsWith('thumbs'))).toBe(true);
+  });
+
+  test('thumbs_up is in results for "thumbs"', () => {
+    const results = getEmojiSuggestions('thumbs');
+    expect(results.some(r => r.shortcode === 'thumbs_up')).toBe(true);
+  });
+
+  test('results include emoji character', () => {
+    const results = getEmojiSuggestions('smile');
+    expect(results.length).toBeGreaterThan(0);
+    results.forEach(r => {
+      expect(typeof r.emoji).toBe('string');
+      expect(r.emoji.length).toBeGreaterThan(0);
+    });
+  });
+
+  test('returns at most 6 results', () => {
+    const results = getEmojiSuggestions('s');
+    expect(results.length).toBeLessThanOrEqual(6);
+  });
+
+  test('results are sorted by shortcode length ascending', () => {
+    const results = getEmojiSuggestions('s');
+    for (let i = 1; i < results.length; i++) {
+      expect(results[i].shortcode.length).toBeGreaterThanOrEqual(results[i - 1].shortcode.length);
+    }
+  });
+
+  test('matching is case-insensitive', () => {
+    const lower = getEmojiSuggestions('smile');
+    const upper = getEmojiSuggestions('SMILE');
+    expect(lower.map(r => r.shortcode)).toEqual(upper.map(r => r.shortcode));
+  });
+
+  test('returns empty array for prefix with no matches', () => {
+    expect(getEmojiSuggestions('zzznomatch_xyz_impossible')).toEqual([]);
+  });
+
+  test('"heart" prefix matches heart shortcode', () => {
+    const results = getEmojiSuggestions('heart');
+    expect(results.some(r => r.shortcode === 'heart')).toBe(true);
+  });
+});
+
+describe('EMOJI_DATA', () => {
+  let EMOJI_DATA;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    ({ EMOJI_DATA } = require('../public/app.js'));
+  });
+
+  test('contains at least 500 entries', () => {
+    expect(Object.keys(EMOJI_DATA).length).toBeGreaterThanOrEqual(500);
+  });
+
+  test('thumbs_up maps to 👍', () => {
+    expect(EMOJI_DATA.thumbs_up).toBe('👍');
+  });
+
+  test('thumbs_down maps to 👎', () => {
+    expect(EMOJI_DATA.thumbs_down).toBe('👎');
+  });
+
+  test('heart maps to ❤️', () => {
+    expect(EMOJI_DATA.heart).toBe('❤️');
+  });
+
+  test('smile maps to 😄', () => {
+    expect(EMOJI_DATA.smile).toBe('😄');
+  });
+
+  test('all values are non-empty strings', () => {
+    for (const [key, val] of Object.entries(EMOJI_DATA)) {
+      expect(typeof val).toBe('string');
+      expect(val.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('all keys are lowercase alphanumeric with underscores only', () => {
+    for (const key of Object.keys(EMOJI_DATA)) {
+      expect(key).toMatch(/^[a-z0-9_]+$/);
+    }
+  });
+});
+
