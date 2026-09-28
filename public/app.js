@@ -42,6 +42,7 @@ const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -3079,6 +3080,8 @@ function tickExpiryLabels() {
 // ========================================
 const BOOKMARK_KEY = 'guestbook_bookmarks';
 const BOOKMARK_LIMIT = 100;
+const NOTE_MAX_LEN = 200;
+let _notesUnavailableToastShown = false;
 
 function loadBookmarks() {
   try {
@@ -3125,6 +3128,7 @@ function addBookmark(msg) {
     text: msg.text,
     timestamp: msg.timestamp,
     savedAt: Date.now(),
+    note: '',
   });
 
   saveBookmarksToStorage(list);
@@ -3138,6 +3142,126 @@ function removeBookmark(msgId) {
   saveBookmarksToStorage(list);
   updateSavedBadge();
   refreshSavedPanel();
+}
+
+function setBookmarkNote(msgId, note) {
+  const list = loadBookmarks();
+  const idx = list.findIndex(b => b.id === msgId);
+  if (idx === -1) return false;
+  list[idx].note = String(note).slice(0, NOTE_MAX_LEN);
+  return saveBookmarksToStorage(list);
+}
+
+function getBookmarkNote(msgId) {
+  const bm = loadBookmarks().find(b => b.id === msgId);
+  return bm ? (bm.note || '') : '';
+}
+
+function showInlineNoteEditor(container, msgId, currentNote, onDone) {
+  try {
+    localStorage.setItem('__note_probe__', '1');
+    localStorage.removeItem('__note_probe__');
+  } catch (e) {
+    if (!_notesUnavailableToastShown) {
+      _notesUnavailableToastShown = true;
+      showToast('Notes unavailable in this browser mode.');
+    }
+    return null;
+  }
+
+  const form = document.createElement('div');
+  form.className = 'bookmark-note-form';
+
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'bookmark-note-input-wrap';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'bookmark-note-input';
+  input.placeholder = 'Add a private note…';
+  input.maxLength = NOTE_MAX_LEN;
+  input.value = currentNote || '';
+  input.setAttribute('aria-label', 'Bookmark note');
+
+  const counter = document.createElement('span');
+  counter.className = 'bookmark-note-counter';
+  counter.style.display = 'none';
+
+  function updateCounter() {
+    const len = input.value.length;
+    if (len > 0) {
+      counter.textContent = len + ' / ' + NOTE_MAX_LEN;
+      counter.style.display = '';
+      counter.classList.remove('warning', 'danger');
+      if (len >= NOTE_MAX_LEN - 10) counter.classList.add('danger');
+      else if (len >= NOTE_MAX_LEN - 30) counter.classList.add('warning');
+    } else {
+      counter.style.display = 'none';
+    }
+  }
+
+  if ((currentNote || '').length > 0) updateCounter();
+
+  input.addEventListener('input', updateCounter);
+
+  const actions = document.createElement('div');
+  actions.className = 'bookmark-note-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'bookmark-note-save';
+  saveBtn.textContent = 'Save';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'bookmark-note-cancel';
+  cancelBtn.textContent = 'Cancel';
+
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  inputWrap.appendChild(input);
+  inputWrap.appendChild(counter);
+  form.appendChild(inputWrap);
+  form.appendChild(actions);
+  container.appendChild(form);
+
+  function dismiss(save) {
+    cleanup();
+    if (save) {
+      const note = input.value.slice(0, NOTE_MAX_LEN);
+      setBookmarkNote(msgId, note);
+    }
+    onDone(save);
+  }
+
+  function cleanup() {
+    form.remove();
+    document.removeEventListener('mousedown', onClickOutside);
+  }
+
+  function onClickOutside(e) {
+    if (!form.contains(e.target)) {
+      dismiss(false);
+    }
+  }
+
+  saveBtn.addEventListener('click', () => dismiss(true));
+  cancelBtn.addEventListener('click', () => dismiss(false));
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      dismiss(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      dismiss(false);
+    }
+  });
+
+  setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+
+  input.focus();
+  return form;
 }
 
 function updateSavedBadge() {
@@ -3234,6 +3358,53 @@ function refreshSavedPanel() {
     item.appendChild(unsaveBtn);
     item.appendChild(msgHeader);
     item.appendChild(textEl);
+
+    // Note section
+    const existingNote = bookmark.note || '';
+    const noteRow = document.createElement('div');
+    noteRow.className = 'bookmark-note-row';
+
+    if (existingNote) {
+      const noteTextEl = document.createElement('span');
+      noteTextEl.className = 'bookmark-note';
+      noteTextEl.textContent = existingNote; // textContent — XSS safe
+
+      const editNoteBtn = document.createElement('button');
+      editNoteBtn.className = 'btn-note-edit';
+      editNoteBtn.innerHTML = PENCIL_ICON; // static SVG
+      editNoteBtn.setAttribute('aria-label', 'Edit note');
+
+      noteRow.appendChild(noteTextEl);
+      noteRow.appendChild(editNoteBtn);
+
+      function openNoteEditorFromPanel() {
+        noteRow.style.display = 'none';
+        const form = showInlineNoteEditor(item, bookmark.id, existingNote, () => {
+          refreshSavedPanel();
+        });
+        if (!form) noteRow.style.display = '';
+      }
+
+      editNoteBtn.addEventListener('click', openNoteEditorFromPanel);
+      noteTextEl.addEventListener('click', openNoteEditorFromPanel);
+    } else {
+      const addNoteBtn = document.createElement('button');
+      addNoteBtn.className = 'btn-note-add';
+      addNoteBtn.textContent = 'Add note';
+      addNoteBtn.setAttribute('aria-label', 'Add a note to this bookmark');
+
+      noteRow.appendChild(addNoteBtn);
+
+      addNoteBtn.addEventListener('click', () => {
+        noteRow.style.display = 'none';
+        const form = showInlineNoteEditor(item, bookmark.id, '', () => {
+          refreshSavedPanel();
+        });
+        if (!form) noteRow.style.display = '';
+      });
+    }
+
+    item.appendChild(noteRow);
 
     if (contentChanged) {
       const changedNote = document.createElement('p');
@@ -4439,6 +4610,8 @@ function createMessageCard(msg, user, isNew, isArchive) {
       bookmarkBtn.setAttribute('aria-label', 'Bookmark this message');
       bookmarkBtn.classList.remove('btn-bookmark--active');
       if (!isMobile) bookmarkBtn.setAttribute('tabindex', '-1');
+      const existingNoteForm = card.querySelector('.bookmark-note-form');
+      if (existingNoteForm) existingNoteForm.remove();
     } else {
       const success = addBookmark(msg);
       if (success) {
@@ -4446,6 +4619,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
         bookmarkBtn.setAttribute('aria-label', 'Remove bookmark');
         bookmarkBtn.classList.add('btn-bookmark--active');
         bookmarkBtn.setAttribute('tabindex', '0');
+        showInlineNoteEditor(card, msg.id, '', () => {});
       }
     }
   });
@@ -6814,5 +6988,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }
