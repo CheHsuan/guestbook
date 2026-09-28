@@ -4378,6 +4378,7 @@ describe('getHashtagPrefix', () => {
 describe('bookmark feature', () => {
   let createMessageCard;
   let loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, updateSavedBadge, refreshSavedPanel;
+  let mod;
 
   const baseMsg = {
     id: 'bm-msg1',
@@ -4411,7 +4412,7 @@ describe('bookmark feature', () => {
     authInstance.onAuthStateChanged.mockImplementation(() => {});
     global.firebase = firebase;
 
-    const mod = require('../public/app.js');
+    mod = require('../public/app.js');
     createMessageCard = mod.createMessageCard;
     loadBookmarks = mod.loadBookmarks;
     saveBookmarksToStorage = mod.saveBookmarksToStorage;
@@ -4459,6 +4460,8 @@ describe('bookmark feature', () => {
     expect(bm).toHaveProperty('text');
     expect(bm).toHaveProperty('timestamp');
     expect(bm).toHaveProperty('savedAt');
+    expect(bm).toHaveProperty('note');
+    expect(bm.note).toBe('');
   });
 
   test('clicking bookmarked button again removes it (toggle)', () => {
@@ -4721,6 +4724,234 @@ describe('bookmark feature', () => {
     addBookmark(baseMsg);
     expect(loadBookmarks()).toHaveLength(1);
     expect(loadBookmarks()[0].id).toBe(baseMsg.id);
+  });
+
+  // --- Bookmark note feature ---
+  test('setBookmarkNote saves note to localStorage', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, 'Remember to reply');
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('Remember to reply');
+  });
+
+  test('setBookmarkNote clears note when given empty string', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, 'Some note');
+    mod.setBookmarkNote(baseMsg.id, '');
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('');
+  });
+
+  test('setBookmarkNote truncates note to NOTE_MAX_LEN', () => {
+    addBookmark(baseMsg);
+    const long = 'x'.repeat(250);
+    mod.setBookmarkNote(baseMsg.id, long);
+    expect(mod.getBookmarkNote(baseMsg.id)).toHaveLength(mod.NOTE_MAX_LEN);
+  });
+
+  test('setBookmarkNote returns false for unknown msgId', () => {
+    expect(mod.setBookmarkNote('no-such-id', 'hello')).toBe(false);
+  });
+
+  test('getBookmarkNote returns empty string for unknown msgId', () => {
+    expect(mod.getBookmarkNote('no-such-id')).toBe('');
+  });
+
+  test('getBookmarkNote returns empty string for old bookmark without note field', () => {
+    const oldEntry = [{ id: 'old-bm', author: 'Bob', authorId: 'u1', text: 'Hi', timestamp: 1, savedAt: 1 }];
+    localStorage.setItem('guestbook_bookmarks', JSON.stringify(oldEntry));
+    expect(mod.getBookmarkNote('old-bm')).toBe('');
+  });
+
+  test('clicking bookmark shows inline note form in card', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    expect(card.querySelector('.bookmark-note-form')).not.toBeNull();
+  });
+
+  test('inline note form has input with correct placeholder', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    expect(input).not.toBeNull();
+    expect(input.placeholder).toBe('Add a private note…');
+  });
+
+  test('inline note form enforces 200 char maxLength', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    expect(input.maxLength).toBe(mod.NOTE_MAX_LEN);
+  });
+
+  test('counter hidden initially when input is empty', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const counter = card.querySelector('.bookmark-note-counter');
+    expect(counter.style.display).toBe('none');
+  });
+
+  test('counter becomes visible after typing in note input', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    input.value = 'hello';
+    input.dispatchEvent(new Event('input'));
+    const counter = card.querySelector('.bookmark-note-counter');
+    expect(counter.style.display).not.toBe('none');
+    expect(counter.textContent).toContain('5 / 200');
+  });
+
+  test('counter shows warning class near limit', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    input.value = 'x'.repeat(175);
+    input.dispatchEvent(new Event('input'));
+    const counter = card.querySelector('.bookmark-note-counter');
+    expect(counter.classList.contains('warning')).toBe(true);
+  });
+
+  test('counter shows danger class very near limit', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    input.value = 'x'.repeat(195);
+    input.dispatchEvent(new Event('input'));
+    const counter = card.querySelector('.bookmark-note-counter');
+    expect(counter.classList.contains('danger')).toBe(true);
+  });
+
+  test('pressing Enter in note input saves note and removes form', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    input.value = 'My note';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(card.querySelector('.bookmark-note-form')).toBeNull();
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('My note');
+  });
+
+  test('pressing Escape in note input dismisses form without saving', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const input = card.querySelector('.bookmark-note-input');
+    input.value = 'unsaved text';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(card.querySelector('.bookmark-note-form')).toBeNull();
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('');
+  });
+
+  test('clicking Save button saves note and removes form', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const form = card.querySelector('.bookmark-note-form');
+    form.querySelector('.bookmark-note-input').value = 'Saved via button';
+    form.querySelector('.bookmark-note-save').click();
+    expect(card.querySelector('.bookmark-note-form')).toBeNull();
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('Saved via button');
+  });
+
+  test('clicking Cancel button dismisses form without saving', () => {
+    const card = createMessageCard(baseMsg, null);
+    card.querySelector('.btn-bookmark').click();
+    const form = card.querySelector('.bookmark-note-form');
+    form.querySelector('.bookmark-note-input').value = 'Not saved';
+    form.querySelector('.bookmark-note-cancel').click();
+    expect(card.querySelector('.bookmark-note-form')).toBeNull();
+    expect(mod.getBookmarkNote(baseMsg.id)).toBe('');
+  });
+
+  test('unbookmark removes note form if present', () => {
+    const card = createMessageCard(baseMsg, null);
+    const btn = card.querySelector('.btn-bookmark');
+    btn.click(); // bookmark — shows note form
+    expect(card.querySelector('.bookmark-note-form')).not.toBeNull();
+    btn.click(); // unbookmark — should remove form too
+    expect(card.querySelector('.bookmark-note-form')).toBeNull();
+  });
+
+  test('saved panel shows note text for bookmarks with notes', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, 'Great message');
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    const noteEl = document.querySelector('.bookmark-note');
+    expect(noteEl).not.toBeNull();
+    expect(noteEl.textContent).toBe('Great message');
+  });
+
+  test('saved panel note rendered via textContent — XSS safe', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, '<script>evil()</script>');
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    const noteEl = document.querySelector('.bookmark-note');
+    expect(noteEl).not.toBeNull();
+    expect(noteEl.textContent).toBe('<script>evil()</script>');
+    expect(noteEl.innerHTML).not.toContain('<script>');
+  });
+
+  test('saved panel shows edit button when note exists', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, 'A note');
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    expect(document.querySelector('.btn-note-edit')).not.toBeNull();
+  });
+
+  test('saved panel shows Add note button when no note', () => {
+    addBookmark(baseMsg);
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    const addBtn = document.querySelector('.btn-note-add');
+    expect(addBtn).not.toBeNull();
+    expect(addBtn.textContent).toBe('Add note');
+  });
+
+  test('old bookmark without note field still renders without note text', () => {
+    const oldEntry = [{ id: 'old-bm2', author: 'Bob', authorId: 'u1', text: 'Hi there', timestamp: Date.now(), savedAt: Date.now() }];
+    localStorage.setItem('guestbook_bookmarks', JSON.stringify(oldEntry));
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    expect(document.querySelector('.saved-message')).not.toBeNull();
+    expect(document.querySelector('.bookmark-note')).toBeNull();
+  });
+
+  test('clicking Add note in saved panel shows inline note form', () => {
+    addBookmark(baseMsg);
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    document.querySelector('.btn-note-add').click();
+    expect(document.querySelector('.bookmark-note-form')).not.toBeNull();
+  });
+
+  test('clicking edit button in saved panel shows inline note form pre-populated', () => {
+    addBookmark(baseMsg);
+    mod.setBookmarkNote(baseMsg.id, 'Existing note');
+    document.getElementById('saved-panel').style.display = '';
+    refreshSavedPanel();
+    document.querySelector('.btn-note-edit').click();
+    const input = document.querySelector('.bookmark-note-input');
+    expect(input).not.toBeNull();
+    expect(input.value).toBe('Existing note');
+  });
+
+  test('localStorage unavailable for notes shows toast and returns null', () => {
+    // First add a bookmark (so probe succeeds at least once for bookmark storage)
+    addBookmark(baseMsg);
+
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('SecurityError');
+    });
+
+    const container = document.createElement('div');
+    const result = mod.showInlineNoteEditor(container, baseMsg.id, '', () => {});
+
+    expect(result).toBeNull();
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toContain('Notes unavailable');
+
+    Storage.prototype.setItem.mockRestore();
   });
 });
 

@@ -2497,6 +2497,155 @@ body {
 }
 
 /* ========================================
+   Bookmark Notes
+   ======================================== */
+.bookmark-note-row {
+  margin-top: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 16px;
+}
+
+.bookmark-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  line-height: 1.4;
+  cursor: pointer;
+  flex: 1;
+  word-break: break-word;
+}
+
+.btn-note-edit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--text-muted);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition), color var(--transition);
+}
+
+.btn-note-edit svg {
+  width: 12px;
+  height: 12px;
+}
+
+.saved-message:hover .btn-note-edit,
+.btn-note-edit:focus-visible {
+  opacity: 1;
+}
+
+.btn-note-edit:hover {
+  color: var(--text-primary);
+}
+
+.btn-note-add {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 0;
+  font-family: inherit;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.saved-message:hover .btn-note-add,
+.btn-note-add:focus-visible {
+  opacity: 1;
+}
+
+.bookmark-note-form {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.bookmark-note-input-wrap {
+  margin-bottom: 6px;
+}
+
+.bookmark-note-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.bookmark-note-input:focus {
+  border-color: var(--link);
+}
+
+.bookmark-note-counter {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  display: block;
+}
+
+.bookmark-note-counter.warning {
+  color: var(--warning);
+}
+
+.bookmark-note-counter.danger {
+  color: var(--danger);
+}
+
+.bookmark-note-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.bookmark-note-save {
+  font-size: 0.78rem;
+  padding: 3px 12px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity var(--transition);
+}
+
+.bookmark-note-save:hover {
+  opacity: 0.85;
+}
+
+.bookmark-note-cancel {
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color var(--transition);
+}
+
+.bookmark-note-cancel:hover {
+  color: var(--text-primary);
+}
+
+/* ========================================
    Deep-link Highlight Animation
    ======================================== */
 @keyframes permalink-highlight-fade {
