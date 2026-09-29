@@ -37,7 +37,9 @@ jobs:
           git config user.email "claude-code@auto-agent.com"
 
       - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code@2.1.187
+        run: |
+          CLAUDE_VERSION=$(node -p "require('./package.json').devDependencies['@anthropic-ai/claude-code']")
+          npm install -g "@anthropic-ai/claude-code@${CLAUDE_VERSION}"
 
       - name: Fetch highest priority issue
         id: get-issue
