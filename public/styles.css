@@ -1258,6 +1258,13 @@ body {
   background: var(--bg-subtle);
 }
 
+.message-card--kb-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
 .message-header {
   display: flex;
   align-items: center;
@@ -4513,4 +4520,110 @@ body {
   .compact-author {
     max-width: 60px;
   }
+}
+
+/* ========================================
+   Keyboard Shortcuts Help Overlay
+   ======================================== */
+.kb-help-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 850;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.kb-help-backdrop--visible {
+  opacity: 1;
+}
+
+.kb-help-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%) scale(0.97);
+  z-index: 851;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: min(380px, calc(100vw - 32px));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.kb-help-modal--open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.kb-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.kb-help-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.kb-help-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: color var(--transition), background var(--transition);
+}
+
+.kb-help-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+
+.kb-help-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.kb-help-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kb-help-table td {
+  padding: 6px 4px;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.kb-help-table tr + tr td {
+  border-top: 1px solid var(--border);
+}
+
+.kb-key {
+  white-space: nowrap;
+  padding-right: 16px !important;
+}
+
+.kb-help-table kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-primary);
+  line-height: 1.4;
 }

@@ -154,6 +154,9 @@ const moodChipClear = document.getElementById('mood-chip-clear');
 const moodPickerBackdrop = document.getElementById('mood-picker-backdrop');
 const moodPickerEl = document.getElementById('mood-picker');
 const moodPickerGrid = document.getElementById('mood-picker-grid');
+const kbHelpBackdropEl = document.getElementById('kb-help-backdrop');
+const kbHelpModalEl = document.getElementById('kb-help-modal');
+const kbHelpCloseBtn = document.getElementById('kb-help-close');
 
 // ========================================
 // State
@@ -244,6 +247,12 @@ try {
   const _savedViewMode = localStorage.getItem(VIEW_MODE_KEY);
   if (_savedViewMode === VIEW_COMPACT) currentViewMode = VIEW_COMPACT;
 } catch (_) {}
+
+// ========================================
+// Keyboard Navigation State
+// ========================================
+let kbFocusIndex = -1; // -1 = no card kb-focused
+let kbHelpOpen = false;
 
 // ========================================
 // URL State Management
@@ -1062,11 +1071,184 @@ if (authorPanelBackdropEl) {
   authorPanelBackdropEl.addEventListener('click', closeAuthorPanel);
 }
 
+// ========================================
+// Keyboard Navigation
+// ========================================
+
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
+function isAnyModalOpen() {
+  return authorPanelOpen ||
+    (gifPickerBackdrop && gifPickerBackdrop.style.display !== 'none') ||
+    (moodPickerBackdrop && moodPickerBackdrop.style.display !== 'none') ||
+    (guestNameBackdrop && guestNameBackdrop.style.display !== 'none');
+}
+
+function getVisibleCards() {
+  if (!messagesContainer) return [];
+  return Array.from(messagesContainer.querySelectorAll('.message-card'))
+    .filter(card => card.offsetParent !== null && !card.hidden && card.style.display !== 'none');
+}
+
+function setKbFocus(index) {
+  const cards = getVisibleCards();
+  if (!cards.length) return;
+  if (index < 0 || index >= cards.length) return;
+
+  if (kbFocusIndex >= 0 && kbFocusIndex < cards.length) {
+    cards[kbFocusIndex].classList.remove('message-card--kb-focused');
+  } else {
+    messagesContainer.querySelectorAll('.message-card--kb-focused')
+      .forEach(c => c.classList.remove('message-card--kb-focused'));
+  }
+
+  kbFocusIndex = index;
+  cards[index].classList.add('message-card--kb-focused');
+  cards[index].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function clearKbFocus() {
+  if (messagesContainer) {
+    messagesContainer.querySelectorAll('.message-card--kb-focused')
+      .forEach(c => c.classList.remove('message-card--kb-focused'));
+  }
+  kbFocusIndex = -1;
+}
+
+function openKbHelp() {
+  if (!kbHelpBackdropEl || !kbHelpModalEl) return;
+  kbHelpOpen = true;
+  kbHelpBackdropEl.style.display = '';
+  kbHelpModalEl.style.display = '';
+  kbHelpBackdropEl.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => {
+    kbHelpBackdropEl.classList.add('kb-help-backdrop--visible');
+    kbHelpModalEl.classList.add('kb-help-modal--open');
+    if (kbHelpCloseBtn) kbHelpCloseBtn.focus();
+  });
+}
+
+function closeKbHelp() {
+  if (!kbHelpBackdropEl || !kbHelpModalEl) return;
+  kbHelpOpen = false;
+  kbHelpBackdropEl.classList.remove('kb-help-backdrop--visible');
+  kbHelpModalEl.classList.remove('kb-help-modal--open');
+  kbHelpBackdropEl.setAttribute('aria-hidden', 'true');
+  setTimeout(() => {
+    if (!kbHelpOpen) {
+      kbHelpBackdropEl.style.display = 'none';
+      kbHelpModalEl.style.display = 'none';
+    }
+  }, 200);
+}
+
 document.addEventListener('keydown', (e) => {
+  // KB help overlay: Escape or ? closes it (? also toggles it open, handled below)
+  if (e.key === 'Escape' && kbHelpOpen) {
+    closeKbHelp();
+    return;
+  }
+
+  // Author panel: Escape closes it
   if (e.key === 'Escape' && authorPanelOpen) {
     closeAuthorPanel();
+    return;
+  }
+
+  // Escape: blur search or clear card focus
+  if (e.key === 'Escape') {
+    if (searchInput && document.activeElement === searchInput) {
+      searchInput.blur();
+      return;
+    }
+    if (kbFocusIndex >= 0) {
+      clearKbFocus();
+      return;
+    }
+  }
+
+  // Suppress navigation shortcuts when typing or when a modal is open
+  if (isTypingTarget(document.activeElement)) return;
+  if (isAnyModalOpen()) return;
+
+  const key = e.key;
+
+  if (key === '?') {
+    e.preventDefault();
+    if (kbHelpOpen) {
+      closeKbHelp();
+    } else {
+      openKbHelp();
+    }
+    return;
+  }
+
+  if (key === '/') {
+    e.preventDefault();
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+    return;
+  }
+
+  if (key === 'j' || key === 'ArrowDown') {
+    e.preventDefault();
+    const cards = getVisibleCards();
+    if (!cards.length) return;
+    if (kbFocusIndex < 0) {
+      setKbFocus(0);
+    } else if (kbFocusIndex < cards.length - 1) {
+      setKbFocus(kbFocusIndex + 1);
+    }
+    return;
+  }
+
+  if (key === 'k' || key === 'ArrowUp') {
+    e.preventDefault();
+    const cards = getVisibleCards();
+    if (!cards.length) return;
+    if (kbFocusIndex < 0) {
+      setKbFocus(0);
+    } else if (kbFocusIndex > 0) {
+      setKbFocus(kbFocusIndex - 1);
+    }
+    return;
+  }
+
+  // Enter or 'o' expands/collapses the focused card in compact mode
+  if ((key === 'Enter' || key === 'o') && kbFocusIndex >= 0 && currentViewMode === VIEW_COMPACT) {
+    const cards = getVisibleCards();
+    const card = cards[kbFocusIndex];
+    if (card) {
+      if (card.classList.contains('compact-expanded')) {
+        collapseCardCompact(card);
+      } else {
+        expandCardCompact(card);
+      }
+    }
+    return;
   }
 });
+
+// Clear KB focus when clicking outside a message card
+document.addEventListener('click', (e) => {
+  if (kbFocusIndex >= 0 && !e.target.closest('.message-card')) {
+    clearKbFocus();
+  }
+});
+
+if (kbHelpBackdropEl) {
+  kbHelpBackdropEl.addEventListener('click', closeKbHelp);
+}
+
+if (kbHelpCloseBtn) {
+  kbHelpCloseBtn.addEventListener('click', closeKbHelp);
+}
 
 // ========================================
 // Author Pool (for @mention autocomplete)
@@ -6988,5 +7170,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, isTypingTarget, isAnyModalOpen, getVisibleCards, setKbFocus, clearKbFocus, openKbHelp, closeKbHelp };
 }

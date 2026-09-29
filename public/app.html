@@ -334,6 +334,25 @@
     <p id="gif-search-error" class="gif-search-error" style="display:none;"></p>
   </div>
 
+  <!-- Keyboard Shortcuts Help Overlay -->
+  <div id="kb-help-backdrop" class="kb-help-backdrop" style="display:none;" aria-hidden="true"></div>
+  <div id="kb-help-modal" class="kb-help-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="kb-help-title">
+    <div class="kb-help-header">
+      <h2 id="kb-help-title" class="kb-help-title">Keyboard Shortcuts</h2>
+      <button id="kb-help-close" class="kb-help-close" aria-label="Close keyboard shortcuts">&#x2715;</button>
+    </div>
+    <table class="kb-help-table" aria-label="Keyboard shortcuts list">
+      <tbody>
+        <tr><td class="kb-key"><kbd>j</kbd> / <kbd>↓</kbd></td><td>Next message</td></tr>
+        <tr><td class="kb-key"><kbd>k</kbd> / <kbd>↑</kbd></td><td>Previous message</td></tr>
+        <tr><td class="kb-key"><kbd>/</kbd></td><td>Focus search</td></tr>
+        <tr><td class="kb-key"><kbd>Enter</kbd> / <kbd>o</kbd></td><td>Expand message (compact mode)</td></tr>
+        <tr><td class="kb-key"><kbd>Esc</kbd></td><td>Clear focus / close</td></tr>
+        <tr><td class="kb-key"><kbd>?</kbd></td><td>Toggle this overlay</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- Firebase SDKs (compat for simplicity with free CDN) — keep version in sync with "firebase" in package.json -->
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.17.0/firebase-auth-compat.js"></script>
