@@ -1,4 +1,4 @@
-const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData } = require('../public/utils');
+const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData, formatDateYMD, escapeCsvField, messagesToCSV, messagesToJSON } = require('../public/utils');
 
 // ========================================
 // validateWebsiteURL
@@ -1169,3 +1169,212 @@ describe('fetchCountryData', () => {
     });
 });
 
+// ========================================
+// formatDateYMD
+// ========================================
+describe('formatDateYMD', () => {
+    test('formats a known UTC date correctly', () => {
+        const date = new Date('2024-03-15T10:30:00Z');
+        expect(formatDateYMD(date)).toBe('2024-03-15');
+    });
+
+    test('zero-pads month and day', () => {
+        const date = new Date('2024-01-05T00:00:00Z');
+        expect(formatDateYMD(date)).toBe('2024-01-05');
+    });
+
+    test('handles year 2000', () => {
+        const date = new Date('2000-12-31T23:59:59Z');
+        expect(formatDateYMD(date)).toBe('2000-12-31');
+    });
+});
+
+// ========================================
+// escapeCsvField
+// ========================================
+describe('escapeCsvField', () => {
+    test('plain text with no special chars is returned as-is', () => {
+        expect(escapeCsvField('hello')).toBe('hello');
+    });
+
+    test('field containing a comma is wrapped in double quotes', () => {
+        expect(escapeCsvField('hello, world')).toBe('"hello, world"');
+    });
+
+    test('field containing a double quote wraps and escapes inner quote', () => {
+        expect(escapeCsvField('say "hi"')).toBe('"say ""hi"""');
+    });
+
+    test('field containing a newline is wrapped in double quotes', () => {
+        expect(escapeCsvField('line1\nline2')).toBe('"line1\nline2"');
+    });
+
+    test('field containing a carriage return is wrapped in double quotes', () => {
+        expect(escapeCsvField('line1\rline2')).toBe('"line1\rline2"');
+    });
+
+    test('null converts to empty string', () => {
+        expect(escapeCsvField(null)).toBe('');
+    });
+
+    test('undefined converts to empty string', () => {
+        expect(escapeCsvField(undefined)).toBe('');
+    });
+
+    test('number is converted to string', () => {
+        expect(escapeCsvField(42)).toBe('42');
+    });
+
+    test('empty string remains empty', () => {
+        expect(escapeCsvField('')).toBe('');
+    });
+});
+
+// ========================================
+// messagesToCSV
+// ========================================
+describe('messagesToCSV', () => {
+    const sampleMessages = [
+        { timestamp: 1700000000000, type: 'text', text: 'Hello world', author: 'Alice' },
+        { timestamp: 1700000060000, type: 'gif', text: 'A fun GIF', author: 'Bob' },
+    ];
+
+    test('first row is the CSV header', () => {
+        const csv = messagesToCSV(sampleMessages);
+        const lines = csv.split('\n');
+        expect(lines[0]).toBe('timestamp,date,type,text');
+    });
+
+    test('returns one data row per message', () => {
+        const csv = messagesToCSV(sampleMessages);
+        const lines = csv.split('\n');
+        expect(lines).toHaveLength(3); // header + 2 rows
+    });
+
+    test('timestamp column is ISO 8601', () => {
+        const csv = messagesToCSV([sampleMessages[0]]);
+        const dataLine = csv.split('\n')[1];
+        expect(dataLine).toContain(new Date(1700000000000).toISOString());
+    });
+
+    test('date column is YYYY-MM-DD', () => {
+        const csv = messagesToCSV([sampleMessages[0]]);
+        const dataLine = csv.split('\n')[1];
+        const expectedDate = formatDateYMD(new Date(1700000000000));
+        expect(dataLine).toContain(expectedDate);
+    });
+
+    test('type column reflects the message type', () => {
+        const csv = messagesToCSV([sampleMessages[1]]);
+        const dataLine = csv.split('\n')[1];
+        expect(dataLine).toContain('gif');
+    });
+
+    test('text containing a comma is wrapped in double quotes', () => {
+        const msg = { timestamp: 1700000000000, type: 'text', text: 'one, two', author: 'X' };
+        const csv = messagesToCSV([msg]);
+        expect(csv).toContain('"one, two"');
+    });
+
+    test('text containing a double quote is escaped', () => {
+        const msg = { timestamp: 1700000000000, type: 'text', text: 'say "hi"', author: 'X' };
+        const csv = messagesToCSV([msg]);
+        expect(csv).toContain('"say ""hi"""');
+    });
+
+    test('empty messages array returns only the header', () => {
+        const csv = messagesToCSV([]);
+        expect(csv).toBe('timestamp,date,type,text');
+    });
+
+    test('missing text field produces empty text column', () => {
+        const msg = { timestamp: 1700000000000, type: 'image', author: 'X' };
+        const csv = messagesToCSV([msg]);
+        const dataLine = csv.split('\n')[1];
+        // last field should be empty
+        expect(dataLine.endsWith(',')).toBe(true);
+    });
+});
+
+// ========================================
+// messagesToJSON
+// ========================================
+describe('messagesToJSON', () => {
+    const sampleMessages = [
+        { timestamp: 1700000000000, type: 'text', text: 'Hello', author: 'Alice' },
+        { timestamp: 1700000060000, type: 'gif', text: 'GIF', author: 'Bob', gifUrl: 'https://example.com/a.gif', gifPreviewUrl: 'https://example.com/a.webp' },
+    ];
+
+    test('returns valid JSON', () => {
+        const json = messagesToJSON(sampleMessages);
+        expect(() => JSON.parse(json)).not.toThrow();
+    });
+
+    test('result is a top-level array', () => {
+        const records = JSON.parse(messagesToJSON(sampleMessages));
+        expect(Array.isArray(records)).toBe(true);
+        expect(records).toHaveLength(2);
+    });
+
+    test('each record has required fields', () => {
+        const records = JSON.parse(messagesToJSON(sampleMessages));
+        const r = records[0];
+        expect(r).toHaveProperty('timestamp');
+        expect(r).toHaveProperty('text');
+        expect(r).toHaveProperty('type');
+        expect(r).toHaveProperty('displayName');
+    });
+
+    test('timestamp field is ISO 8601 string', () => {
+        const records = JSON.parse(messagesToJSON([sampleMessages[0]]));
+        expect(records[0].timestamp).toBe(new Date(1700000000000).toISOString());
+    });
+
+    test('displayName is taken from author field', () => {
+        const records = JSON.parse(messagesToJSON([sampleMessages[0]]));
+        expect(records[0].displayName).toBe('Alice');
+    });
+
+    test('gifUrl is included when present', () => {
+        const records = JSON.parse(messagesToJSON([sampleMessages[1]]));
+        expect(records[0].gifUrl).toBe('https://example.com/a.gif');
+    });
+
+    test('gifPreviewUrl is included when present', () => {
+        const records = JSON.parse(messagesToJSON([sampleMessages[1]]));
+        expect(records[0].gifPreviewUrl).toBe('https://example.com/a.webp');
+    });
+
+    test('imageUrl is included when present', () => {
+        const msg = { timestamp: 1700000000000, type: 'image', text: '', author: 'X', imageUrl: 'https://example.com/img.jpg' };
+        const records = JSON.parse(messagesToJSON([msg]));
+        expect(records[0].imageUrl).toBe('https://example.com/img.jpg');
+    });
+
+    test('audioUrl is included when present', () => {
+        const msg = { timestamp: 1700000000000, type: 'audio', text: '', author: 'X', audioUrl: 'https://example.com/audio.webm' };
+        const records = JSON.parse(messagesToJSON([msg]));
+        expect(records[0].audioUrl).toBe('https://example.com/audio.webm');
+    });
+
+    test('pollOptions is included when poll.options present', () => {
+        const msg = { timestamp: 1700000000000, type: 'poll', text: 'Pick one', author: 'X', poll: { options: { '0': 'Yes', '1': 'No' } } };
+        const records = JSON.parse(messagesToJSON([msg]));
+        expect(records[0].pollOptions).toEqual({ '0': 'Yes', '1': 'No' });
+    });
+
+    test('gif-only fields absent when not present', () => {
+        const records = JSON.parse(messagesToJSON([sampleMessages[0]]));
+        expect(records[0].gifUrl).toBeUndefined();
+    });
+
+    test('is pretty-printed with 2-space indentation', () => {
+        const json = messagesToJSON([sampleMessages[0]]);
+        expect(json).toContain('  "timestamp"');
+    });
+
+    test('empty array returns empty JSON array', () => {
+        const json = messagesToJSON([]);
+        expect(JSON.parse(json)).toEqual([]);
+    });
+});

@@ -501,7 +501,74 @@ async function fetchCountryData() {
     }
 }
 
+/**
+ * Format a Date object as YYYY-MM-DD using UTC.
+ * Used for export filenames.
+ */
+function formatDateYMD(date) {
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+/**
+ * Escape a single value for CSV output.
+ * Wraps in double quotes when the value contains commas, double quotes, or newlines.
+ * Inner double quotes are doubled per RFC 4180.
+ */
+function escapeCsvField(value) {
+    const str = (value == null) ? '' : String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+/**
+ * Convert an array of message objects to a CSV string.
+ * Columns: timestamp (ISO 8601), date (YYYY-MM-DD), type, text.
+ * Messages with newlines in text are wrapped in quotes (escapeCsvField handles this).
+ */
+function messagesToCSV(messages) {
+    const header = 'timestamp,date,type,text';
+    const rows = messages.map(msg => {
+        const ts = typeof msg.timestamp === 'number' ? msg.timestamp : 0;
+        const date = new Date(ts);
+        const iso = ts ? date.toISOString() : '';
+        const dateStr = ts ? formatDateYMD(date) : '';
+        const type = typeof msg.type === 'string' ? msg.type : 'text';
+        const text = typeof msg.text === 'string' ? msg.text : '';
+        return [iso, dateStr, type, text].map(escapeCsvField).join(',');
+    });
+    return [header, ...rows].join('\n');
+}
+
+/**
+ * Convert an array of message objects to a pretty-printed JSON string.
+ * Each record includes: timestamp (ISO 8601), text, type, displayName,
+ * and any type-specific URL/data fields present on the message.
+ */
+function messagesToJSON(messages) {
+    const records = messages.map(msg => {
+        const ts = typeof msg.timestamp === 'number' ? msg.timestamp : 0;
+        const record = {
+            timestamp: ts ? new Date(ts).toISOString() : '',
+            text: typeof msg.text === 'string' ? msg.text : '',
+            type: typeof msg.type === 'string' ? msg.type : 'text',
+            displayName: typeof msg.author === 'string' ? msg.author : '',
+        };
+        if (msg.gifUrl) record.gifUrl = msg.gifUrl;
+        if (msg.gifPreviewUrl) record.gifPreviewUrl = msg.gifPreviewUrl;
+        if (msg.imageUrl) record.imageUrl = msg.imageUrl;
+        if (msg.audioUrl) record.audioUrl = msg.audioUrl;
+        if (msg.poll && msg.poll.options) record.pollOptions = msg.poll.options;
+        return record;
+    });
+    return JSON.stringify(records, null, 2);
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData, formatDateYMD, escapeCsvField, messagesToCSV, messagesToJSON };
 }
