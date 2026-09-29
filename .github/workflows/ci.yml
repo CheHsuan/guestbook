@@ -254,9 +254,11 @@ jobs:
       - name: Fetch latest review comment
         id: get-comment
         run: |
+          BOT_LOGIN=$(gh api user --jq '.login')
           COMMENT=$(gh pr view ${{ github.event.pull_request.number }} \
-            --json comments \
-            --jq '[.comments[] | select(.body | startswith("[Claude Review] ❌"))] | last | .body')
+            --json comments | \
+            jq -r --arg bot "$BOT_LOGIN" \
+            '[.comments[] | select(.body | startswith("[Claude Review] ❌") and .author.login == $bot)] | last | .body')
           echo "$COMMENT" > /tmp/review_comment.txt
           echo "Review comment saved to /tmp/review_comment.txt"
         env:
