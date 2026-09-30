@@ -9931,6 +9931,263 @@ describe('voice message — createMessageCard for audio type', () => {
   });
 });
 
+describe('read aloud — speaker button', () => {
+  let createMessageCard;
+
+  const textMsg = {
+    id: 'speak-msg-1',
+    author: 'Alice',
+    text: 'Hello **world**',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  const gifMsg = {
+    id: 'speak-msg-gif',
+    type: 'gif',
+    gifUrl: 'https://media.tenor.com/test.gif',
+    gifAlt: 'A funny GIF',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const imageMsg = {
+    id: 'speak-msg-image',
+    type: 'image',
+    imageUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/img.jpg',
+    imageAlt: 'A photo',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const audioMsg2 = {
+    id: 'speak-msg-audio',
+    type: 'audio',
+    audioUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/voice.webm',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const pollMsg = {
+    id: 'speak-msg-poll',
+    type: 'poll',
+    text: 'What is your favourite colour?',
+    poll: {
+      question: 'What is your favourite colour?',
+      options: {
+        opt1: { text: 'Red', votes: 3 },
+        opt2: { text: 'Blue', votes: 5 },
+      },
+    },
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  let synthMock;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    // Mock SpeechSynthesisUtterance constructor
+    global.SpeechSynthesisUtterance = class {
+      constructor(text) { this.text = text; this.onend = null; }
+    };
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  beforeEach(() => {
+    synthMock = { speak: jest.fn(), cancel: jest.fn() };
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: synthMock,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  // --- Presence ---
+
+  test('renders .btn-speak on text message (no user)', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-speak')).not.toBeNull();
+  });
+
+  test('renders .btn-speak on text message (own user)', () => {
+    const card = createMessageCard(textMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-speak')).not.toBeNull();
+  });
+
+  test('renders .btn-speak on text message (other user)', () => {
+    const card = createMessageCard(textMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-speak')).not.toBeNull();
+  });
+
+  test('does not render .btn-speak on gif message', () => {
+    const card = createMessageCard(gifMsg, null);
+    expect(card.querySelector('.btn-speak')).toBeNull();
+  });
+
+  test('does not render .btn-speak on image message', () => {
+    const card = createMessageCard(imageMsg, null);
+    expect(card.querySelector('.btn-speak')).toBeNull();
+  });
+
+  test('does not render .btn-speak on audio message', () => {
+    const card = createMessageCard(audioMsg2, null);
+    expect(card.querySelector('.btn-speak')).toBeNull();
+  });
+
+  test('does not render .btn-speak when window.speechSynthesis is undefined', () => {
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-speak')).toBeNull();
+    // Restore for subsequent tests
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: synthMock,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  // --- Accessibility & DOM ---
+
+  test('.btn-speak has aria-label="Read aloud" at rest', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-speak').getAttribute('aria-label')).toBe('Read aloud');
+  });
+
+  test('.btn-speak has tabindex="-1" in non-touch environment (jsdom has no matchMedia)', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-speak').getAttribute('tabindex')).toBe('-1');
+  });
+
+  test('.btn-speak appears before .btn-bookmark in the footer', () => {
+    const card = createMessageCard(textMsg, null);
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const speakIdx = children.findIndex(el => el.classList.contains('btn-speak'));
+    const bookmarkIdx = children.findIndex(el => el.classList.contains('btn-bookmark'));
+    expect(speakIdx).toBeGreaterThanOrEqual(0);
+    expect(bookmarkIdx).toBeGreaterThan(speakIdx);
+  });
+
+  test('renders .btn-speak on poll message', () => {
+    const card = createMessageCard(pollMsg, null);
+    expect(card.querySelector('.btn-speak')).not.toBeNull();
+  });
+
+  // --- Playback ---
+
+  test('clicking .btn-speak calls speechSynthesis.speak', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    expect(synthMock.speak).toHaveBeenCalledTimes(1);
+    btn.click(); // cleanup: stop speech so activeSpeakerBtn is reset
+  });
+
+  test('clicking .btn-speak creates utterance with stripped markdown text', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    const utterance = synthMock.speak.mock.calls[0][0];
+    expect(utterance.text).toBe('Hello world'); // '**' stripped
+    btn.click(); // cleanup
+  });
+
+  test('clicking .btn-speak adds btn-speak--active class', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    expect(btn.classList.contains('btn-speak--active')).toBe(true);
+    btn.click(); // cleanup
+  });
+
+  test('clicking .btn-speak changes aria-label to "Stop reading"', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    expect(btn.getAttribute('aria-label')).toBe('Stop reading');
+    btn.click(); // cleanup
+  });
+
+  test('clicking active .btn-speak cancels speech and removes active class', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click(); // start
+    btn.click(); // stop
+    expect(synthMock.cancel).toHaveBeenCalledTimes(1);
+    expect(btn.classList.contains('btn-speak--active')).toBe(false);
+    expect(btn.getAttribute('aria-label')).toBe('Read aloud');
+  });
+
+  test('utterance onend resets button to rest state', () => {
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    const utterance = synthMock.speak.mock.calls[0][0];
+    utterance.onend();
+    expect(btn.classList.contains('btn-speak--active')).toBe(false);
+    expect(btn.getAttribute('aria-label')).toBe('Read aloud');
+  });
+
+  test('starting a second card cancels the first before speaking', () => {
+    const card1 = createMessageCard({ ...textMsg, id: 'msg-s1', text: 'First' }, null);
+    const card2 = createMessageCard({ ...textMsg, id: 'msg-s2', text: 'Second' }, null);
+
+    card1.querySelector('.btn-speak').click(); // start card 1
+    expect(card1.querySelector('.btn-speak').classList.contains('btn-speak--active')).toBe(true);
+
+    card2.querySelector('.btn-speak').click(); // start card 2 — should cancel card 1
+    expect(synthMock.cancel).toHaveBeenCalledTimes(1);
+    expect(card1.querySelector('.btn-speak').classList.contains('btn-speak--active')).toBe(false);
+    expect(card2.querySelector('.btn-speak').classList.contains('btn-speak--active')).toBe(true);
+
+    // cleanup
+    card2.querySelector('.btn-speak').click();
+  });
+
+  // --- Poll text ---
+
+  test('poll message uses poll question text (not option labels) for utterance', () => {
+    const card = createMessageCard(pollMsg, null);
+    const btn = card.querySelector('.btn-speak');
+    btn.click();
+    const utterance = synthMock.speak.mock.calls[0][0];
+    expect(utterance.text).toBe('What is your favourite colour?');
+    expect(utterance.text).not.toContain('Red');
+    expect(utterance.text).not.toContain('Blue');
+    btn.click(); // cleanup
+  });
+});
+
 describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
   let enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration;
 

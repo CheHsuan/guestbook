@@ -43,6 +43,8 @@ const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" strok
 const BELL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+const SPEAKER_STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -230,6 +232,9 @@ try {
   const _savedType = localStorage.getItem(TYPE_FILTER_KEY);
   if (_savedType && VALID_TYPES.has(_savedType)) currentTypeFilter = _savedType;
 } catch (_) {}
+
+// Tracks the currently-speaking .btn-speak element so only one plays at a time
+let activeSpeakerBtn = null;
 
 // ========================================
 // View Mode (Compact / Normal)
@@ -1294,6 +1299,13 @@ newMessagesBanner.addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     maybeSaveLastVisit();
+    if (typeof window !== 'undefined' && window.speechSynthesis && activeSpeakerBtn) {
+      window.speechSynthesis.cancel();
+      activeSpeakerBtn.innerHTML = SPEAKER_ICON;
+      activeSpeakerBtn.setAttribute('aria-label', 'Read aloud');
+      activeSpeakerBtn.classList.remove('btn-speak--active');
+      activeSpeakerBtn = null;
+    }
   }
   if (document.visibilityState === 'visible' && newMessageCount > 0) {
     hideNewMessagesBanner();
@@ -4584,6 +4596,68 @@ function createMessageCard(msg, user, isNew, isArchive) {
 
       cardFooter.appendChild(followBtn);
     }
+  }
+
+  // Speaker button — visible to all visitors when speechSynthesis is available and message has text
+  const msgHasText = msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio';
+  if (msgHasText && typeof window !== 'undefined' && window.speechSynthesis) {
+    const speakBtn = document.createElement('button');
+    speakBtn.className = 'btn-speak';
+    speakBtn.innerHTML = SPEAKER_ICON; // static SVG — no user data
+    speakBtn.setAttribute('aria-label', 'Read aloud');
+    speakBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+
+    if (!isMobile) {
+      card.addEventListener('mouseenter', () => speakBtn.setAttribute('tabindex', '0'));
+      card.addEventListener('mouseleave', () => {
+        if (!speakBtn.classList.contains('btn-speak--active')) {
+          speakBtn.setAttribute('tabindex', '-1');
+        }
+      });
+    }
+
+    speakBtn.addEventListener('click', () => {
+      if (speakBtn.classList.contains('btn-speak--active')) {
+        window.speechSynthesis.cancel();
+        speakBtn.innerHTML = SPEAKER_ICON;
+        speakBtn.setAttribute('aria-label', 'Read aloud');
+        speakBtn.classList.remove('btn-speak--active');
+        if (!isMobile) speakBtn.setAttribute('tabindex', '-1');
+        activeSpeakerBtn = null;
+      } else {
+        if (activeSpeakerBtn) {
+          window.speechSynthesis.cancel();
+          activeSpeakerBtn.innerHTML = SPEAKER_ICON;
+          activeSpeakerBtn.setAttribute('aria-label', 'Read aloud');
+          activeSpeakerBtn.classList.remove('btn-speak--active');
+          if (!isMobile) activeSpeakerBtn.setAttribute('tabindex', '-1');
+        }
+
+        const rawText = msg.type === 'poll'
+          ? ((msg.poll && msg.poll.question) || msg.text || '')
+          : (msg.text || '');
+        const plainText = stripInlineMarkdown(rawText);
+        if (!plainText) return;
+
+        const utterance = new SpeechSynthesisUtterance(plainText);
+        utterance.onend = () => {
+          speakBtn.innerHTML = SPEAKER_ICON;
+          speakBtn.setAttribute('aria-label', 'Read aloud');
+          speakBtn.classList.remove('btn-speak--active');
+          if (!isMobile) speakBtn.setAttribute('tabindex', '-1');
+          if (activeSpeakerBtn === speakBtn) activeSpeakerBtn = null;
+        };
+
+        window.speechSynthesis.speak(utterance);
+        speakBtn.innerHTML = SPEAKER_STOP_ICON;
+        speakBtn.setAttribute('aria-label', 'Stop reading');
+        speakBtn.classList.add('btn-speak--active');
+        speakBtn.setAttribute('tabindex', '0');
+        activeSpeakerBtn = speakBtn;
+      }
+    });
+
+    cardFooter.appendChild(speakBtn);
   }
 
   // Bookmark button — visible to all visitors (not gated on auth)
