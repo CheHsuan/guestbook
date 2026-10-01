@@ -45,6 +45,7 @@ const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="c
 const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
 const SPEAKER_STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const GLOBE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -1405,6 +1406,26 @@ function showToast(message) {
     toast.classList.remove('permalink-toast--visible');
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+function showToastWithLink(message, linkText, linkUrl) {
+  const toast = document.createElement('div');
+  toast.className = 'permalink-toast permalink-toast--visible permalink-toast--with-link';
+  const msgSpan = document.createElement('span');
+  msgSpan.textContent = message; // textContent — safe
+  toast.appendChild(msgSpan);
+  const link = document.createElement('a');
+  link.textContent = ' ' + linkText; // textContent — safe
+  link.href = linkUrl; // URL built by our code, not injected as HTML
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.className = 'permalink-toast-link';
+  toast.appendChild(link);
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.remove('permalink-toast--visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 5000);
 }
 
 function handleDeepLink() {
@@ -3663,6 +3684,107 @@ function createReplyCard(reply, user, msgId) {
 
   card.appendChild(textEl);
 
+  // Translate button for reply cards
+  const replyTranslateText = reply.text || '';
+  if (replyTranslateText.trim().length >= 5) {
+    const replyFooter = document.createElement('div');
+    replyFooter.className = 'reply-footer';
+
+    const translateBtn = document.createElement('button');
+    translateBtn.className = 'btn-translate';
+    translateBtn.innerHTML = GLOBE_ICON; // static SVG — no user data
+    translateBtn.setAttribute('aria-label', 'Translate message');
+    translateBtn.setAttribute('tabindex', '-1');
+    translateBtn.setAttribute('type', 'button');
+
+    card.addEventListener('mouseenter', () => translateBtn.setAttribute('tabindex', '0'));
+    card.addEventListener('mouseleave', () => {
+      if (!translateBtn.classList.contains('btn-translate--active')) {
+        translateBtn.setAttribute('tabindex', '-1');
+      }
+    });
+
+    let replyAttributionEl = null;
+
+    translateBtn.addEventListener('click', async () => {
+      if (translateBtn.disabled) return;
+
+      const browserLang = (navigator.language || 'en').split('-')[0];
+      const plainText = stripInlineMarkdown(replyTranslateText);
+      const encodedText = encodeURIComponent(plainText);
+      const fallbackUrl = 'https://translate.google.com/?sl=auto&tl=' + browserLang + '&text=' + encodedText;
+
+      if (!(typeof window !== 'undefined' && window.ai && window.ai.translator)) {
+        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      translateBtn.disabled = true;
+      translateBtn.classList.add('btn-translate--loading');
+      const spinnerSpan = document.createElement('span');
+      spinnerSpan.className = 'btn-translate-spinner';
+      translateBtn.innerHTML = '';
+      translateBtn.appendChild(spinnerSpan);
+
+      try {
+        let sourceLang = 'auto';
+        if (window.ai.languageDetector) {
+          try {
+            const detector = await window.ai.languageDetector.create();
+            const results = await detector.detect(plainText);
+            if (results && results.length > 0 && results[0].confidence > 0.3) {
+              sourceLang = results[0].detectedLanguage;
+            }
+            if (detector.destroy) detector.destroy();
+          } catch (_) {}
+        }
+
+        const translator = await window.ai.translator.create({
+          sourceLanguage: sourceLang,
+          targetLanguage: browserLang,
+        });
+        const translatedText = await translator.translate(plainText);
+        if (translator.destroy) translator.destroy();
+
+        renderMessageText(textEl, translatedText);
+
+        replyAttributionEl = document.createElement('p');
+        replyAttributionEl.className = 'translate-attribution';
+        const fromLabel = sourceLang !== 'auto' ? 'Translated from ' + sourceLang.toUpperCase() + ' · ' : 'Translated · ';
+        replyAttributionEl.textContent = fromLabel;
+        const showOriginalBtn = document.createElement('button');
+        showOriginalBtn.className = 'btn-show-original';
+        showOriginalBtn.textContent = 'Show original';
+        showOriginalBtn.setAttribute('type', 'button');
+        showOriginalBtn.addEventListener('click', () => {
+          renderMessageText(textEl, replyTranslateText);
+          if (replyAttributionEl) { replyAttributionEl.remove(); replyAttributionEl = null; }
+          translateBtn.classList.remove('btn-translate--active');
+          translateBtn.innerHTML = GLOBE_ICON;
+          translateBtn.setAttribute('aria-label', 'Translate message');
+          translateBtn.setAttribute('tabindex', '-1');
+        });
+        replyAttributionEl.appendChild(showOriginalBtn);
+        textEl.after(replyAttributionEl);
+
+        translateBtn.disabled = false;
+        translateBtn.classList.remove('btn-translate--loading');
+        translateBtn.classList.add('btn-translate--active');
+        translateBtn.innerHTML = GLOBE_ICON;
+        translateBtn.setAttribute('aria-label', 'Show original');
+        translateBtn.setAttribute('tabindex', '0');
+      } catch (_err) {
+        translateBtn.disabled = false;
+        translateBtn.classList.remove('btn-translate--loading');
+        translateBtn.innerHTML = GLOBE_ICON;
+        showToastWithLink('Could not translate — try opening in Google Translate', 'Open ↗', fallbackUrl);
+      }
+    });
+
+    replyFooter.appendChild(translateBtn);
+    card.appendChild(replyFooter);
+  }
+
   return card;
 }
 
@@ -4658,6 +4780,132 @@ function createMessageCard(msg, user, isNew, isArchive) {
     });
 
     cardFooter.appendChild(speakBtn);
+  }
+
+  // Translate button — visible to all visitors when message has enough text to translate
+  const translateText = msg.type === 'poll'
+    ? ((msg.poll && msg.poll.question) || msg.text || '')
+    : (msg.text || '');
+
+  if (msgHasText && translateText.trim().length >= 5) {
+    const translateBtn = document.createElement('button');
+    translateBtn.className = 'btn-translate';
+    translateBtn.innerHTML = GLOBE_ICON; // static SVG — no user data
+    translateBtn.setAttribute('aria-label', 'Translate message');
+    translateBtn.setAttribute('tabindex', isMobile ? '0' : '-1');
+    translateBtn.setAttribute('type', 'button');
+
+    if (!isMobile) {
+      card.addEventListener('mouseenter', () => translateBtn.setAttribute('tabindex', '0'));
+      card.addEventListener('mouseleave', () => {
+        if (!translateBtn.classList.contains('btn-translate--active')) {
+          translateBtn.setAttribute('tabindex', '-1');
+        }
+      });
+    }
+
+    // Optional: hide button when detected language matches user's language
+    if (typeof window !== 'undefined' && window.ai && window.ai.languageDetector) {
+      (async () => {
+        try {
+          const detector = await window.ai.languageDetector.create();
+          const results = await detector.detect(translateText);
+          if (results && results.length > 0) {
+            const detected = results[0].detectedLanguage;
+            const userLang = (navigator.language || '').split('-')[0].toLowerCase();
+            if (detected && detected.toLowerCase() === userLang) {
+              translateBtn.style.display = 'none';
+            }
+          }
+          if (detector.destroy) detector.destroy();
+        } catch (_) {}
+      })();
+    }
+
+    let isTranslated = false;
+    let attributionEl = null;
+
+    translateBtn.addEventListener('click', async () => {
+      if (translateBtn.disabled) return;
+
+      const browserLang = (navigator.language || 'en').split('-')[0];
+      const plainText = stripInlineMarkdown(translateText);
+      const encodedText = encodeURIComponent(plainText);
+      const fallbackUrl = 'https://translate.google.com/?sl=auto&tl=' + browserLang + '&text=' + encodedText;
+
+      if (!(typeof window !== 'undefined' && window.ai && window.ai.translator)) {
+        window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      // Loading state
+      translateBtn.disabled = true;
+      translateBtn.classList.add('btn-translate--loading');
+      const spinnerSpan = document.createElement('span');
+      spinnerSpan.className = 'btn-translate-spinner';
+      translateBtn.innerHTML = '';
+      translateBtn.appendChild(spinnerSpan);
+
+      try {
+        let sourceLang = 'auto';
+        if (window.ai.languageDetector) {
+          try {
+            const detector = await window.ai.languageDetector.create();
+            const results = await detector.detect(plainText);
+            if (results && results.length > 0 && results[0].confidence > 0.3) {
+              sourceLang = results[0].detectedLanguage;
+            }
+            if (detector.destroy) detector.destroy();
+          } catch (_) {}
+        }
+
+        const translator = await window.ai.translator.create({
+          sourceLanguage: sourceLang,
+          targetLanguage: browserLang,
+        });
+        const translatedText = await translator.translate(plainText);
+        if (translator.destroy) translator.destroy();
+
+        // Replace message text with translation
+        renderMessageText(textEl, translatedText);
+
+        // Add attribution
+        attributionEl = document.createElement('p');
+        attributionEl.className = 'translate-attribution';
+        const fromLabel = sourceLang !== 'auto' ? 'Translated from ' + sourceLang.toUpperCase() + ' · ' : 'Translated · ';
+        attributionEl.textContent = fromLabel;
+        const showOriginalBtn = document.createElement('button');
+        showOriginalBtn.className = 'btn-show-original';
+        showOriginalBtn.textContent = 'Show original';
+        showOriginalBtn.setAttribute('type', 'button');
+        showOriginalBtn.addEventListener('click', () => {
+          renderMessageText(textEl, translateText);
+          if (attributionEl) { attributionEl.remove(); attributionEl = null; }
+          isTranslated = false;
+          translateBtn.classList.remove('btn-translate--active');
+          translateBtn.innerHTML = GLOBE_ICON;
+          translateBtn.setAttribute('aria-label', 'Translate message');
+          if (!isMobile) translateBtn.setAttribute('tabindex', '-1');
+        });
+        attributionEl.appendChild(showOriginalBtn);
+        textEl.after(attributionEl);
+
+        isTranslated = true;
+        translateBtn.disabled = false;
+        translateBtn.classList.remove('btn-translate--loading');
+        translateBtn.classList.add('btn-translate--active');
+        translateBtn.innerHTML = GLOBE_ICON;
+        translateBtn.setAttribute('aria-label', 'Show original');
+        translateBtn.setAttribute('tabindex', '0');
+      } catch (_err) {
+        translateBtn.disabled = false;
+        translateBtn.classList.remove('btn-translate--loading');
+        translateBtn.innerHTML = GLOBE_ICON;
+        showToastWithLink('Could not translate — try opening in Google Translate', 'Open ↗', fallbackUrl);
+      }
+    });
+
+    cardFooter.appendChild(translateBtn);
   }
 
   // Bookmark button — visible to all visitors (not gated on auth)

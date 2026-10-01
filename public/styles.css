@@ -2179,6 +2179,119 @@ body {
 }
 
 /* ========================================
+   Translate Button
+   ======================================== */
+.btn-translate {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-translate svg {
+  width: 16px;
+  height: 16px;
+}
+
+.message-card:hover .btn-translate,
+.reply-card:hover .btn-translate {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-translate--active {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--link);
+}
+
+.btn-translate:hover {
+  color: var(--link);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.btn-translate:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.btn-translate--loading {
+  cursor: default;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-translate-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@media (hover: none) {
+  .btn-translate {
+    opacity: 1;
+    pointer-events: auto;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ========================================
+   Translation Attribution
+   ======================================== */
+.translate-attribution {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+
+.btn-show-original {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.btn-show-original:hover {
+  color: var(--link-hover, var(--link));
+}
+
+.btn-show-original:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: 2px;
+}
+
+/* ========================================
+   Reply Footer (for translate button)
+   ======================================== */
+.reply-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* ========================================
    Muted Badge (header)
    ======================================== */
 .muted-badge {
@@ -2737,6 +2850,16 @@ body {
 .permalink-toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+.permalink-toast--with-link {
+  pointer-events: auto;
+}
+
+.permalink-toast-link {
+  color: var(--accent-contrast);
+  text-decoration: underline;
+  margin-left: 4px;
 }
 
 /* ========================================
