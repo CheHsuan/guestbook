@@ -11783,3 +11783,385 @@ describe('compact view mode', () => {
   });
 });
 
+// ========================================
+// Translate button
+// ========================================
+describe('translate button', () => {
+  let createMessageCard;
+  let createReplyCard;
+
+  const textMsg = {
+    id: 'translate-msg-1',
+    author: 'Alice',
+    text: 'Hello, how are you today?',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  const shortMsg = {
+    id: 'translate-msg-short',
+    author: 'Alice',
+    text: 'Hi',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  const gifMsg = {
+    id: 'translate-msg-gif',
+    type: 'gif',
+    gifUrl: 'https://media.tenor.com/test.gif',
+    gifAlt: 'A funny GIF',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const imageMsg = {
+    id: 'translate-msg-image',
+    type: 'image',
+    imageUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/img.jpg',
+    imageAlt: 'A photo',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const audioMsg = {
+    id: 'translate-msg-audio',
+    type: 'audio',
+    audioUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/voice.webm',
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  const pollMsg = {
+    id: 'translate-msg-poll',
+    type: 'poll',
+    text: 'What is your favourite colour?',
+    poll: {
+      question: 'What is your favourite colour?',
+      options: {
+        opt1: { text: 'Red', votes: 3 },
+        opt2: { text: 'Blue', votes: 5 },
+      },
+    },
+    author: 'Alice',
+    authorId: 'uid-alice',
+    timestamp: Date.now(),
+  };
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, createReplyCard } = require('../public/app.js'));
+  });
+
+  // --- Presence ---
+
+  test('renders .btn-translate on text message (no user)', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-translate')).not.toBeNull();
+  });
+
+  test('renders .btn-translate on text message (own user)', () => {
+    const card = createMessageCard(textMsg, { uid: 'uid-alice' });
+    expect(card.querySelector('.btn-translate')).not.toBeNull();
+  });
+
+  test('renders .btn-translate on text message (other user)', () => {
+    const card = createMessageCard(textMsg, { uid: 'uid-bob' });
+    expect(card.querySelector('.btn-translate')).not.toBeNull();
+  });
+
+  test('does not render .btn-translate on message with fewer than 5 chars', () => {
+    const card = createMessageCard(shortMsg, null);
+    expect(card.querySelector('.btn-translate')).toBeNull();
+  });
+
+  test('does not render .btn-translate on gif message', () => {
+    const card = createMessageCard(gifMsg, null);
+    expect(card.querySelector('.btn-translate')).toBeNull();
+  });
+
+  test('does not render .btn-translate on image message', () => {
+    const card = createMessageCard(imageMsg, null);
+    expect(card.querySelector('.btn-translate')).toBeNull();
+  });
+
+  test('does not render .btn-translate on audio message', () => {
+    const card = createMessageCard(audioMsg, null);
+    expect(card.querySelector('.btn-translate')).toBeNull();
+  });
+
+  test('renders .btn-translate on poll message', () => {
+    const card = createMessageCard(pollMsg, null);
+    expect(card.querySelector('.btn-translate')).not.toBeNull();
+  });
+
+  // --- Accessibility & DOM ---
+
+  test('.btn-translate has aria-label="Translate message"', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-translate').getAttribute('aria-label')).toBe('Translate message');
+  });
+
+  test('.btn-translate has tabindex="-1" in non-touch environment', () => {
+    const card = createMessageCard(textMsg, null);
+    expect(card.querySelector('.btn-translate').getAttribute('tabindex')).toBe('-1');
+  });
+
+  test('.btn-translate appears after .btn-speak in footer', () => {
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: { speak: jest.fn(), cancel: jest.fn() },
+      writable: true,
+      configurable: true,
+    });
+    const card = createMessageCard(textMsg, null);
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const speakIdx = children.findIndex(el => el.classList.contains('btn-speak'));
+    const translateIdx = children.findIndex(el => el.classList.contains('btn-translate'));
+    expect(speakIdx).toBeGreaterThanOrEqual(0);
+    expect(translateIdx).toBeGreaterThan(speakIdx);
+  });
+
+  test('.btn-translate appears before .btn-bookmark in footer', () => {
+    const card = createMessageCard(textMsg, null);
+    const footer = card.querySelector('.card-footer');
+    const children = Array.from(footer.children);
+    const translateIdx = children.findIndex(el => el.classList.contains('btn-translate'));
+    const bookmarkIdx = children.findIndex(el => el.classList.contains('btn-bookmark'));
+    expect(translateIdx).toBeGreaterThanOrEqual(0);
+    expect(bookmarkIdx).toBeGreaterThan(translateIdx);
+  });
+
+  // --- Chrome API unavailable: fallback to Google Translate ---
+
+  test('clicking .btn-translate opens Google Translate when window.ai is undefined', () => {
+    delete window.ai;
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const url = openSpy.mock.calls[0][0];
+    expect(url).toMatch(/translate\.google\.com/);
+    expect(url).toContain('sl=auto');
+    openSpy.mockRestore();
+  });
+
+  test('Google Translate fallback URL contains encoded message text', () => {
+    delete window.ai;
+    const openSpy = jest.spyOn(window, 'open').mockImplementation(() => {});
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    const url = openSpy.mock.calls[0][0];
+    expect(url).toContain(encodeURIComponent('Hello, how are you today?'));
+    openSpy.mockRestore();
+  });
+
+  // --- Chrome API available: inline translation ---
+
+  test('clicking .btn-translate shows loading state when window.ai.translator is available', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Hola, ¿cómo estás hoy?');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-translate');
+
+    // Click and immediately check loading state (before promise resolves)
+    const clickPromise = btn.click();
+    expect(btn.disabled).toBe(true);
+    expect(btn.classList.contains('btn-translate--loading')).toBe(true);
+
+    // Allow async work to complete
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    delete window.ai;
+  });
+
+  test('successful inline translation replaces message text', async () => {
+    const translatedText = 'Hola, ¿cómo estás hoy?';
+    const translateMock = jest.fn().mockResolvedValue(translatedText);
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-translate');
+    btn.click();
+
+    // Flush microtask queue
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent).toBe(translatedText);
+    delete window.ai;
+  });
+
+  test('successful translation shows .translate-attribution', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Bonjour');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(card.querySelector('.translate-attribution')).not.toBeNull();
+    delete window.ai;
+  });
+
+  test('successful translation shows "Show original" button', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Bonjour');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(card.querySelector('.btn-show-original')).not.toBeNull();
+    delete window.ai;
+  });
+
+  test('successful translation adds btn-translate--active class', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Bonjour');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-translate');
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(btn.classList.contains('btn-translate--active')).toBe(true);
+    delete window.ai;
+  });
+
+  test('clicking "Show original" restores original text', async () => {
+    const translatedText = 'Bonjour';
+    const translateMock = jest.fn().mockResolvedValue(translatedText);
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    card.querySelector('.btn-show-original').click();
+
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent).toBe(textMsg.text);
+    delete window.ai;
+  });
+
+  test('clicking "Show original" removes .translate-attribution', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Bonjour');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    card.querySelector('.btn-translate').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    card.querySelector('.btn-show-original').click();
+
+    expect(card.querySelector('.translate-attribution')).toBeNull();
+    delete window.ai;
+  });
+
+  test('clicking "Show original" removes btn-translate--active', async () => {
+    const translateMock = jest.fn().mockResolvedValue('Bonjour');
+    const translatorInstance = { translate: translateMock, destroy: jest.fn() };
+    window.ai = {
+      translator: { create: jest.fn().mockResolvedValue(translatorInstance) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-translate');
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    card.querySelector('.btn-show-original').click();
+
+    expect(btn.classList.contains('btn-translate--active')).toBe(false);
+    delete window.ai;
+  });
+
+  test('translation failure shows toast and restores button', async () => {
+    window.ai = {
+      translator: { create: jest.fn().mockRejectedValue(new Error('Language pair not supported')) },
+    };
+
+    const card = createMessageCard(textMsg, null);
+    const btn = card.querySelector('.btn-translate');
+    btn.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(btn.disabled).toBe(false);
+    expect(btn.classList.contains('btn-translate--loading')).toBe(false);
+    delete window.ai;
+  });
+
+  // --- Reply cards ---
+
+  test('renders .btn-translate on reply card with long text', () => {
+    const reply = {
+      id: 'reply-1',
+      author: 'Bob',
+      text: 'This is a reply with enough text',
+      timestamp: Date.now(),
+      authorId: 'uid-bob',
+    };
+    const card = createReplyCard(reply, null, 'parent-msg-id');
+    expect(card.querySelector('.btn-translate')).not.toBeNull();
+  });
+
+  test('does not render .btn-translate on reply with fewer than 5 chars', () => {
+    const reply = {
+      id: 'reply-short',
+      author: 'Bob',
+      text: 'Hi',
+      timestamp: Date.now(),
+      authorId: 'uid-bob',
+    };
+    const card = createReplyCard(reply, null, 'parent-msg-id');
+    expect(card.querySelector('.btn-translate')).toBeNull();
+  });
+});
+
