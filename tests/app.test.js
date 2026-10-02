@@ -96,6 +96,17 @@ const APP_HTML = `
   <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <div id="activity-sparkline" style="display:none;"></div>
+  <section id="on-this-day-panel" class="on-this-day-panel glass-card" style="display:none;">
+    <div class="on-this-day-header">
+      <button id="on-this-day-toggle" class="on-this-day-toggle" aria-expanded="false">
+        <span class="on-this-day-icon">🕐</span>
+        <span class="on-this-day-title">On This Day</span>
+        <span class="on-this-day-chevron">▼</span>
+      </button>
+      <button id="on-this-day-dismiss" class="on-this-day-dismiss">✕</button>
+    </div>
+    <div id="on-this-day-body" class="on-this-day-body" style="display:none;"></div>
+  </section>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
   <button id="muted-words-badge" style="display:none;"></button>
@@ -1336,6 +1347,8 @@ describe('infinite scroll / loadMoreMessages', () => {
 
     global.isNearBottom = jest.fn().mockReturnValue(true);
 
+    const onceCountBeforeScrolls = mocks.dbRef.once.mock.calls.length;
+
     // First scroll starts load-more; isLoadingMore becomes true synchronously before any await
     window.dispatchEvent(new Event('scroll'));
     // Second scroll fires while isLoadingMore is still true — should be a no-op
@@ -1347,8 +1360,8 @@ describe('infinite scroll / loadMoreMessages', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 1 initial load + 1 prev-day check + 1 alias load + 1 load-more = 4; second scroll was ignored by isLoadingMore guard
-    expect(mocks.dbRef.once.mock.calls.length).toBe(4);
+    // Only the first scroll's load-more should fire — second scroll was ignored by isLoadingMore guard
+    expect(mocks.dbRef.once.mock.calls.length).toBe(onceCountBeforeScrolls + 1);
   });
 });
 
@@ -11779,6 +11792,289 @@ describe('compact view mode', () => {
       collapseCardCompact(card);
       expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('false');
       expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
+    });
+  });
+});
+
+describe('On This Day panel', () => {
+  let getTodayUtcDateKey, isOnThisDayDismissed, dismissOnThisDay;
+  let getOnThisDayExpanded, setOnThisDayExpanded;
+  let buildOnThisDaySnippet, updateOnThisDayVisibility, renderOnThisDayPanel;
+  let OTD_SNIPPET_MAX_LEN, OTD_MAX_TOTAL, OTD_MAX_PER_DAY;
+
+  beforeEach(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+    jest.resetModules();
+
+    ({
+      getTodayUtcDateKey, isOnThisDayDismissed, dismissOnThisDay,
+      getOnThisDayExpanded, setOnThisDayExpanded,
+      buildOnThisDaySnippet, updateOnThisDayVisibility, renderOnThisDayPanel,
+      OTD_SNIPPET_MAX_LEN, OTD_MAX_TOTAL, OTD_MAX_PER_DAY,
+    } = require('../public/app.js'));
+  });
+
+  describe('getTodayUtcDateKey', () => {
+    test('returns a YYYY-MM-DD string', () => {
+      const key = getTodayUtcDateKey();
+      expect(key).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    test('pads month and day with leading zeros', () => {
+      const key = getTodayUtcDateKey();
+      const parts = key.split('-');
+      expect(parts[1].length).toBe(2);
+      expect(parts[2].length).toBe(2);
+    });
+  });
+
+  describe('dismissOnThisDay / isOnThisDayDismissed', () => {
+    test('not dismissed by default', () => {
+      expect(isOnThisDayDismissed()).toBe(false);
+    });
+
+    test('dismissed after calling dismissOnThisDay', () => {
+      dismissOnThisDay();
+      expect(isOnThisDayDismissed()).toBe(true);
+    });
+  });
+
+  describe('setOnThisDayExpanded / getOnThisDayExpanded', () => {
+    test('not expanded by default', () => {
+      expect(getOnThisDayExpanded()).toBe(false);
+    });
+
+    test('expanded after setOnThisDayExpanded(true)', () => {
+      setOnThisDayExpanded(true);
+      expect(getOnThisDayExpanded()).toBe(true);
+    });
+
+    test('collapsed after setOnThisDayExpanded(false)', () => {
+      setOnThisDayExpanded(true);
+      setOnThisDayExpanded(false);
+      expect(getOnThisDayExpanded()).toBe(false);
+    });
+  });
+
+  describe('buildOnThisDaySnippet', () => {
+    const baseMsg = {
+      id: 'abc123',
+      author: 'Alice',
+      authorId: 'uid1',
+      text: 'Hello world',
+      timestamp: Date.now(),
+      photoURL: null,
+    };
+
+    test('returns an anchor element', () => {
+      const el = buildOnThisDaySnippet(baseMsg, '2025-09-25', 7);
+      expect(el.tagName).toBe('A');
+    });
+
+    test('href points to archive date', () => {
+      const el = buildOnThisDaySnippet(baseMsg, '2025-09-25', 7);
+      expect(el.getAttribute('href')).toBe('#archive-2025-09-25');
+    });
+
+    test('has on-this-day-snippet class', () => {
+      const el = buildOnThisDaySnippet(baseMsg, '2025-09-25', 7);
+      expect(el.classList.contains('on-this-day-snippet')).toBe(true);
+    });
+
+    test('renders author name via textContent (XSS safe)', () => {
+      const msg = { ...baseMsg, author: '<script>alert(1)</script>' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      const authorEl = el.querySelector('.on-this-day-snippet-author');
+      expect(authorEl.textContent).toBe('<script>alert(1)</script>');
+      expect(el.innerHTML).not.toContain('<script>');
+    });
+
+    test('renders message text via textContent (XSS safe)', () => {
+      const msg = { ...baseMsg, text: '<img src=x onerror=alert(1)>' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      const textEl = el.querySelector('.on-this-day-snippet-text');
+      expect(textEl.textContent).toContain('<img');
+      expect(el.innerHTML).not.toContain('<img src');
+    });
+
+    test('truncates text longer than OTD_SNIPPET_MAX_LEN', () => {
+      const longText = 'a'.repeat(OTD_SNIPPET_MAX_LEN + 10);
+      const msg = { ...baseMsg, text: longText };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      const textEl = el.querySelector('.on-this-day-snippet-text');
+      expect(textEl.textContent.length).toBe(OTD_SNIPPET_MAX_LEN + 1); // +1 for '…'
+      expect(textEl.textContent.endsWith('…')).toBe(true);
+    });
+
+    test('does not truncate text at exactly OTD_SNIPPET_MAX_LEN', () => {
+      const exactText = 'b'.repeat(OTD_SNIPPET_MAX_LEN);
+      const msg = { ...baseMsg, text: exactText };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      const textEl = el.querySelector('.on-this-day-snippet-text');
+      expect(textEl.textContent.endsWith('…')).toBe(false);
+      expect(textEl.textContent).toBe(exactText);
+    });
+
+    test('shows [GIF] label for gif type', () => {
+      const msg = { ...baseMsg, text: '', type: 'gif' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-text').textContent).toBe('[GIF]');
+    });
+
+    test('shows [Voice message] label for audio type', () => {
+      const msg = { ...baseMsg, text: '', type: 'audio' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-text').textContent).toBe('[Voice message]');
+    });
+
+    test('shows poll text for poll type', () => {
+      const msg = { ...baseMsg, text: 'What is your favorite color?', type: 'poll' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-text').textContent).toBe('What is your favorite color?');
+    });
+
+    test('shows [Poll] fallback when poll has no text', () => {
+      const msg = { ...baseMsg, text: '', type: 'poll' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-text').textContent).toBe('[Poll]');
+    });
+
+    test('time label contains daysAgo prefix', () => {
+      const el = buildOnThisDaySnippet(baseMsg, '2025-09-25', 14);
+      const timeEl = el.querySelector('.on-this-day-snippet-time');
+      expect(timeEl.textContent).toMatch(/^14 days ago/);
+    });
+
+    test('shows Anonymous when author is missing', () => {
+      const msg = { ...baseMsg, author: '' };
+      const el = buildOnThisDaySnippet(msg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-author').textContent).toBe('Anonymous');
+    });
+
+    test('includes avatar wrapper element', () => {
+      const el = buildOnThisDaySnippet(baseMsg, '2025-09-25', 7);
+      expect(el.querySelector('.on-this-day-snippet-avatar')).not.toBeNull();
+    });
+  });
+
+  describe('updateOnThisDayVisibility', () => {
+    function seedPanel() {
+      const body = document.getElementById('on-this-day-body');
+      const group = document.createElement('div');
+      group.className = 'on-this-day-group';
+      body.appendChild(group);
+    }
+
+    test('panel stays hidden when body has no content', () => {
+      updateOnThisDayVisibility();
+      expect(document.getElementById('on-this-day-panel').style.display).toBe('none');
+    });
+
+    test('panel becomes visible when body has a group and not filtered', () => {
+      seedPanel();
+      updateOnThisDayVisibility();
+      expect(document.getElementById('on-this-day-panel').style.display).toBe('');
+    });
+
+    test('panel is hidden when dismissed', () => {
+      seedPanel();
+      dismissOnThisDay();
+      updateOnThisDayVisibility();
+      expect(document.getElementById('on-this-day-panel').style.display).toBe('none');
+    });
+
+    test('panel is visible with shimmer placeholder (loading state)', () => {
+      const body = document.getElementById('on-this-day-body');
+      const shimmer = document.createElement('div');
+      shimmer.className = 'on-this-day-shimmer';
+      body.appendChild(shimmer);
+      updateOnThisDayVisibility();
+      expect(document.getElementById('on-this-day-panel').style.display).toBe('');
+    });
+  });
+
+  describe('renderOnThisDayPanel', () => {
+    const makeGroup = (daysAgo, msgCount = 1) => ({
+      daysAgo,
+      date: new Date(Date.UTC(2025, 8, 25 - daysAgo)),
+      messages: Array.from({ length: msgCount }, (_, i) => ({
+        id: `msg${daysAgo}_${i}`,
+        author: `Author${i}`,
+        authorId: `uid${i}`,
+        text: `Message ${i}`,
+        timestamp: 1727222400000,
+        photoURL: null,
+      })),
+    });
+
+    test('hides panel when groups array is empty', () => {
+      renderOnThisDayPanel([]);
+      expect(document.getElementById('on-this-day-panel').style.display).toBe('none');
+    });
+
+    test('renders one group element per group', () => {
+      renderOnThisDayPanel([makeGroup(7), makeGroup(14)]);
+      const groups = document.querySelectorAll('.on-this-day-group');
+      expect(groups.length).toBe(2);
+    });
+
+    test('renders snippets inside each group', () => {
+      renderOnThisDayPanel([makeGroup(7, 2)]);
+      const snippets = document.querySelectorAll('.on-this-day-snippet');
+      expect(snippets.length).toBe(2);
+    });
+
+    test('limits total snippets to OTD_MAX_TOTAL', () => {
+      const bigGroup = makeGroup(7, OTD_MAX_TOTAL + 5);
+      renderOnThisDayPanel([bigGroup]);
+      const snippets = document.querySelectorAll('.on-this-day-snippet');
+      expect(snippets.length).toBeLessThanOrEqual(OTD_MAX_TOTAL);
+    });
+
+    test('group header contains daysAgo label', () => {
+      renderOnThisDayPanel([makeGroup(7)]);
+      const header = document.querySelector('.on-this-day-group-header');
+      expect(header.textContent).toContain('7 days ago');
+    });
+
+    test('body is collapsed (hidden) by default', () => {
+      renderOnThisDayPanel([makeGroup(7)]);
+      const body = document.getElementById('on-this-day-body');
+      expect(body.style.display).toBe('none');
+    });
+
+    test('body is expanded when localStorage says expanded', () => {
+      setOnThisDayExpanded(true);
+      renderOnThisDayPanel([makeGroup(7)]);
+      const body = document.getElementById('on-this-day-body');
+      expect(body.style.display).toBe('');
+    });
+
+    test('toggle button aria-expanded matches body visibility', () => {
+      setOnThisDayExpanded(true);
+      renderOnThisDayPanel([makeGroup(7)]);
+      const toggle = document.getElementById('on-this-day-toggle');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
     });
   });
 });

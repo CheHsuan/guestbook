@@ -1052,6 +1052,186 @@ body {
 }
 
 /* ========================================
+   On This Day Panel
+   ======================================== */
+.on-this-day-panel {
+  margin-bottom: 16px;
+  padding: 12px 16px;
+}
+
+.on-this-day-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.on-this-day-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-align: left;
+  min-width: 0;
+}
+
+.on-this-day-toggle:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.on-this-day-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.on-this-day-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.on-this-day-chevron {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.on-this-day-dismiss {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm, 4px);
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color var(--transition);
+}
+
+.on-this-day-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.on-this-day-dismiss:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.on-this-day-body {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.on-this-day-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.on-this-day-group-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.on-this-day-snippet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm, 6px);
+  text-decoration: none;
+  color: inherit;
+  transition: background var(--transition);
+}
+
+.on-this-day-snippet:hover {
+  background: var(--bg-subtle);
+}
+
+.on-this-day-snippet:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.on-this-day-snippet-avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.on-this-day-snippet-avatar .message-avatar,
+.on-this-day-snippet-avatar .avatar-fallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.on-this-day-snippet-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.on-this-day-snippet-author {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.on-this-day-snippet-text {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.on-this-day-snippet-time {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.on-this-day-shimmer {
+  height: 60px;
+  border-radius: var(--radius-sm, 6px);
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--border) 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ========================================
    Messages Section
    ======================================== */
 .messages-section .section-title {

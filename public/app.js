@@ -1559,6 +1559,7 @@ function filterMessages() {
   renderTrendingHashtags();
   updateTypeFilterRow();
   renderSparkline();
+  updateOnThisDayVisibility();
 
   if (myPostsActive && currentUser) {
     const cards = messagesContainer.querySelectorAll('.message-card');
@@ -2515,6 +2516,7 @@ async function startListeningMessages() {
       updateMyPostsBtnVisibility();
       renderSparkline();
       pruneExpiredSubscriptions();
+      initOnThisDay();
     }
 
     handleDeepLink();
@@ -7060,7 +7062,273 @@ async function handleAvatarRemove() {
   }
 }());
 
+// ========================================
+// On This Day Panel
+// ========================================
+const OTD_DISMISS_KEY = 'guestbook_otd_dismissed_';
+const OTD_EXPANDED_KEY = 'guestbook_otd_expanded_';
+const OTD_MAX_PER_DAY = 3;
+const OTD_MAX_TOTAL = 6;
+const OTD_MAX_PER_AUTHOR = 2;
+const OTD_SNIPPET_MAX_LEN = 80;
+const OTD_DAYS = [7, 14, 30];
+let onThisDayLoaded = false;
+
+function getTodayUtcDateKey() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isOnThisDayDismissed() {
+  try {
+    return localStorage.getItem(OTD_DISMISS_KEY + getTodayUtcDateKey()) === '1';
+  } catch (_) { return false; }
+}
+
+function dismissOnThisDay() {
+  try {
+    localStorage.setItem(OTD_DISMISS_KEY + getTodayUtcDateKey(), '1');
+  } catch (_) {}
+}
+
+function getOnThisDayExpanded() {
+  try {
+    return localStorage.getItem(OTD_EXPANDED_KEY + getTodayUtcDateKey()) === '1';
+  } catch (_) { return false; }
+}
+
+function setOnThisDayExpanded(expanded) {
+  try {
+    localStorage.setItem(OTD_EXPANDED_KEY + getTodayUtcDateKey(), expanded ? '1' : '0');
+  } catch (_) {}
+}
+
+function buildOnThisDaySnippet(msg, archiveDateStr, daysAgo) {
+  const el = document.createElement('a');
+  el.className = 'on-this-day-snippet';
+  el.href = '#archive-' + archiveDateStr;
+
+  const avatarWrapper = document.createElement('div');
+  avatarWrapper.className = 'on-this-day-snippet-avatar';
+  avatarWrapper.appendChild(createAvatarElement(msg.photoURL, msg.author));
+  el.appendChild(avatarWrapper);
+
+  const content = document.createElement('div');
+  content.className = 'on-this-day-snippet-content';
+
+  const authorEl = document.createElement('span');
+  authorEl.className = 'on-this-day-snippet-author';
+  authorEl.textContent = msg.author || 'Anonymous'; // XSS safe
+
+  let rawText = '';
+  if (msg.type === 'gif') {
+    rawText = '[GIF]';
+  } else if (msg.type === 'audio') {
+    rawText = '[Voice message]';
+  } else if (msg.type === 'poll') {
+    rawText = msg.text || '[Poll]';
+  } else {
+    rawText = msg.text || '';
+  }
+  const truncated = rawText.length > OTD_SNIPPET_MAX_LEN
+    ? rawText.slice(0, OTD_SNIPPET_MAX_LEN) + '…'
+    : rawText;
+
+  const textEl = document.createElement('p');
+  textEl.className = 'on-this-day-snippet-text';
+  textEl.textContent = truncated; // XSS safe
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'on-this-day-snippet-time';
+  const timeStr = new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  timeEl.textContent = daysAgo + ' days ago \xB7 ' + timeStr; // not user content
+
+  content.appendChild(authorEl);
+  content.appendChild(textEl);
+  content.appendChild(timeEl);
+  el.appendChild(content);
+
+  el.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const parts = archiveDateStr.split('-');
+    const pastDate = new Date(Date.UTC(
+      parseInt(parts[0], 10),
+      parseInt(parts[1], 10) - 1,
+      parseInt(parts[2], 10)
+    ));
+    history.pushState(null, '', location.pathname + location.search + '#archive-' + archiveDateStr);
+    await loadArchiveDay(pastDate);
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) {
+      deepLinkHandled = true;
+      expandCardCompact(card);
+      card.scrollIntoView({ behavior: 'smooth' });
+      card.classList.add('permalink-highlight');
+      setTimeout(() => card.classList.remove('permalink-highlight'), 2000);
+    }
+  });
+
+  return el;
+}
+
+function updateOnThisDayVisibility() {
+  const panel = document.getElementById('on-this-day-panel');
+  if (!panel) return;
+
+  const isFiltered = isArchiveMode
+    || myPostsActive
+    || (searchInput && searchInput.value.trim())
+    || currentTypeFilter !== TYPE_ALL;
+
+  if (isFiltered || isOnThisDayDismissed()) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const body = document.getElementById('on-this-day-body');
+  const hasContent = body && (
+    body.querySelector('.on-this-day-group') ||
+    body.querySelector('.on-this-day-shimmer')
+  );
+  panel.style.display = hasContent ? '' : 'none';
+}
+
+function renderOnThisDayPanel(groups) {
+  const panel = document.getElementById('on-this-day-panel');
+  const body = document.getElementById('on-this-day-body');
+  if (!panel || !body) return;
+
+  body.innerHTML = '';
+
+  if (groups.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  let totalShown = 0;
+  for (const group of groups) {
+    if (totalShown >= OTD_MAX_TOTAL) break;
+    const remaining = OTD_MAX_TOTAL - totalShown;
+    const msgs = group.messages.slice(0, Math.min(OTD_MAX_PER_DAY, remaining));
+    if (msgs.length === 0) continue;
+
+    const groupEl = document.createElement('div');
+    groupEl.className = 'on-this-day-group';
+
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'on-this-day-group-header';
+    groupHeader.textContent = group.daysAgo + ' days ago — ' + formatArchiveDateDisplay(group.date);
+    groupEl.appendChild(groupHeader);
+
+    for (const msg of msgs) {
+      groupEl.appendChild(buildOnThisDaySnippet(msg, formatArchiveDateForHash(group.date), group.daysAgo));
+      totalShown++;
+    }
+
+    body.appendChild(groupEl);
+  }
+
+  const toggle = document.getElementById('on-this-day-toggle');
+  const isExpanded = getOnThisDayExpanded();
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    const chevron = toggle.querySelector('.on-this-day-chevron');
+    if (chevron) chevron.textContent = isExpanded ? '▲' : '▼';
+  }
+  body.style.display = isExpanded ? '' : 'none';
+
+  updateOnThisDayVisibility();
+}
+
+async function loadOnThisDay() {
+  const panel = document.getElementById('on-this-day-panel');
+  const body = document.getElementById('on-this-day-body');
+  if (!panel || !body) return;
+
+  body.innerHTML = '<div class="on-this-day-shimmer"></div>';
+  updateOnThisDayVisibility();
+
+  const todayMs = getTodayUtcMidnight();
+  const groups = [];
+
+  for (const daysAgo of OTD_DAYS) {
+    const pastDate = new Date(todayMs - daysAgo * 24 * 60 * 60 * 1000);
+    const { start, end } = getUtcDayBounds(pastDate);
+    try {
+      const snap = await db.ref('messages')
+        .orderByChild('timestamp')
+        .startAt(start)
+        .endAt(end)
+        .limitToLast(20)
+        .once('value');
+
+      if (!snap.exists()) continue;
+
+      const msgs = [];
+      snap.forEach(child => msgs.push({ id: child.key, ...child.val() }));
+      msgs.sort((a, b) => b.timestamp - a.timestamp);
+
+      const authorCount = new Map();
+      const filtered = [];
+      for (const msg of msgs) {
+        if (isMuted(msg.authorId)) continue;
+        if (isMutedByKeyword(msg.text || '')) continue;
+        const cnt = authorCount.get(msg.authorId) || 0;
+        if (cnt >= OTD_MAX_PER_AUTHOR) continue;
+        authorCount.set(msg.authorId, cnt + 1);
+        filtered.push(msg);
+        if (filtered.length >= OTD_MAX_PER_DAY) break;
+      }
+
+      if (filtered.length > 0) {
+        groups.push({ daysAgo, date: pastDate, messages: filtered });
+      }
+    } catch (_) {}
+  }
+
+  renderOnThisDayPanel(groups);
+}
+
+function initOnThisDay() {
+  if (onThisDayLoaded) return;
+  if (isArchiveMode) return;
+  onThisDayLoaded = true;
+
+  const dismissBtn = document.getElementById('on-this-day-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissOnThisDay();
+      const panel = document.getElementById('on-this-day-panel');
+      if (panel) panel.style.display = 'none';
+    });
+  }
+
+  const toggleBtn = document.getElementById('on-this-day-toggle');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const body = document.getElementById('on-this-day-body');
+      if (!body) return;
+      const nowExpanded = body.style.display !== 'none';
+      const next = !nowExpanded;
+      body.style.display = next ? '' : 'none';
+      toggleBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
+      const chevron = toggleBtn.querySelector('.on-this-day-chevron');
+      if (chevron) chevron.textContent = next ? '▲' : '▼';
+      setOnThisDayExpanded(next);
+    });
+  }
+
+  loadOnThisDay().catch(() => {
+    const panel = document.getElementById('on-this-day-panel');
+    if (panel) panel.style.display = 'none';
+  });
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, getTodayUtcDateKey, isOnThisDayDismissed, dismissOnThisDay, getOnThisDayExpanded, setOnThisDayExpanded, buildOnThisDaySnippet, updateOnThisDayVisibility, renderOnThisDayPanel, initOnThisDay, OTD_SNIPPET_MAX_LEN, OTD_MAX_PER_DAY, OTD_MAX_TOTAL, OTD_MAX_PER_AUTHOR, OTD_DAYS };
 }

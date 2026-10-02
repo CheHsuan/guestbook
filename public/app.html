@@ -191,6 +191,18 @@
           <span class="trending-label">Trending</span>
           <div class="trending-chips"></div>
         </div>
+        <!-- On This Day panel — shown on live view when messages exist from 7/14/30 days ago -->
+        <section id="on-this-day-panel" class="on-this-day-panel glass-card" style="display:none;" aria-label="On This Day">
+          <div class="on-this-day-header">
+            <button id="on-this-day-toggle" class="on-this-day-toggle" aria-expanded="false" aria-label="Expand On This Day panel">
+              <span class="on-this-day-icon" aria-hidden="true">🕐</span>
+              <span class="on-this-day-title">On This Day</span>
+              <span class="on-this-day-chevron" aria-hidden="true">▼</span>
+            </button>
+            <button id="on-this-day-dismiss" class="on-this-day-dismiss" aria-label="Dismiss On This Day panel">✕</button>
+          </div>
+          <div id="on-this-day-body" class="on-this-day-body" style="display:none;"></div>
+        </section>
         <!-- Saved messages panel — toggled by #saved-badge in the header -->
         <section id="saved-panel" class="saved-panel" style="display:none;" aria-label="Saved messages">
           <div class="saved-panel-header">
