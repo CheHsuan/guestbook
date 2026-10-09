@@ -3556,18 +3556,21 @@ function createFormattingToolbar(textarea) {
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', 'Formatting options');
 
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+  const modKey = isMac ? '⌘' : 'Ctrl';
+
   const FORMATS = [
-    { label: 'Bold',   before: '**', after: '**', text: 'B', cls: 'btn-format-bold',   key: 'b' },
-    { label: 'Italic', before: '*',  after: '*',  text: 'I', cls: 'btn-format-italic', key: 'i' },
-    { label: 'Code',   before: '`',  after: '`',  text: '<>', cls: 'btn-format-code',  key: null },
+    { label: 'Bold',   before: '**', after: '**', text: 'B',   cls: 'btn-format-bold',   key: 'b',   shift: false, shortcut: modKey + '+B' },
+    { label: 'Italic', before: '*',  after: '*',  text: 'I',   cls: 'btn-format-italic', key: 'i',   shift: false, shortcut: modKey + '+I' },
+    { label: 'Code',   before: '`',  after: '`',  text: '</>',         cls: 'btn-format-code',  key: 'm',   shift: true,  shortcut: modKey + '+Shift+M' },
   ];
 
-  FORMATS.forEach(({ label, before, after, text, cls }) => {
+  FORMATS.forEach(({ label, before, after, text, cls, shortcut }) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'btn-format ' + cls;
-    btn.setAttribute('aria-label', label);
-    btn.title = label;
+    btn.setAttribute('aria-label', label + ' (' + shortcut + ')');
+    btn.title = label + ' (' + shortcut + ')';
     btn.textContent = text;
     btn.addEventListener('click', () => {
       wrapSelection(textarea, before, after);
@@ -3577,10 +3580,10 @@ function createFormattingToolbar(textarea) {
     toolbar.appendChild(btn);
   });
 
-  // Ctrl/Cmd+B → bold, Ctrl/Cmd+I → italic
+  // Ctrl/Cmd+B → bold, Ctrl/Cmd+I → italic, Ctrl/Cmd+Shift+M → code
   textarea.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey)) return;
-    const fmt = FORMATS.find(f => f.key === e.key.toLowerCase());
+    const fmt = FORMATS.find(f => f.key === e.key.toLowerCase() && f.shift === e.shiftKey);
     if (!fmt) return;
     e.preventDefault();
     wrapSelection(textarea, fmt.before, fmt.after);
