@@ -1794,6 +1794,40 @@ body {
   padding: 8px 8px 8px 12px;
 }
 
+/* Sub-reply card — indented nested under a direct reply */
+.reply-card--sub {
+  margin-left: 22px;
+  border-left-color: var(--border);
+}
+
+@media (max-width: 480px) {
+  .reply-card--sub {
+    margin-left: 12px;
+  }
+}
+
+/* Sub-replies container inside a level-1 reply card */
+.sub-replies-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Footer row on level-1 reply cards: sub-reply count + Reply button */
+.reply-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* Sub-reply count label (e.g. "2 replies") on a level-1 reply card */
+.sub-reply-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 /* ========================================
    Reply Thread Toggle Button
    ======================================== */
