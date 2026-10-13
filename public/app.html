@@ -115,6 +115,7 @@
               <button type="button" id="image-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach an image">&#x1F4F7; Image</button>
               <button type="button" id="voice-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Record a voice message" style="display:none;">&#x1F399;&#xFE0F; Voice</button>
               <button type="button" id="mood-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach a mood">&#x1F60A; Mood</button>
+              <button type="button" id="long-post-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Long post mode (up to 1,000 characters)">&#x270F;&#xFE0F; Long</button>
             </div>
             <div id="mood-chip" class="mood-chip" style="display:none;" aria-live="polite">
               <span id="mood-chip-emoji" class="mood-chip-emoji" aria-hidden="true"></span>
@@ -149,6 +150,7 @@
               <span id="char-counter" class="char-counter">0 / 250</span>
               <span id="draft-label" class="draft-label" style="display:none;"></span>
             </div>
+            <p id="long-post-warning" class="long-post-warning" style="display:none;">Your message exceeds 250 characters — shorten it or keep long post mode on.</p>
             <div id="poll-composer" class="poll-composer" style="display:none;">
               <input id="poll-question-input" class="poll-question-input" type="text" placeholder="Ask a question&#x2026;" maxlength="120" autocomplete="off">
               <span id="poll-question-counter" class="char-counter poll-question-counter">0 / 120</span>

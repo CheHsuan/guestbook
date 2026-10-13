@@ -149,6 +149,7 @@ const voiceUploadProgress = document.getElementById('voice-upload-progress');
 const voiceUploadFill = document.getElementById('voice-upload-fill');
 const voiceUploadLabel = document.getElementById('voice-upload-label');
 const moodToggleBtn = document.getElementById('mood-toggle-btn');
+const longPostToggleBtn = document.getElementById('long-post-toggle-btn');
 const moodChip = document.getElementById('mood-chip');
 const moodChipEmoji = document.getElementById('mood-chip-emoji');
 const moodChipLabel = document.getElementById('mood-chip-label');
@@ -166,6 +167,7 @@ let guestDisplayName = null;
 let myPostsActive = false;
 let pollMode = false;
 let gifMode = false;
+let longPostMode = false;
 let selectedGif = null; // { gifUrl, gifPreviewUrl, gifAlt }
 let gifSearchDebounceTimer = null;
 let imageMode = false;
@@ -199,6 +201,13 @@ let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
 let notificationPermissionRequested = false;
+
+// ========================================
+// Long Post Mode
+// ========================================
+const MAX_CHARS_NORMAL = 250;
+const MAX_CHARS_LONG = 1000;
+const LONG_POST_PREVIEW_LENGTH = 250;
 
 // ========================================
 // Reply Collapse Threshold
@@ -1418,6 +1427,7 @@ function handleDeepLink() {
     const msgId = hash.slice(5); // strips leading '#msg-'
     const expandFn = replyExpandMap.get(msgId);
     if (expandFn) expandFn();
+    if (typeof targetEl._expandLongPost === 'function') targetEl._expandLongPost();
     targetEl.scrollIntoView({ behavior: 'smooth' });
     targetEl.classList.add('permalink-highlight');
     expandCardCompact(targetEl);
@@ -3534,14 +3544,21 @@ function restoreDraft() {
   const draft = loadDraft();
   if (!draft) return;
 
-  let text = draft.length > MAX_DRAFT_LENGTH ? draft.slice(0, MAX_DRAFT_LENGTH) : draft;
+  const draftLimit = draft.length > MAX_CHARS_LONG ? MAX_CHARS_LONG : MAX_DRAFT_LENGTH;
+  let text = draft.length > draftLimit ? draft.slice(0, draftLimit) : draft;
 
+  if (text.length > MAX_CHARS_NORMAL) {
+    enableLongPostMode();
+  }
   messageInput.value = text;
   const len = text.length;
-  charCounter.textContent = `${len} / 250`;
+  const limit = longPostMode ? MAX_CHARS_LONG : MAX_CHARS_NORMAL;
+  charCounter.textContent = `${len} / ${limit}`;
   charCounter.classList.remove('warning', 'danger');
-  if (len >= 230) charCounter.classList.add('danger');
-  else if (len >= 200) charCounter.classList.add('warning');
+  const dangerThreshold = longPostMode ? 950 : 230;
+  const warningThreshold = longPostMode ? 900 : 200;
+  if (len >= dangerThreshold) charCounter.classList.add('danger');
+  else if (len >= warningThreshold) charCounter.classList.add('warning');
 
   showDraftLabel('Draft restored');
   messageInput.focus();
@@ -3854,6 +3871,17 @@ function createPollBody(msgId, options, user) {
 }
 
 // ========================================
+// Long Post Truncation Helper
+// ========================================
+function truncateLongPostText(text) {
+  if (!text || text.length <= LONG_POST_PREVIEW_LENGTH) return { truncated: text || '', isTruncated: false };
+  const slice = text.slice(0, LONG_POST_PREVIEW_LENGTH);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cutAt = lastSpace > 0 ? lastSpace : LONG_POST_PREVIEW_LENGTH;
+  return { truncated: slice.slice(0, cutAt), isTruncated: true };
+}
+
+// ========================================
 // Compact Row Helpers
 // ========================================
 function getCompactPreviewText(msg) {
@@ -4037,10 +4065,42 @@ function createMessageCard(msg, user, isNew, isArchive) {
     header.appendChild(audioBadge);
   }
 
+  const effectiveType = msg.type || 'text';
+  const isLongPost = effectiveType === 'text' && typeof msg.text === 'string' && msg.text.length > LONG_POST_PREVIEW_LENGTH;
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
+
+  let readMoreBtn = null;
+  let longPostExpanded = false;
+
   if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio') {
-    renderMessageText(textEl, msg.text);
+    if (isLongPost) {
+      const { truncated } = truncateLongPostText(msg.text);
+      renderMessageText(textEl, truncated + '…');
+      readMoreBtn = document.createElement('button');
+      readMoreBtn.type = 'button';
+      readMoreBtn.className = 'btn-read-more';
+      readMoreBtn.textContent = 'Read more';
+      readMoreBtn.setAttribute('aria-expanded', 'false');
+      readMoreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        longPostExpanded = !longPostExpanded;
+        if (longPostExpanded) {
+          renderMessageText(textEl, msg.text);
+          readMoreBtn.textContent = 'Show less';
+          readMoreBtn.setAttribute('aria-expanded', 'true');
+        } else {
+          const { truncated: t } = truncateLongPostText(msg.text);
+          renderMessageText(textEl, t + '…');
+          readMoreBtn.textContent = 'Read more';
+          readMoreBtn.setAttribute('aria-expanded', 'false');
+        }
+      });
+      card.dataset.longPost = '1';
+      card.dataset.longPostExpanded = '0';
+    } else {
+      renderMessageText(textEl, msg.text);
+    }
   }
 
   card.appendChild(header);
@@ -4054,6 +4114,20 @@ function createMessageCard(msg, user, isNew, isArchive) {
   }
 
   card.appendChild(textEl);
+  if (readMoreBtn) card.appendChild(readMoreBtn);
+
+  // Expose expand function for deep-link auto-expand
+  if (isLongPost && readMoreBtn) {
+    card._expandLongPost = () => {
+      if (!longPostExpanded) {
+        longPostExpanded = true;
+        renderMessageText(textEl, msg.text);
+        readMoreBtn.textContent = 'Show less';
+        readMoreBtn.setAttribute('aria-expanded', 'true');
+        card.dataset.longPostExpanded = '1';
+      }
+    };
+  }
 
   // Render GIF image for gif messages
   if (msg.type === 'gif' && msg.gifUrl && isGifUrlAllowed(msg.gifUrl)) {
@@ -6347,6 +6421,57 @@ if (moodChipClear) {
 }
 
 // ========================================
+// Long Post Mode Toggle
+// ========================================
+function enableLongPostMode() {
+  longPostMode = true;
+  messageInput.maxLength = MAX_CHARS_LONG;
+  messageInput.rows = 6;
+  const len = messageInput.value.length;
+  charCounter.textContent = `${len} / ${MAX_CHARS_LONG}`;
+  charCounter.classList.remove('warning', 'danger');
+  if (len >= 950) charCounter.classList.add('danger');
+  else if (len >= 900) charCounter.classList.add('warning');
+  const warningEl = document.getElementById('long-post-warning');
+  if (warningEl) warningEl.style.display = 'none';
+  if (longPostToggleBtn) {
+    longPostToggleBtn.setAttribute('aria-pressed', 'true');
+  }
+}
+
+function disableLongPostMode() {
+  const currentLen = messageInput.value.length;
+  if (currentLen > MAX_CHARS_NORMAL) {
+    const warningEl = document.getElementById('long-post-warning');
+    if (warningEl) warningEl.style.display = '';
+    return;
+  }
+  longPostMode = false;
+  messageInput.maxLength = MAX_CHARS_NORMAL;
+  messageInput.rows = 3;
+  const len = messageInput.value.length;
+  charCounter.textContent = `${len} / ${MAX_CHARS_NORMAL}`;
+  charCounter.classList.remove('warning', 'danger');
+  if (len >= 230) charCounter.classList.add('danger');
+  else if (len >= 200) charCounter.classList.add('warning');
+  const warningEl = document.getElementById('long-post-warning');
+  if (warningEl) warningEl.style.display = 'none';
+  if (longPostToggleBtn) {
+    longPostToggleBtn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+if (longPostToggleBtn) {
+  longPostToggleBtn.addEventListener('click', () => {
+    if (longPostMode) {
+      disableLongPostMode();
+    } else {
+      enableLongPostMode();
+    }
+  });
+}
+
+// ========================================
 // Bookmark badge + saved panel setup
 // ========================================
 updateSavedBadge();
@@ -6499,13 +6624,22 @@ messageInput.addEventListener('keydown', (e) => {
 // ========================================
 messageInput.addEventListener('input', () => {
   const len = messageInput.value.length;
-  charCounter.textContent = `${len} / 250`;
+  const limit = longPostMode ? MAX_CHARS_LONG : MAX_CHARS_NORMAL;
+  charCounter.textContent = `${len} / ${limit}`;
 
   charCounter.classList.remove('warning', 'danger');
-  if (len >= 230) {
+  const dangerThreshold = longPostMode ? 950 : 230;
+  const warningThreshold = longPostMode ? 900 : 200;
+  if (len >= dangerThreshold) {
     charCounter.classList.add('danger');
-  } else if (len >= 200) {
+  } else if (len >= warningThreshold) {
     charCounter.classList.add('warning');
+  }
+
+  // Hide long-post warning once content is back under 250
+  if (len <= MAX_CHARS_NORMAL) {
+    const warningEl = document.getElementById('long-post-warning');
+    if (warningEl) warningEl.style.display = 'none';
   }
 
   // Clear error state when user starts typing
@@ -6832,7 +6966,8 @@ postForm.addEventListener('submit', async (e) => {
   }
 
   // ---- Normal text submission path ----
-  const validation = validateMessage(messageInput.value);
+  const maxCharsForSubmit = longPostMode ? MAX_CHARS_LONG : MAX_CHARS_NORMAL;
+  const validation = validateMessage(messageInput.value, maxCharsForSubmit);
   if (!validation.valid) {
     messageInput.classList.add('input-error');
     emptyErrorMsg.style.display = 'block';
@@ -6868,6 +7003,7 @@ postForm.addEventListener('submit', async (e) => {
       timestamp: firebase.database.ServerValue.TIMESTAMP,
       photoURL: currentUser.photoURL || '',
       ...(isGuest && { isGuest: true }),
+      ...(text.length > MAX_CHARS_NORMAL && { longPost: true }),
       ...(selectedMood && MOOD_VALID_EMOJIS.has(selectedMood.emoji) && { mood: selectedMood.emoji }),
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
@@ -6888,10 +7024,19 @@ postForm.addEventListener('submit', async (e) => {
       showToast('Message posted! Guest messages expire in 24 hours. Sign in with Google to manage a persistent profile.');
     }
 
-    // Success — clear input, draft, mood, and stop typing indicator
+    // Success — clear input, draft, mood, long post mode, and stop typing indicator
     if (!isGuest) stopTyping();
     clearDraft();
     messageInput.value = '';
+    if (longPostMode) {
+      longPostMode = false;
+      messageInput.maxLength = MAX_CHARS_NORMAL;
+      messageInput.rows = 3;
+      if (longPostToggleBtn) {
+        longPostToggleBtn.setAttribute('aria-pressed', 'false');
+        longPostToggleBtn.classList.remove('poll-toggle-btn--active');
+      }
+    }
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
     clearMood();
@@ -7062,5 +7207,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, truncateLongPostText, enableLongPostMode, disableLongPostMode, MAX_CHARS_NORMAL, MAX_CHARS_LONG, LONG_POST_PREVIEW_LENGTH };
 }

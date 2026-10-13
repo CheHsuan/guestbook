@@ -28,11 +28,13 @@ const APP_HTML = `
       <button type="button" id="poll-toggle-btn" aria-pressed="false"></button>
       <button type="button" id="gif-toggle-btn" aria-pressed="false"></button>
       <button type="button" id="mood-toggle-btn" aria-pressed="false"></button>
+      <button type="button" id="long-post-toggle-btn" aria-pressed="false"></button>
       <div id="text-composer">
         <input id="message-input" type="text" />
         <span id="char-counter">0 / 250</span>
         <span id="draft-label" class="draft-label" style="display:none;"></span>
       </div>
+      <p id="long-post-warning" style="display:none;"></p>
       <div id="mood-chip" style="display:none;">
         <span id="mood-chip-emoji"></span>
         <span id="mood-chip-label"></span>
@@ -11780,6 +11782,262 @@ describe('compact view mode', () => {
       expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('false');
       expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
     });
+  });
+});
+
+// ========================================
+// Long Post Feature
+// ========================================
+describe('truncateLongPostText', () => {
+  let truncateLongPostText, LONG_POST_PREVIEW_LENGTH;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ truncateLongPostText, LONG_POST_PREVIEW_LENGTH } = require('../public/app.js'));
+  });
+
+  test('returns full text unchanged when text is under preview limit', () => {
+    const short = 'Hello world';
+    const result = truncateLongPostText(short);
+    expect(result.isTruncated).toBe(false);
+    expect(result.truncated).toBe(short);
+  });
+
+  test('returns full text unchanged when text is exactly LONG_POST_PREVIEW_LENGTH', () => {
+    const text = 'a'.repeat(LONG_POST_PREVIEW_LENGTH);
+    const result = truncateLongPostText(text);
+    expect(result.isTruncated).toBe(false);
+    expect(result.truncated).toBe(text);
+  });
+
+  test('truncates text longer than LONG_POST_PREVIEW_LENGTH', () => {
+    const text = 'a'.repeat(LONG_POST_PREVIEW_LENGTH + 100);
+    const result = truncateLongPostText(text);
+    expect(result.isTruncated).toBe(true);
+    expect(result.truncated.length).toBeLessThanOrEqual(LONG_POST_PREVIEW_LENGTH);
+  });
+
+  test('truncates at word boundary when possible', () => {
+    const words = 'word '.repeat(60); // 300 chars total, words are separated by spaces
+    const text = words.trimEnd();
+    const result = truncateLongPostText(text);
+    expect(result.isTruncated).toBe(true);
+    expect(result.truncated).not.toMatch(/ $/); // no trailing space
+    // Truncated text ends at a word (not in the middle of one)
+    expect(result.truncated).toMatch(/\w$/); // ends with a word character
+  });
+
+  test('returns empty string for empty input', () => {
+    const result = truncateLongPostText('');
+    expect(result.isTruncated).toBe(false);
+    expect(result.truncated).toBe('');
+  });
+
+  test('truncated text is shorter than or equal to LONG_POST_PREVIEW_LENGTH', () => {
+    const text = 'The quick brown fox jumped over the lazy dog '.repeat(8);
+    const result = truncateLongPostText(text);
+    expect(result.isTruncated).toBe(true);
+    expect(result.truncated.length).toBeLessThanOrEqual(LONG_POST_PREVIEW_LENGTH);
+  });
+});
+
+describe('createMessageCard — long post read-more fold', () => {
+  let createMessageCard, LONG_POST_PREVIEW_LENGTH;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, LONG_POST_PREVIEW_LENGTH } = require('../public/app.js'));
+  });
+
+  function makeLongMsg(overrides) {
+    return {
+      id: 'longmsg1',
+      author: 'Bob',
+      text: 'word '.repeat(80).trimEnd(), // ~400 chars > 250
+      timestamp: Date.now(),
+      authorId: 'uid-bob',
+      ...overrides,
+    };
+  }
+
+  test('short message does not have Read more button', () => {
+    const msg = { id: 'm1', author: 'Alice', text: 'Short message', timestamp: Date.now(), authorId: 'uid1' };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.btn-read-more')).toBeNull();
+  });
+
+  test('long message has Read more button', () => {
+    const card = createMessageCard(makeLongMsg(), null);
+    expect(card.querySelector('.btn-read-more')).not.toBeNull();
+  });
+
+  test('long message text is truncated initially', () => {
+    const msg = makeLongMsg();
+    const card = createMessageCard(msg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent.length).toBeLessThanOrEqual(LONG_POST_PREVIEW_LENGTH + 1); // +1 for '…'
+    expect(textEl.textContent.endsWith('…')).toBe(true);
+  });
+
+  test('Read more button has aria-expanded=false initially', () => {
+    const card = createMessageCard(makeLongMsg(), null);
+    const btn = card.querySelector('.btn-read-more');
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    expect(btn.textContent).toBe('Read more');
+  });
+
+  test('clicking Read more expands to full text', () => {
+    const msg = makeLongMsg();
+    const card = createMessageCard(msg, null);
+    const btn = card.querySelector('.btn-read-more');
+    btn.click();
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent).toContain(msg.text.slice(0, 50));
+    expect(textEl.textContent.length).toBeGreaterThan(LONG_POST_PREVIEW_LENGTH);
+    expect(btn.textContent).toBe('Show less');
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  test('clicking Show less collapses text back', () => {
+    const msg = makeLongMsg();
+    const card = createMessageCard(msg, null);
+    const btn = card.querySelector('.btn-read-more');
+    btn.click(); // expand
+    btn.click(); // collapse
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent.endsWith('…')).toBe(true);
+    expect(textEl.textContent.length).toBeLessThanOrEqual(LONG_POST_PREVIEW_LENGTH + 1);
+    expect(btn.textContent).toBe('Read more');
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('card has dataset.longPost=1 for long messages', () => {
+    const card = createMessageCard(makeLongMsg(), null);
+    expect(card.dataset.longPost).toBe('1');
+  });
+
+  test('card does not have dataset.longPost for short messages', () => {
+    const msg = { id: 'm1', author: 'Alice', text: 'Short', timestamp: Date.now(), authorId: 'uid1' };
+    const card = createMessageCard(msg, null);
+    expect(card.dataset.longPost).toBeUndefined();
+  });
+
+  test('_expandLongPost function auto-expands card', () => {
+    const msg = makeLongMsg();
+    const card = createMessageCard(msg, null);
+    expect(typeof card._expandLongPost).toBe('function');
+    card._expandLongPost();
+    const textEl = card.querySelector('.message-text');
+    expect(textEl.textContent.length).toBeGreaterThan(LONG_POST_PREVIEW_LENGTH);
+    expect(card.querySelector('.btn-read-more').textContent).toBe('Show less');
+  });
+
+  test('_expandLongPost is idempotent (double call stays expanded)', () => {
+    const msg = makeLongMsg();
+    const card = createMessageCard(msg, null);
+    card._expandLongPost();
+    card._expandLongPost();
+    expect(card.querySelector('.btn-read-more').textContent).toBe('Show less');
+  });
+
+  test('short message does not have _expandLongPost', () => {
+    const msg = { id: 'm1', author: 'Alice', text: 'Short', timestamp: Date.now(), authorId: 'uid1' };
+    const card = createMessageCard(msg, null);
+    expect(card._expandLongPost).toBeUndefined();
+  });
+
+  test('long text in non-text type (poll) does not add Read more button', () => {
+    const msg = {
+      id: 'poll1',
+      author: 'Alice',
+      type: 'poll',
+      text: 'word '.repeat(80).trimEnd(),
+      timestamp: Date.now(),
+      authorId: 'uid1',
+      poll: { options: { '0': { text: 'Yes', votes: 0 }, '1': { text: 'No', votes: 0 } } },
+    };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.btn-read-more')).toBeNull();
+  });
+});
+
+describe('validateMessage — extended limit', () => {
+  let validateMessage;
+
+  beforeAll(() => {
+    ({ validateMessage } = require('../public/utils'));
+  });
+
+  test('accepts message up to 1000 chars with maxLength=1000', () => {
+    const text = 'a'.repeat(1000);
+    const result = validateMessage(text, 1000);
+    expect(result.valid).toBe(true);
+  });
+
+  test('rejects message of 1001 chars with maxLength=1000', () => {
+    const text = 'a'.repeat(1001);
+    const result = validateMessage(text, 1000);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('1000');
+  });
+
+  test('still enforces 250 by default', () => {
+    const text = 'a'.repeat(251);
+    const result = validateMessage(text);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('250');
+  });
+
+  test('accepts 251 chars with maxLength=1000', () => {
+    const text = 'a'.repeat(251);
+    const result = validateMessage(text, 1000);
+    expect(result.valid).toBe(true);
+  });
+
+  test('ignores invalid maxLength (negative), uses 250', () => {
+    const text = 'a'.repeat(251);
+    const result = validateMessage(text, -1);
+    expect(result.valid).toBe(false);
   });
 });
 
