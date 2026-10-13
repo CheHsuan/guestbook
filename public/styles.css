@@ -4570,3 +4570,47 @@ body {
     max-width: 60px;
   }
 }
+
+/* ========================================
+   Long Post — Read More / Show Less Button
+   ======================================== */
+.btn-read-more {
+  display: inline-block;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--link);
+  padding: 4px 0;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+}
+
+.btn-read-more:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.btn-read-more:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Compact expanded: restore read-more button */
+.compact-mode .message-card.compact-expanded > .btn-read-more {
+  display: inline-block;
+}
+
+/* ========================================
+   Long Post — Inline Warning
+   ======================================== */
+.long-post-warning {
+  font-size: 0.82rem;
+  color: var(--warning);
+  font-weight: 500;
+  margin: 4px 0 8px;
+}
+

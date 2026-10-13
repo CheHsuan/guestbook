@@ -73,20 +73,22 @@ function validateDisplayName(text) {
 /**
  * Validate a message before posting.
  * Returns { valid: boolean, error?: string }
+ * maxLength defaults to 250; pass 1000 for long-post mode.
  */
-function validateMessage(text) {
+function validateMessage(text, maxLength) {
     if (typeof text !== 'string') {
         return { valid: false, error: 'Message must be a string.' };
     }
 
     const trimmed = text.trim();
+    const limit = (typeof maxLength === 'number' && maxLength > 0) ? maxLength : 250;
 
     if (!trimmed) {
         return { valid: false, error: 'Please write a message before posting.' };
     }
 
-    if (trimmed.length > 250) {
-        return { valid: false, error: 'Message must be 250 characters or less.' };
+    if (trimmed.length > limit) {
+        return { valid: false, error: `Message must be ${limit} characters or less.` };
     }
 
     return { valid: true, text: trimmed };
