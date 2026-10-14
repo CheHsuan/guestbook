@@ -70,6 +70,7 @@ const APP_HTML = `
     <button id="date-nav-prev" class="date-nav-btn" aria-label="Previous day">&#x2190;</button>
     <span id="date-nav-label" class="date-nav-label">Today</span>
     <button id="date-nav-next" class="date-nav-btn" aria-label="Next day" disabled>&#x2192;</button>
+    <button id="surprise-btn" class="date-nav-btn date-nav-btn--surprise" title="Jump to a random archived message" aria-label="Surprise me" style="display:none;"><span class="surprise-icon">🎲</span><span class="surprise-label"> Surprise me</span></button>
   </div>
   <div id="archive-banner" class="archive-banner" style="display:none;">
     Viewing archive for <strong id="archive-banner-date"></strong>
@@ -1347,8 +1348,8 @@ describe('infinite scroll / loadMoreMessages', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // 1 initial load + 1 prev-day check + 1 alias load + 1 load-more = 4; second scroll was ignored by isLoadingMore guard
-    expect(mocks.dbRef.once.mock.calls.length).toBe(4);
+    // 1 initial load + 1 prev-day check + 1 alias load + 1 checkHasPastArchives + 1 load-more = 5; second scroll was ignored by isLoadingMore guard
+    expect(mocks.dbRef.once.mock.calls.length).toBe(5);
   });
 });
 
@@ -11241,6 +11242,110 @@ describe('archive feature', () => {
 
     test('messages-section-title resets to live copy', () => {
       expect(document.getElementById('messages-section-title').textContent).toBe('Messages from the last 24 hours');
+    });
+  });
+
+  // ── Surprise me button ────────────────────────────────────
+
+  describe('surprise-btn — hidden by default (no past archives)', () => {
+    let app;
+
+    beforeAll(() => {
+      ({ app } = setupArchiveApp('/'));
+    });
+
+    test('button exists in DOM', () => {
+      expect(document.getElementById('surprise-btn')).not.toBeNull();
+    });
+
+    test('button is hidden when hasPastArchives is false', () => {
+      expect(document.getElementById('surprise-btn').style.display).toBe('none');
+    });
+  });
+
+  describe('surprise-btn — visible in live mode after checkHasPastArchives finds past messages', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupArchiveApp('/'));
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+    });
+
+    test('button is visible in live mode', () => {
+      expect(document.getElementById('surprise-btn').style.display).toBe('');
+    });
+  });
+
+  describe('surprise-btn — hidden when in archive mode', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupArchiveApp('/'));
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+      // navigate into archive mode
+      app.loadArchiveDay(new Date(Date.UTC(2026, 8, 11)));
+    });
+
+    test('button is hidden in archive mode', () => {
+      expect(document.getElementById('surprise-btn').style.display).toBe('none');
+    });
+  });
+
+  describe('surpriseMe — shows toast and keeps live view when random day has no messages', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupArchiveApp('/'));
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+      // The next once() call (the checkSnap inside surpriseMe) returns no messages
+      dbRef.once.mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      await app.surpriseMe();
+    });
+
+    test('shows "No messages on that day" toast', () => {
+      const toast = document.querySelector('.permalink-toast');
+      expect(toast).not.toBeNull();
+      expect(toast.textContent).toBe('No messages on that day — try again!');
+    });
+
+    test('stays in live mode (nav label remains "Today")', () => {
+      expect(document.getElementById('date-nav-label').textContent).toBe('Today');
+    });
+
+    test('surprise button is re-enabled after toast', () => {
+      expect(document.getElementById('surprise-btn').disabled).toBe(false);
+    });
+  });
+
+  describe('surpriseMe — loads archive day when random day has messages', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupArchiveApp('/'));
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+      // checkSnap returns a message exists
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      // loadArchiveDay's main snap also returns exists
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: cb => cb({ key: 'msg1', val: () => ({ author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid1' }) }), numChildren: () => 1 });
+      // loadArchiveDay's prevSnap
+      dbRef.once.mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      await app.surpriseMe();
+    });
+
+    test('switches into archive mode (nav label is no longer "Today")', () => {
+      expect(document.getElementById('date-nav-label').textContent).not.toBe('Today');
+    });
+
+    test('archive banner becomes visible', () => {
+      expect(document.getElementById('archive-banner').style.display).not.toBe('none');
+    });
+
+    test('surprise button is hidden in the resulting archive view', () => {
+      expect(document.getElementById('surprise-btn').style.display).toBe('none');
     });
   });
 });

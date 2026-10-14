@@ -4276,6 +4276,29 @@ body {
   cursor: default;
 }
 
+.date-nav-btn--surprise {
+  width: auto;
+  padding: 0 10px;
+  gap: 4px;
+  opacity: 0.7;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.date-nav-btn--surprise:hover:not(:disabled) {
+  opacity: 1;
+}
+
+@media (max-width: 479px) {
+  .date-nav-btn--surprise {
+    width: 32px;
+    padding: 0;
+  }
+  .date-nav-btn--surprise .surprise-label {
+    display: none;
+  }
+}
+
 .date-nav-label {
   font-size: 0.9rem;
   font-weight: 600;
