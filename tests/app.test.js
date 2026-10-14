@@ -144,6 +144,7 @@ const APP_HTML = `
     <div id="gif-grid"></div>
     <p id="gif-search-error" style="display:none;"></p>
   </div>
+  <button id="sound-toggle" class="btn-theme-toggle" aria-label="Enable sound notifications" aria-pressed="false"></button>
   <button type="button" id="image-toggle-btn" aria-pressed="false"></button>
   <input type="file" id="image-file-input" style="display:none;" />
   <div id="image-composer" style="display:none;">
@@ -11781,5 +11782,94 @@ describe('compact view mode', () => {
       expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
     });
   });
+
+  // --- Sound Notifications ---
+  describe('Sound Notifications', () => {
+    let updateSoundToggleBtn;
+    let maybePlayNewMessageChime;
+    let maybePlayReplyChime;
+    let SOUND_KEY;
+
+    beforeAll(() => {
+      // Provide a minimal AudioContext stub so initSoundToggle wires the button
+      if (!window.AudioContext) {
+        const mockOscillator = {
+          type: 'sine',
+          frequency: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+          connect: jest.fn(),
+          start: jest.fn(),
+          stop: jest.fn(),
+        };
+        const mockGain = {
+          gain: { setValueAtTime: jest.fn(), exponentialRampToValueAtTime: jest.fn() },
+          connect: jest.fn(),
+        };
+        window.AudioContext = jest.fn().mockImplementation(() => ({
+          state: 'running',
+          currentTime: 0,
+          destination: {},
+          resume: jest.fn().mockResolvedValue(undefined),
+          createOscillator: jest.fn().mockReturnValue(mockOscillator),
+          createGain: jest.fn().mockReturnValue(mockGain),
+        }));
+      }
+
+      // Reload module so initSoundToggle picks up the AudioContext stub
+      jest.resetModules();
+      document.body.innerHTML = APP_HTML;
+      const { firebase: fb, authInstance: ai } = makeFirebaseMock();
+      global.firebase = fb;
+      ai.onAuthStateChanged.mockImplementation(() => {});
+      ({ updateSoundToggleBtn, maybePlayNewMessageChime, maybePlayReplyChime, SOUND_KEY } = require('../public/app.js'));
+    });
+
+    afterAll(() => {
+      delete window.AudioContext;
+    });
+
+    beforeEach(() => {
+      try { localStorage.removeItem(SOUND_KEY); } catch (_) {}
+    });
+
+    test('sound is off by default (no localStorage entry)', () => {
+      const btn = document.getElementById('sound-toggle');
+      expect(btn.getAttribute('aria-pressed')).toBe('false');
+      expect(btn.getAttribute('aria-label')).toBe('Enable sound notifications');
+    });
+
+    test('clicking sound toggle enables sound and updates aria attributes', () => {
+      const btn = document.getElementById('sound-toggle');
+      btn.click();
+      expect(btn.getAttribute('aria-pressed')).toBe('true');
+      expect(btn.getAttribute('aria-label')).toBe('Disable sound notifications');
+      btn.click(); // restore
+    });
+
+    test('clicking sound toggle twice returns to disabled state', () => {
+      const btn = document.getElementById('sound-toggle');
+      btn.click(); // enable
+      btn.click(); // disable
+      expect(btn.getAttribute('aria-pressed')).toBe('false');
+      expect(btn.getAttribute('aria-label')).toBe('Enable sound notifications');
+    });
+
+    test('sound toggle persists state to localStorage', () => {
+      const btn = document.getElementById('sound-toggle');
+      btn.click(); // enable
+      expect(localStorage.getItem(SOUND_KEY)).toBe('1');
+      btn.click(); // disable
+      expect(localStorage.getItem(SOUND_KEY)).toBe('0');
+    });
+
+    test('maybePlayNewMessageChime does not throw', () => {
+      const msg = { id: 'x', authorId: 'uid1', text: 'hello' };
+      expect(() => maybePlayNewMessageChime(msg)).not.toThrow();
+    });
+
+    test('maybePlayReplyChime does not throw', () => {
+      expect(() => maybePlayReplyChime()).not.toThrow();
+    });
+  });
 });
+
 

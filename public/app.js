@@ -2578,6 +2578,7 @@ async function startListeningMessages() {
         applySortOrder();
         filterMessages();
         maybeFireMentionNotification(msg);
+        maybePlayNewMessageChime(msg);
 
         // Show banner and update tab title when user is scrolled down or tab is hidden
         if (window.scrollY > 200 || document.hidden) {
@@ -4811,6 +4812,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
     if (initialReplyLoadComplete) {
       maybeFireReplyNotification(msg, reply);
       maybeFireSubscriptionNotification(msg, reply);
+      maybePlayReplyChime();
       if (currentSort === SORT_ACTIVE) applySortOrder();
     }
   });
@@ -7029,6 +7031,117 @@ async function handleAvatarRemove() {
   }
 }
 
+// ========================================
+// Sound Notifications (Web Audio API)
+// ========================================
+const SOUND_KEY = 'guestbook_sound';
+let soundEnabled = false;
+let _audioCtx = null;
+let _lastChimeTime = 0;
+const CHIME_COOLDOWN_MS = 500;
+
+try {
+  soundEnabled = localStorage.getItem(SOUND_KEY) === '1';
+} catch (_) {}
+
+function _hasAudioContext() {
+  return typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined';
+}
+
+function _initAudioContext() {
+  if (_audioCtx) return _audioCtx;
+  if (!_hasAudioContext()) return null;
+  try {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (_) {
+    _audioCtx = null;
+  }
+  return _audioCtx;
+}
+
+function _playChime(startFreq, endFreq, durationSec) {
+  const ctx = _initAudioContext();
+  if (!ctx || ctx.state === 'suspended') return;
+  const gainNode = ctx.createGain();
+  gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
+  gainNode.connect(ctx.destination);
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(startFreq, ctx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + durationSec);
+  osc.connect(gainNode);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + durationSec);
+}
+
+function maybePlayNewMessageChime(msg) {
+  if (!soundEnabled || isArchiveMode) return;
+  if (isMuted(msg.authorId) || isMutedByKeyword(msg.text)) return;
+  const now = Date.now();
+  if (now - _lastChimeTime < CHIME_COOLDOWN_MS) return;
+  _lastChimeTime = now;
+  // Higher-pitch chime for @mentions of the current user
+  if (currentUser && currentUser.displayName) {
+    const mentionRe = new RegExp('@' + escapeRegex(currentUser.displayName) + '(?!\\w)', 'i');
+    if (mentionRe.test(typeof msg.text === 'string' ? msg.text : '')) {
+      _playChime(660, 1320, 0.15);
+      return;
+    }
+  }
+  _playChime(440, 880, 0.2);
+}
+
+function maybePlayReplyChime() {
+  if (!soundEnabled || isArchiveMode) return;
+  const now = Date.now();
+  if (now - _lastChimeTime < CHIME_COOLDOWN_MS) return;
+  _lastChimeTime = now;
+  _playChime(660, 1320, 0.15);
+}
+
+function updateSoundToggleBtn() {
+  const btn = document.getElementById('sound-toggle');
+  if (!btn) return;
+  if (soundEnabled) {
+    btn.innerHTML = SPEAKER_STOP_ICON;
+    btn.setAttribute('aria-label', 'Disable sound notifications');
+    btn.setAttribute('aria-pressed', 'true');
+  } else {
+    btn.innerHTML = SPEAKER_ICON;
+    btn.setAttribute('aria-label', 'Enable sound notifications');
+    btn.setAttribute('aria-pressed', 'false');
+  }
+}
+
+(function initSoundToggle() {
+  const btn = document.getElementById('sound-toggle');
+  if (!btn) return;
+  if (!_hasAudioContext()) {
+    btn.style.display = 'none';
+    return;
+  }
+  updateSoundToggleBtn();
+  btn.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    try { localStorage.setItem(SOUND_KEY, soundEnabled ? '1' : '0'); } catch (_) {}
+    if (soundEnabled) _initAudioContext();
+    updateSoundToggleBtn();
+  });
+}());
+
+// Resume AudioContext on first user gesture (browser autoplay policy)
+(function wireAudioContextGate() {
+  if (!_hasAudioContext()) return;
+  function _resumeCtx() {
+    if (_audioCtx && _audioCtx.state === 'suspended') {
+      _audioCtx.resume();
+    }
+  }
+  document.addEventListener('click', _resumeCtx, { passive: true });
+  document.addEventListener('keydown', _resumeCtx, { passive: true });
+}());
+
 (function initDensityToggle() {
   const btn = document.getElementById('density-toggle-btn');
   if (!btn) return;
@@ -7062,5 +7175,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, soundEnabled, updateSoundToggleBtn, maybePlayNewMessageChime, maybePlayReplyChime, SOUND_KEY, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }
