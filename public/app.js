@@ -195,6 +195,7 @@ let isArchiveMode = false;
 let archiveDate = null; // Date object at UTC midnight of the archived day, or null (= live today)
 let messageFeedInitialized = false; // guards first-ever feed initialization
 const ARCHIVE_MESSAGE_LIMIT = 200;
+let hasPastArchives = false; // set once by checkHasPastArchives() to show/hide surprise button
 let newMessageCount = 0;
 let bannerHideTimer = null;
 const ORIGINAL_TITLE = document.title;
@@ -350,6 +351,7 @@ function updateArchiveUI() {
   const archiveBannerDate = document.getElementById('archive-banner-date');
   const sectionTitle = document.getElementById('messages-section-title');
   const typingIndicatorEl = document.getElementById('typing-indicator');
+  const surpriseBtn = document.getElementById('surprise-btn');
 
   if (isArchiveMode && archiveDate) {
     const dateDisplay = formatArchiveDateDisplay(archiveDate);
@@ -361,6 +363,7 @@ function updateArchiveUI() {
     if (postSection) postSection.style.display = 'none';
     if (typingIndicatorEl) { typingIndicatorEl.classList.remove('typing-indicator--visible'); typingIndicatorEl.style.display = 'none'; }
     hideNewMessagesBanner();
+    if (surpriseBtn) surpriseBtn.style.display = 'none';
   } else {
     if (navLabel) navLabel.textContent = 'Today';
     if (nextBtn) nextBtn.disabled = true;
@@ -368,6 +371,7 @@ function updateArchiveUI() {
     if (archiveBanner) archiveBanner.style.display = 'none';
     if (sectionTitle) sectionTitle.textContent = 'Messages from the last 24 hours';
     // Post section visibility is restored by auth state (don't force-show here)
+    if (surpriseBtn) surpriseBtn.style.display = hasPastArchives ? '' : 'none';
   }
 }
 
@@ -2389,12 +2393,14 @@ auth.onAuthStateChanged(async (user) => {
   }
 
   // Initialize the message feed once. In archive mode use loadArchiveDay; otherwise start the live listener.
+  let _initInLiveMode = false;
   if (!messageFeedInitialized) {
     messageFeedInitialized = true;
     if (isArchiveMode && archiveDate) {
       loadArchiveDay(archiveDate);
     } else {
       startListeningMessages();
+      _initInLiveMode = true;
     }
   } else if (isArchiveMode) {
     // Re-entering auth state while in archive: keep post section hidden
@@ -2409,6 +2415,9 @@ auth.onAuthStateChanged(async (user) => {
     const removeAvatarBtn = document.getElementById('remove-avatar-btn');
     if (removeAvatarBtn) removeAvatarBtn.style.display = userAvatarUrl ? '' : 'none';
   }
+
+  // Check for past archives after alias load so mock order is predictable in tests
+  if (_initInLiveMode) checkHasPastArchives();
 });
 
 // ========================================
@@ -3001,11 +3010,67 @@ function navigateNextDay() {
   const prevBtn = document.getElementById('date-nav-prev');
   const nextBtn = document.getElementById('date-nav-next');
   const backBtn = document.getElementById('archive-back-btn');
+  const surpriseBtn = document.getElementById('surprise-btn');
 
   if (prevBtn) prevBtn.addEventListener('click', navigatePrevDay);
   if (nextBtn) nextBtn.addEventListener('click', navigateNextDay);
   if (backBtn) backBtn.addEventListener('click', returnToToday);
+  if (surpriseBtn) surpriseBtn.addEventListener('click', surpriseMe);
 })();
+
+async function checkHasPastArchives() {
+  try {
+    const todayMidnight = getTodayUtcMidnight();
+    const snap = await db.ref('messages')
+      .orderByChild('timestamp')
+      .endBefore(todayMidnight)
+      .limitToLast(1)
+      .once('value');
+    hasPastArchives = snap.exists();
+    updateArchiveUI();
+  } catch (_) {}
+}
+
+async function surpriseMe() {
+  const btn = document.getElementById('surprise-btn');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const todayMidnight = getTodayUtcMidnight();
+  const daysAgo = Math.floor(Math.random() * 30) + 1;
+  const randomDate = new Date(todayMidnight - daysAgo * MS_PER_DAY);
+
+  const { start, end } = getUtcDayBounds(randomDate);
+  try {
+    const checkSnap = await db.ref('messages')
+      .orderByChild('timestamp')
+      .startAt(start)
+      .endAt(end)
+      .limitToFirst(1)
+      .once('value');
+
+    if (!checkSnap.exists()) {
+      showToast('No messages on that day — try again!');
+      btn.disabled = false;
+      return;
+    }
+
+    await loadArchiveDay(randomDate);
+
+    const cards = messagesContainer.querySelectorAll('.message-card');
+    if (cards.length > 0) {
+      const card = cards[Math.floor(Math.random() * cards.length)];
+      expandCardCompact(card);
+      card.scrollIntoView({ behavior: 'smooth' });
+      card.classList.add('permalink-highlight');
+    }
+  } catch (_) {
+    // silent failure
+  }
+
+  btn.disabled = false;
+}
 
 // ========================================
 // Expiry Countdown
@@ -7062,5 +7127,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }
