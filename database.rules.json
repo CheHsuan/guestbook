@@ -98,6 +98,17 @@
         "imageAlt": {
           ".validate": "newData.isString() && newData.val().length <= 200"
         },
+        "images": {
+          "$index": {
+            ".validate": "($index === '0' || $index === '1' || $index === '2' || $index === '3') && newData.hasChild('url')",
+            "url": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/firebasestorage\\.googleapis\\.com\\/.+/)"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
         "audioUrl": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500 && newData.val().matches(/^https:\\/\\/firebasestorage\\.googleapis\\.com\\/.+/)"
         },

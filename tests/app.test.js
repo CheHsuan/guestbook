@@ -9413,6 +9413,130 @@ describe('openLightbox', () => {
     expect(backdrop.getAttribute('role')).toBe('dialog');
     expect(backdrop.getAttribute('aria-modal')).toBe('true');
   });
+
+  test('multi-image: renders prev and next nav buttons', () => {
+    const images = [
+      { url: 'https://example.com/a.jpg', alt: 'A' },
+      { url: 'https://example.com/b.jpg', alt: 'B' },
+    ];
+    openLightbox(images, 0);
+    expect(document.querySelector('.lightbox-nav--prev')).not.toBeNull();
+    expect(document.querySelector('.lightbox-nav--next')).not.toBeNull();
+  });
+
+  test('multi-image: renders counter showing current / total', () => {
+    const images = [
+      { url: 'https://example.com/a.jpg', alt: 'A' },
+      { url: 'https://example.com/b.jpg', alt: 'B' },
+      { url: 'https://example.com/c.jpg', alt: 'C' },
+    ];
+    openLightbox(images, 1);
+    const counter = document.querySelector('.lightbox-counter');
+    expect(counter).not.toBeNull();
+    expect(counter.textContent).toBe('2 / 3');
+  });
+
+  test('multi-image: next button advances to the next image', () => {
+    const images = [
+      { url: 'https://example.com/a.jpg', alt: 'A' },
+      { url: 'https://example.com/b.jpg', alt: 'B' },
+    ];
+    openLightbox(images, 0);
+    document.querySelector('.lightbox-nav--next').click();
+    expect(document.querySelector('.lightbox-img').src).toContain('b.jpg');
+    expect(document.querySelector('.lightbox-counter').textContent).toBe('2 / 2');
+  });
+
+  test('single-image: no nav buttons rendered', () => {
+    openLightbox('https://example.com/solo.jpg', 'Solo');
+    expect(document.querySelector('.lightbox-nav--prev')).toBeNull();
+    expect(document.querySelector('.lightbox-nav--next')).toBeNull();
+  });
+});
+
+// ========================================
+// multi-image — createMessageCard renders image grid
+// ========================================
+describe('multi-image — createMessageCard renders image grid', () => {
+  let createMessageCard;
+
+  const makeImageMsg = (images, imageUrl, imageAlt) => ({
+    id: `img-multi-${Math.random()}`,
+    type: 'image',
+    author: 'Dave',
+    text: 'Image posted by Dave',
+    ...(images ? { images } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(imageAlt !== undefined ? { imageAlt } : { imageAlt: 'Image posted by Dave' }),
+    timestamp: Date.now(),
+    authorId: 'uid-dave',
+  });
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('new schema: renders image-grid--2 for 2 images', () => {
+    const msg = makeImageMsg([
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/a.jpg' },
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/b.jpg' },
+    ]);
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.image-grid--2')).not.toBeNull();
+  });
+
+  test('new schema: renders correct number of image elements for 4 images', () => {
+    const msg = makeImageMsg([
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/a.jpg' },
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/b.jpg' },
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/c.jpg' },
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/d.jpg' },
+    ]);
+    const card = createMessageCard(msg, null);
+    expect(card.querySelectorAll('.image-grid-item').length).toBe(4);
+    expect(card.querySelector('.image-grid--4')).not.toBeNull();
+  });
+
+  test('legacy schema: imageUrl still renders an image', () => {
+    const msg = makeImageMsg(
+      null,
+      'https://firebasestorage.googleapis.com/v0/b/p/o/legacy.jpg',
+      'Legacy image'
+    );
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.image-message-img')).not.toBeNull();
+    expect(card.querySelector('.image-grid--1')).not.toBeNull();
+  });
+
+  test('new schema: each image has .image-message-img class for selector compat', () => {
+    const msg = makeImageMsg([
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/a.jpg' },
+      { url: 'https://firebasestorage.googleapis.com/v0/b/p/o/b.jpg' },
+    ]);
+    const card = createMessageCard(msg, null);
+    expect(card.querySelectorAll('.image-message-img').length).toBe(2);
+  });
 });
 
 // ========================================
@@ -10580,10 +10704,10 @@ describe('image — handlePastedImageFile', () => {
     expect(document.getElementById('text-composer').style.display).toBe('none');
   });
 
-  test('calls URL.createObjectURL and renders preview img', () => {
+  test('calls URL.createObjectURL and renders preview img in grid', () => {
     handlePastedImageFile(validFile);
     expect(URL.createObjectURL).toHaveBeenCalledWith(validFile);
-    expect(document.querySelector('.gif-composer-preview')).not.toBeNull();
+    expect(document.querySelector('.image-grid-item img')).not.toBeNull();
   });
 
   test('updates submit button text to "Post Image"', () => {
@@ -10618,13 +10742,13 @@ describe('image — handlePastedImageFile', () => {
     expect(errorEl.textContent).toMatch(/jpeg|png|webp/i);
   });
 
-  test('replaces existing preview when pasting a second image', () => {
+  test('appends second pasted image to grid (up to 4)', () => {
     handlePastedImageFile(validFile);
     URL.createObjectURL.mockReturnValue('blob:mock-url-2');
     const secondFile = { type: 'image/png', size: 2048, name: 'second.png' };
     handlePastedImageFile(secondFile);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
     expect(URL.createObjectURL).toHaveBeenCalledWith(secondFile);
+    expect(document.querySelectorAll('.image-grid-item img').length).toBe(2);
   });
 
   test('clears image-upload-error on successful paste over existing preview', () => {
