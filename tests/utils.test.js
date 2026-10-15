@@ -380,6 +380,11 @@ describe('getInitialTheme', () => {
         expect(getInitialTheme(makeStorage(null), false)).toBe('light');
     });
 
+    test('returns "auto" when localStorage has "auto"', () => {
+        expect(getInitialTheme(makeStorage('auto'), false)).toBe('auto');
+        expect(getInitialTheme(makeStorage('auto'), true)).toBe('auto');
+    });
+
     test('ignores unrecognised localStorage values and falls back to OS preference', () => {
         expect(getInitialTheme(makeStorage('system'), true)).toBe('dark');
         expect(getInitialTheme(makeStorage('system'), false)).toBe('light');
