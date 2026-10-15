@@ -3799,6 +3799,72 @@ body {
   margin: 0;
 }
 
+/* Multi-image grid — composer and message card */
+.image-grid {
+  display: grid;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.image-grid--1 { grid-template-columns: 1fr; }
+.image-grid--2 { grid-template-columns: 1fr 1fr; }
+.image-grid--3 { grid-template-columns: 1fr 1fr; }
+.image-grid--4 { grid-template-columns: 1fr 1fr; }
+
+.image-grid--3 .image-grid-item:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.image-grid-item {
+  position: relative;
+  overflow: hidden;
+  min-height: 80px;
+  background: var(--bg-subtle);
+}
+
+.image-grid-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+}
+
+/* Message card grid — cap height so tall posts don't dominate the feed */
+.message-card .image-grid {
+  max-height: 300px;
+}
+
+/* Composer grid — uncapped so users see full previews */
+.image-composer .image-grid {
+  max-height: none;
+}
+
+/* Per-slot remove button in composer */
+.image-grid-item .image-remove-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid rgba(255,255,255,0.7);
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background var(--transition);
+}
+
+.image-grid-item .image-remove-btn:hover {
+  background: rgba(200,0,0,0.75);
+  border-color: rgba(255,255,255,0.9);
+}
+
+/* Standalone remove button (legacy single-image path, kept for safety) */
 .image-remove-btn {
   padding: 3px 10px;
   border-radius: var(--radius-pill);
@@ -3817,6 +3883,27 @@ body {
   background: var(--danger-bg);
 }
 
+/* "Add photo" incremental button in composer */
+.image-add-btn {
+  align-self: flex-start;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1.5px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.image-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-subtle, rgba(0,0,0,0.04));
+}
+
+/* Keep legacy selector so old single-image cards still display correctly */
 .image-message-img {
   max-width: 100%;
   max-height: 400px;
@@ -3825,6 +3912,19 @@ body {
   display: block;
   margin-top: 6px;
   cursor: zoom-in;
+}
+
+/* Mobile: collapse all multi-column grids to a single stack */
+@media (max-width: 380px) {
+  .image-grid--2,
+  .image-grid--3,
+  .image-grid--4 {
+    grid-template-columns: 1fr;
+  }
+
+  .image-grid--3 .image-grid-item:nth-child(3) {
+    grid-column: auto;
+  }
 }
 
 /* ========================================
@@ -3890,6 +3990,51 @@ body {
   background: rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-sm);
   max-width: 300px;
+}
+
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition);
+  z-index: 1;
+}
+
+.lightbox-nav:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.lightbox-nav:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.lightbox-nav--prev { left: 14px; }
+.lightbox-nav--next { right: 14px; }
+
+.lightbox-counter {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
 }
 
 /* ========================================
@@ -4562,6 +4707,7 @@ body {
 .compact-mode .message-card.compact-expanded > .pinned-badge,
 .compact-mode .message-card.compact-expanded > .gif-message-img,
 .compact-mode .message-card.compact-expanded > .image-message-img,
+.compact-mode .message-card.compact-expanded > .image-grid,
 .compact-mode .message-card.compact-expanded > .voice-message-player {
   display: block;
 }
