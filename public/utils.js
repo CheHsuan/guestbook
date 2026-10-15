@@ -171,12 +171,12 @@ function getEmulatorConfig(hostname) {
  * Resolve the initial theme from persisted storage and OS preference.
  * @param {Storage|null} storage - localStorage or a test stub (may throw).
  * @param {boolean} matchesDark  - result of matchMedia('prefers-color-scheme: dark').matches.
- * @returns {'dark'|'light'}
+ * @returns {'dark'|'light'|'auto'}
  */
 function getInitialTheme(storage, matchesDark) {
     try {
         var saved = storage ? storage.getItem('theme') : null;
-        if (saved === 'dark' || saved === 'light') return saved;
+        if (saved === 'dark' || saved === 'light' || saved === 'auto') return saved;
     } catch (e) { /* localStorage unavailable — fall through */ }
     return matchesDark ? 'dark' : 'light';
 }

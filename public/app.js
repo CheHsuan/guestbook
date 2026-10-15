@@ -37,6 +37,7 @@ const SUBMIT_HINT_TEXT = (function () {
 // ========================================
 const MOON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
 const SUN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+const AUTO_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3A9 9 0 0 0 12 21Z" fill="currentColor" stroke="none"/></svg>';
 const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
 const BOOKMARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
 const BOOKMARK_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
@@ -46,36 +47,80 @@ const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
 const SPEAKER_STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
+let _themeMode = 'light';
+let _themeMediaQuery = null;
+let _themeAutoListener = null;
+
+function applyTheme(mode) {
+  if (_themeMediaQuery && _themeAutoListener) {
+    try { _themeMediaQuery.removeEventListener('change', _themeAutoListener); } catch (e) {
+      try { _themeMediaQuery.removeListener(_themeAutoListener); } catch (e2) {}
+    }
+    _themeAutoListener = null;
+  }
+
+  _themeMode = mode;
   const btn = document.getElementById('theme-toggle');
-  if (!btn) return;
-  if (theme === 'dark') {
-    btn.innerHTML = SUN_ICON;
-    btn.setAttribute('aria-label', 'Switch to light mode');
+
+  if (mode === 'auto') {
+    const osIsDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', osIsDark ? 'dark' : 'light');
+
+    if (window.matchMedia) {
+      _themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      _themeAutoListener = function (e) {
+        document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      };
+      try { _themeMediaQuery.addEventListener('change', _themeAutoListener); } catch (e) {
+        try { _themeMediaQuery.addListener(_themeAutoListener); } catch (e2) {}
+      }
+    }
+
+    if (btn) {
+      btn.innerHTML = AUTO_ICON;
+      btn.setAttribute('aria-label', 'Theme: Auto (follows OS)');
+      btn.setAttribute('title', 'Theme: Auto (syncs with OS)');
+    }
   } else {
-    btn.innerHTML = MOON_ICON;
-    btn.setAttribute('aria-label', 'Switch to dark mode');
+    document.documentElement.setAttribute('data-theme', mode);
+    if (btn) {
+      if (mode === 'dark') {
+        btn.innerHTML = SUN_ICON;
+        btn.setAttribute('aria-label', 'Switch to light mode');
+      } else {
+        btn.innerHTML = MOON_ICON;
+        btn.setAttribute('aria-label', 'Switch to dark mode');
+      }
+      btn.removeAttribute('title');
+    }
   }
 }
 
 function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'light';
-  const next = current === 'dark' ? 'light' : 'dark';
+  const hasMatchMedia = typeof window !== 'undefined' && !!window.matchMedia;
+  let next;
+  if (_themeMode === 'light') next = 'dark';
+  else if (_themeMode === 'dark') next = hasMatchMedia ? 'auto' : 'light';
+  else next = 'light'; // auto → light
   applyTheme(next);
   try { localStorage.setItem('theme', next); } catch (e) {}
 }
 
 // Initialize toggle button to reflect the theme already set by the anti-FOUC inline script
 (function () {
-  const theme = document.documentElement.getAttribute('data-theme') ||
-    getInitialTheme(
-      typeof localStorage !== 'undefined' ? localStorage : null,
-      typeof window !== 'undefined' && window.matchMedia
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-        : false
-    );
-  applyTheme(theme);
+  const hasMatchMedia = typeof window !== 'undefined' && !!window.matchMedia;
+  const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+  const matchesDark = hasMatchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+  let mode = getInitialTheme(storage, matchesDark);
+
+  // If 'auto' was saved but matchMedia is unavailable, fall back to light gracefully
+  if (mode === 'auto' && !hasMatchMedia) {
+    mode = 'light';
+    try { localStorage.removeItem('theme'); } catch (e) {}
+  }
+
+  applyTheme(mode);
   const btn = document.getElementById('theme-toggle');
   if (btn) btn.addEventListener('click', toggleTheme);
 })();
