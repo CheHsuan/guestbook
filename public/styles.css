@@ -2179,6 +2179,93 @@ body {
 }
 
 /* ========================================
+   Like Button
+   ======================================== */
+.btn-like {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: color var(--transition), background var(--transition), opacity var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-like .like-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-like .like-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-like .like-count {
+  line-height: 1;
+}
+
+.message-card:hover .btn-like {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.btn-like--active {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--danger);
+}
+
+.btn-like:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.btn-like:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.btn-like:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+@keyframes like-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+.btn-like--pulse .like-icon {
+  animation: like-pulse 0.35s ease-out forwards;
+}
+
+@media (hover: none) {
+  .btn-like {
+    opacity: 1;
+    pointer-events: auto;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ========================================
    Muted Badge (header)
    ======================================== */
 .muted-badge {

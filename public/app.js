@@ -45,6 +45,8 @@ const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="c
 const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
 const SPEAKER_STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const HEART_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+const HEART_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -214,11 +216,12 @@ const SORT_NEWEST = 'newest';
 const SORT_OLDEST = 'oldest';
 const SORT_ACTIVE = 'active';
 const SORT_VIEWS = 'views';
+const SORT_TOP = 'top';
 
 let currentSort = SORT_NEWEST;
 try {
   const _savedSort = localStorage.getItem(SORT_KEY);
-  if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE || _savedSort === SORT_VIEWS) currentSort = _savedSort;
+  if (_savedSort === SORT_OLDEST || _savedSort === SORT_ACTIVE || _savedSort === SORT_VIEWS || _savedSort === SORT_TOP) currentSort = _savedSort;
 } catch (_) {}
 
 // ========================================
@@ -295,7 +298,7 @@ function updateCopyLinkBtn() {
     }
 
     const sort = params.get('sort');
-    if (sort === SORT_NEWEST || sort === SORT_OLDEST || sort === SORT_ACTIVE || sort === SORT_VIEWS) {
+    if (sort === SORT_NEWEST || sort === SORT_OLDEST || sort === SORT_ACTIVE || sort === SORT_VIEWS || sort === SORT_TOP) {
       currentSort = sort;
     }
 
@@ -407,6 +410,12 @@ function getSortComparator(sort) {
     return (a, b) => {
       const vc = Number(b.dataset.views) - Number(a.dataset.views);
       return vc !== 0 ? vc : Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
+    };
+  }
+  if (sort === SORT_TOP) {
+    return (a, b) => {
+      const lc = Number(b.dataset.likes) - Number(a.dataset.likes);
+      return lc !== 0 ? lc : Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
     };
   }
   return (a, b) => Number(b.dataset.timestamp) - Number(a.dataset.timestamp);
@@ -2674,6 +2683,32 @@ async function startListeningMessages() {
         if (currentSort === SORT_VIEWS) applySortOrder();
       }
 
+      if (typeof updatedData.likes === 'number') {
+        const newLikes = Math.max(0, updatedData.likes);
+        card.dataset.likes = String(newLikes);
+        const likeBtn = card.querySelector('.btn-like');
+        if (likeBtn) {
+          const likeCountEl = likeBtn.querySelector('.like-count');
+          if (likeCountEl) {
+            if (newLikes > 0) {
+              likeCountEl.textContent = String(newLikes);
+              likeCountEl.style.display = '';
+            } else {
+              likeCountEl.style.display = 'none';
+            }
+          }
+          const liked = !!(updatedData.likedBy && currentUser && updatedData.likedBy[currentUser.uid]);
+          const likeIconEl = likeBtn.querySelector('.like-icon');
+          if (likeIconEl) likeIconEl.innerHTML = liked ? HEART_FILLED_ICON : HEART_ICON;
+          likeBtn.classList.toggle('btn-like--active', liked);
+          const ariaLabel = liked
+            ? `Unlike this message, ${newLikes} ${newLikes === 1 ? 'like' : 'likes'}`
+            : `Like this message, ${newLikes} ${newLikes === 1 ? 'like' : 'likes'}`;
+          likeBtn.setAttribute('aria-label', ariaLabel);
+        }
+        if (currentSort === SORT_TOP) applySortOrder();
+      }
+
       if (typeof updatedData.pinned === 'boolean') {
         card.dataset.pinned = updatedData.pinned ? '1' : '0';
         card.classList.toggle('is-pinned', updatedData.pinned);
@@ -3988,6 +4023,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
   card.dataset.timestamp = String(msg.timestamp);
   card.dataset.replyCount = '0';
   card.dataset.views = String(msg.views || 0);
+  card.dataset.likes = String(msg.likes || 0);
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
   card.dataset.pinned = msg.pinned ? '1' : '0';
@@ -4723,6 +4759,112 @@ function createMessageCard(msg, user, isNew, isArchive) {
     });
 
     cardFooter.appendChild(speakBtn);
+  }
+
+  // Like button — visible to all visitors except the message author
+  if (!(user && user.uid === msg.authorId)) {
+    const initialLikes = msg.likes || 0;
+    const initialLiked = !!(msg.likedBy && user && msg.likedBy[user.uid]);
+
+    const likeBtn = document.createElement('button');
+    likeBtn.className = 'btn-like' + (initialLiked ? ' btn-like--active' : '');
+    likeBtn.setAttribute('tabindex', isMobile || initialLiked ? '0' : '-1');
+    const initialAriaLabel = initialLiked
+      ? `Unlike this message, ${initialLikes} ${initialLikes === 1 ? 'like' : 'likes'}`
+      : `Like this message, ${initialLikes} ${initialLikes === 1 ? 'like' : 'likes'}`;
+    likeBtn.setAttribute('aria-label', initialAriaLabel);
+    if (isArchive) {
+      likeBtn.disabled = true;
+      likeBtn.setAttribute('aria-disabled', 'true');
+    }
+
+    const likeIconEl = document.createElement('span');
+    likeIconEl.className = 'like-icon';
+    likeIconEl.innerHTML = initialLiked ? HEART_FILLED_ICON : HEART_ICON;
+    likeBtn.appendChild(likeIconEl);
+
+    const likeCountEl = document.createElement('span');
+    likeCountEl.className = 'like-count';
+    if (initialLikes > 0) {
+      likeCountEl.textContent = String(initialLikes);
+    } else {
+      likeCountEl.style.display = 'none';
+    }
+    likeBtn.appendChild(likeCountEl);
+
+    if (!isMobile) {
+      card.addEventListener('mouseenter', () => likeBtn.setAttribute('tabindex', '0'));
+      card.addEventListener('mouseleave', () => {
+        if (!likeBtn.classList.contains('btn-like--active')) {
+          likeBtn.setAttribute('tabindex', '-1');
+        }
+      });
+    }
+
+    likeBtn.addEventListener('click', async () => {
+      if (!currentUser) {
+        showToast('Sign in to like messages');
+        return;
+      }
+      if (isArchive) return;
+
+      const isLiked = likeBtn.classList.contains('btn-like--active');
+      const currentLikes = Number(card.dataset.likes) || 0;
+      const newLikes = isLiked ? Math.max(0, currentLikes - 1) : currentLikes + 1;
+
+      // Optimistic UI update
+      likeIconEl.innerHTML = isLiked ? HEART_ICON : HEART_FILLED_ICON;
+      likeBtn.classList.toggle('btn-like--active', !isLiked);
+      card.dataset.likes = String(newLikes);
+      if (newLikes > 0) {
+        likeCountEl.textContent = String(newLikes);
+        likeCountEl.style.display = '';
+      } else {
+        likeCountEl.style.display = 'none';
+      }
+      const updatedAriaLabel = !isLiked
+        ? `Unlike this message, ${newLikes} ${newLikes === 1 ? 'like' : 'likes'}`
+        : `Like this message, ${newLikes} ${newLikes === 1 ? 'like' : 'likes'}`;
+      likeBtn.setAttribute('aria-label', updatedAriaLabel);
+      if (!isLiked) likeBtn.setAttribute('tabindex', '0');
+      else if (!isMobile) likeBtn.setAttribute('tabindex', '-1');
+
+      // Pulse animation
+      likeBtn.classList.remove('btn-like--pulse');
+      void likeBtn.offsetWidth; // force reflow
+      likeBtn.classList.add('btn-like--pulse');
+      likeBtn.addEventListener('animationend', () => likeBtn.classList.remove('btn-like--pulse'), { once: true });
+
+      if (currentSort === SORT_TOP) applySortOrder();
+
+      try {
+        const updates = {};
+        if (isLiked) {
+          updates[`messages/${msg.id}/likedBy/${currentUser.uid}`] = null;
+          updates[`messages/${msg.id}/likes`] = firebase.database.ServerValue.increment(-1);
+        } else {
+          updates[`messages/${msg.id}/likedBy/${currentUser.uid}`] = true;
+          updates[`messages/${msg.id}/likes`] = firebase.database.ServerValue.increment(1);
+        }
+        await db.ref().update(updates);
+      } catch (err) {
+        console.error('Failed to toggle like:', err);
+        // Revert optimistic update on failure
+        likeIconEl.innerHTML = isLiked ? HEART_FILLED_ICON : HEART_ICON;
+        likeBtn.classList.toggle('btn-like--active', isLiked);
+        card.dataset.likes = String(currentLikes);
+        if (currentLikes > 0) {
+          likeCountEl.textContent = String(currentLikes);
+          likeCountEl.style.display = '';
+        } else {
+          likeCountEl.style.display = 'none';
+        }
+        showToast('Failed to update like. Please try again.');
+        if (currentSort === SORT_TOP) applySortOrder();
+      }
+    });
+
+    cardFooter.appendChild(likeBtn);
   }
 
   // Bookmark button — visible to all visitors (not gated on auth)
@@ -7127,5 +7269,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, SORT_TOP, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
 }

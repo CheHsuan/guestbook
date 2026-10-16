@@ -88,6 +88,7 @@ const APP_HTML = `
       <button class="sort-btn" data-sort="oldest" aria-pressed="false">Oldest</button>
       <button class="sort-btn" data-sort="active" aria-pressed="false">Most Active</button>
       <button class="sort-btn" data-sort="views" aria-pressed="false">Most Viewed</button>
+      <button class="sort-btn" data-sort="top" aria-pressed="false">Top</button>
     </div>
     <button id="my-posts-btn" class="my-posts-btn" aria-pressed="false" style="display:none;">My Posts</button>
     <button id="density-toggle-btn" class="density-toggle-btn" aria-pressed="false" aria-label="Switch to compact view">☰</button>
@@ -7285,6 +7286,42 @@ describe('sort comparators (getSortComparator)', () => {
     const b = makeCardElWithViews(1000, 0);
     expect(cmp(a, b)).toBeLessThan(0);
   });
+
+  function makeCardElWithLikes(timestamp, likes) {
+    const el = makeCardEl(timestamp, 0);
+    el.dataset.likes = String(likes);
+    return el;
+  }
+
+  test('top comparator sorts by descending like count', () => {
+    const cmp = getSortComparator('top');
+    const a = makeCardElWithLikes(1000, 10);
+    const b = makeCardElWithLikes(2000, 5);
+    expect(cmp(a, b)).toBeLessThan(0);
+    expect(cmp(b, a)).toBeGreaterThan(0);
+  });
+
+  test('top comparator uses descending timestamp as tie-breaker when like counts are equal', () => {
+    const cmp = getSortComparator('top');
+    const a = makeCardElWithLikes(1000, 7);
+    const b = makeCardElWithLikes(2000, 7);
+    expect(cmp(a, b)).toBeGreaterThan(0);
+    expect(cmp(b, a)).toBeLessThan(0);
+  });
+
+  test('top comparator returns 0 for identical like count and timestamp', () => {
+    const cmp = getSortComparator('top');
+    const a = makeCardElWithLikes(1000, 3);
+    const b = makeCardElWithLikes(1000, 3);
+    expect(cmp(a, b)).toBe(0);
+  });
+
+  test('top comparator falls back to descending timestamp when like counts are both 0', () => {
+    const cmp = getSortComparator('top');
+    const a = makeCardElWithLikes(2000, 0);
+    const b = makeCardElWithLikes(1000, 0);
+    expect(cmp(a, b)).toBeLessThan(0);
+  });
 });
 
 // --- View count session deduplication ---
@@ -11885,6 +11922,133 @@ describe('compact view mode', () => {
       expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('false');
       expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
     });
+  });
+});
+
+// --- Like button feature ---
+describe('like button feature', () => {
+  let createMessageCard;
+
+  const baseMsg = {
+    id: 'like-msg1',
+    author: 'Alice',
+    text: 'Hello world',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+    photoURL: null,
+  };
+
+  function setupModule() {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+    localStorage.clear();
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = firebase;
+
+    ({ createMessageCard } = require('../public/app.js'));
+  }
+
+  beforeEach(setupModule);
+
+  test('like button is present for unauthenticated users', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.querySelector('.btn-like')).not.toBeNull();
+  });
+
+  test('like button is present for authenticated users who did not write the message', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-bob', isAnonymous: false });
+    expect(card.querySelector('.btn-like')).not.toBeNull();
+  });
+
+  test('like button is NOT present for the message author', () => {
+    const card = createMessageCard(baseMsg, { uid: 'uid-alice', isAnonymous: false });
+    expect(card.querySelector('.btn-like')).toBeNull();
+  });
+
+  test('data-likes defaults to "0" when msg.likes is absent', () => {
+    const card = createMessageCard(baseMsg, null);
+    expect(card.dataset.likes).toBe('0');
+  });
+
+  test('data-likes reflects msg.likes value', () => {
+    const card = createMessageCard({ ...baseMsg, likes: 7 }, null);
+    expect(card.dataset.likes).toBe('7');
+  });
+
+  test('like count span is hidden when likes is 0', () => {
+    const card = createMessageCard(baseMsg, null);
+    const countEl = card.querySelector('.like-count');
+    expect(countEl).not.toBeNull();
+    expect(countEl.style.display).toBe('none');
+  });
+
+  test('like count span shows the count when likes > 0', () => {
+    const card = createMessageCard({ ...baseMsg, likes: 5 }, null);
+    const countEl = card.querySelector('.like-count');
+    expect(countEl.style.display).not.toBe('none');
+    expect(countEl.textContent).toBe('5');
+  });
+
+  test('btn-like--active is set when the viewer has already liked the message', () => {
+    const msg = { ...baseMsg, likes: 1, likedBy: { 'uid-bob': true } };
+    const card = createMessageCard(msg, { uid: 'uid-bob', isAnonymous: false });
+    expect(card.querySelector('.btn-like').classList.contains('btn-like--active')).toBe(true);
+  });
+
+  test('btn-like--active is not set when the viewer has not liked the message', () => {
+    const msg = { ...baseMsg, likes: 1, likedBy: { 'uid-carol': true } };
+    const card = createMessageCard(msg, { uid: 'uid-bob', isAnonymous: false });
+    expect(card.querySelector('.btn-like').classList.contains('btn-like--active')).toBe(false);
+  });
+
+  test('btn-like--active is not set for unauthenticated users even when likedBy is populated', () => {
+    const msg = { ...baseMsg, likes: 1, likedBy: { 'uid-carol': true } };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.btn-like').classList.contains('btn-like--active')).toBe(false);
+  });
+
+  test('like button is disabled in archive mode', () => {
+    const card = createMessageCard(baseMsg, null, false, true);
+    const btn = card.querySelector('.btn-like');
+    expect(btn.disabled).toBe(true);
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  test('like button is enabled when not in archive mode', () => {
+    const card = createMessageCard(baseMsg, null, false, false);
+    const btn = card.querySelector('.btn-like');
+    expect(btn.disabled).toBe(false);
+  });
+
+  test('like button aria-label contains "Like this message" when not liked', () => {
+    const card = createMessageCard({ ...baseMsg, likes: 3 }, null);
+    const label = card.querySelector('.btn-like').getAttribute('aria-label');
+    expect(label).toContain('Like this message');
+    expect(label).toContain('3');
+  });
+
+  test('like button aria-label contains "Unlike this message" when already liked', () => {
+    const msg = { ...baseMsg, likes: 2, likedBy: { 'uid-bob': true } };
+    const card = createMessageCard(msg, { uid: 'uid-bob', isAnonymous: false });
+    const label = card.querySelector('.btn-like').getAttribute('aria-label');
+    expect(label).toContain('Unlike this message');
+    expect(label).toContain('2');
   });
 });
 
