@@ -1,4 +1,4 @@
-const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData } = require('../public/utils');
+const { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData, computeYearAgoBounds } = require('../public/utils');
 
 // ========================================
 // validateWebsiteURL
@@ -1169,3 +1169,45 @@ describe('fetchCountryData', () => {
     });
 });
 
+
+// ========================================
+// computeYearAgoBounds
+// ========================================
+describe('computeYearAgoBounds', () => {
+    test('returns start at UTC midnight and end at 23:59:59.999 of the year-ago date', () => {
+        const date = new Date(Date.UTC(2026, 9, 16)); // Oct 16, 2026 UTC
+        const { start, end } = computeYearAgoBounds(date);
+        const startDate = new Date(start);
+        const endDate = new Date(end);
+        expect(startDate.toISOString()).toBe('2025-10-16T00:00:00.000Z');
+        expect(endDate.toISOString()).toBe('2025-10-16T23:59:59.999Z');
+    });
+
+    test('start + 86399999ms equals end (full UTC day span)', () => {
+        const date = new Date(Date.UTC(2026, 5, 15)); // Jun 15, 2026
+        const { start, end } = computeYearAgoBounds(date);
+        expect(end - start).toBe(86399999);
+    });
+
+    test('subtracts exactly 365 days (timestamp arithmetic, not calendar)', () => {
+        // Feb 28, 2025 minus 365 days = Feb 29, 2024 (leap day)
+        const date = new Date(Date.UTC(2025, 1, 28)); // Feb 28, 2025
+        const { start } = computeYearAgoBounds(date);
+        expect(new Date(start).toISOString()).toBe('2024-02-29T00:00:00.000Z');
+    });
+
+    test('Feb 29 2024 minus 365 days = March 1 2023 (365-day arithmetic)', () => {
+        const date = new Date(Date.UTC(2024, 1, 29)); // Feb 29, 2024
+        const { start } = computeYearAgoBounds(date);
+        expect(new Date(start).toISOString()).toBe('2023-03-01T00:00:00.000Z');
+    });
+
+    test('ignores time-of-day component of the input date', () => {
+        const dateA = new Date(Date.UTC(2026, 0, 1, 0, 0, 0, 0));   // midnight
+        const dateB = new Date(Date.UTC(2026, 0, 1, 23, 59, 59, 999)); // end of day
+        const boundsA = computeYearAgoBounds(dateA);
+        const boundsB = computeYearAgoBounds(dateB);
+        expect(boundsA.start).toBe(boundsB.start);
+        expect(boundsA.end).toBe(boundsB.end);
+    });
+});

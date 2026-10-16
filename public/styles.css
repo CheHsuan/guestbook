@@ -4342,6 +4342,76 @@ body {
 }
 
 /* ========================================
+   "On This Day" flashback banner
+   ======================================== */
+.on-this-day-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--accent, var(--border));
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.on-this-day-banner--visible {
+  opacity: 1;
+}
+
+.otd-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.otd-link-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+
+.otd-link-btn:hover {
+  background: var(--bg-subtle);
+}
+
+.otd-dismiss-btn {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: color var(--transition);
+  flex-shrink: 0;
+}
+
+.otd-dismiss-btn:hover {
+  color: var(--text-primary);
+}
+
+@media (max-width: 480px) {
+  .otd-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ========================================
    Archive 200-message limit notice
    ======================================== */
 .archive-limit-notice {
