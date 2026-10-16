@@ -501,7 +501,24 @@ async function fetchCountryData() {
     }
 }
 
+/**
+ * Compute the UTC timestamp bounds { start, end } for the same calendar date
+ * one year prior to `date`, using 365-day timestamp arithmetic.
+ * Handles the leap-year edge case (e.g. Feb 28, 2025 → Feb 29, 2024).
+ * @param {Date} date - Reference date (any time; only UTC date portion is used).
+ * @returns {{ start: number, end: number }}
+ */
+function computeYearAgoBounds(date) {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const todayUtcMidnight = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    const yearAgoUtcMidnight = todayUtcMidnight - 365 * MS_PER_DAY;
+    const yearAgoDate = new Date(yearAgoUtcMidnight);
+    const start = Date.UTC(yearAgoDate.getUTCFullYear(), yearAgoDate.getUTCMonth(), yearAgoDate.getUTCDate(), 0, 0, 0, 0);
+    const end   = Date.UTC(yearAgoDate.getUTCFullYear(), yearAgoDate.getUTCMonth(), yearAgoDate.getUTCDate(), 23, 59, 59, 999);
+    return { start, end };
+}
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData };
+    module.exports = { validateWebsiteURL, validateBio, validateDisplayName, validateMessage, formatTimestamp, sanitizeText, getCharCounterState, getEmulatorConfig, isNearBottom, getInitialTheme, parseTextSegments, renderTextWithLinks, linkifyText, parseMessageSegments, parseInlineMarkdown, stripInlineMarkdown, renderMessageText, wrapSelection, isNewSinceLastVisit, countryCodeToFlag, fetchCountryData, computeYearAgoBounds };
 }

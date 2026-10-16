@@ -76,6 +76,7 @@ const APP_HTML = `
     Viewing archive for <strong id="archive-banner-date"></strong>
     <button id="archive-back-btn" class="archive-back-btn">Back to today</button>
   </div>
+  <div id="on-this-day-banner" class="on-this-day-banner" style="display:none;"></div>
   <div id="messages-container">
     <div id="empty-state" style="display:none"><p>No messages yet. Be the first to leave one!</p></div>
     <div id="search-empty-state" style="display:none"><p>No messages match your search.</p></div>
@@ -280,6 +281,7 @@ describe('createMessageCard', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance, dbInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -691,6 +693,7 @@ describe('pin feature', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     mocks = makeFirebaseMock();
     mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
@@ -826,6 +829,7 @@ describe('mood feature constants', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -898,6 +902,7 @@ describe('post form submit handler', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -1025,6 +1030,7 @@ describe('PERMISSION_DENIED rate-limit handling', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -2050,6 +2056,7 @@ describe('guest posting', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -3087,6 +3094,7 @@ describe('Cmd/Ctrl+Enter keyboard shortcut', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -5201,6 +5209,7 @@ describe('browser notifications — permission request on post', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.firebase = mocks.firebase;
 
     require('../public/app.js');
@@ -8634,6 +8643,7 @@ describe('poll — post form creates poll payload', () => {
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
   }
 
   beforeEach(() => {
@@ -9439,6 +9449,7 @@ describe('Daily Writing Prompt', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.updateEditCounter = utils.updateEditCounter || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
@@ -9582,6 +9593,7 @@ describe('avatar — handleAvatarUpload', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
   }
@@ -9676,6 +9688,7 @@ describe('avatar — handleAvatarRemove', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
   }
@@ -9776,6 +9789,7 @@ describe('avatar — refreshAllUserAvatars', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.wrapSelection = utils.wrapSelection || (() => {});
     global.fetchCountryData = utils.fetchCountryData || (() => Promise.resolve(null));
     global.firebase = mocks.firebase;
@@ -9858,6 +9872,7 @@ describe('voice message — createMessageCard for audio type', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -10005,6 +10020,7 @@ describe('read aloud — speaker button', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     // Mock SpeechSynthesisUtterance constructor
     global.SpeechSynthesisUtterance = class {
@@ -10214,6 +10230,7 @@ describe('voice mode — enableVoiceMode and disableVoiceMode', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     ({ enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration } = require('../public/app.js'));
@@ -10319,6 +10336,7 @@ describe('voice recording — resetVoiceComposer, startVoiceRecording, stopVoice
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     ({ startVoiceRecording, stopVoiceRecording, resetVoiceComposer, enableVoiceMode } =
@@ -10564,6 +10582,7 @@ describe('image — handlePastedImageFile', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     ({ handlePastedImageFile, enablePollMode, enableGifMode } = require('../public/app.js'));
@@ -10675,6 +10694,7 @@ describe('image — clipboard paste event listener', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     require('../public/app.js');
@@ -10800,6 +10820,7 @@ describe('URL state management', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     const { firebase, authInstance } = makeFirebaseMock();
@@ -10994,6 +11015,7 @@ describe('archive feature', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
     global.fetchCountryData = jest.fn().mockResolvedValue(null);
 
     const { firebase, authInstance, dbRef } = makeFirebaseMock();
@@ -11371,6 +11393,7 @@ describe('computeSparklineBuckets', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -11476,6 +11499,7 @@ describe('renderSparkline', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
@@ -11637,6 +11661,7 @@ describe('compact view mode', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
     global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.computeYearAgoBounds = utils.computeYearAgoBounds;
 
     const { firebase, authInstance } = makeFirebaseMock();
     global.firebase = firebase;
