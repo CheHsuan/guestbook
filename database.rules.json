@@ -43,7 +43,8 @@
       ".read": true,
       ".indexOn": [
         "timestamp",
-        "authorId"
+        "authorId",
+        "likes"
       ],
       "$message_id": {
         ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
@@ -119,6 +120,16 @@
         "views": {
           ".write": "root.child('messages').child($message_id).exists()",
           ".validate": "newData.isNumber() && newData.val() > 0"
+        },
+        "likes": {
+          ".write": "auth != null && root.child('messages').child($message_id).exists()",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        },
+        "likedBy": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && root.child('messages').child($message_id).exists()",
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
         },
         "replies": {
           "$reply_id": {
