@@ -1323,12 +1323,116 @@ function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// ----------------------------------------
+// Notification Preferences — localStorage helpers
+// ----------------------------------------
+const NOTIF_PREFS_KEY = 'guestbook_notif_prefs';
+const NOTIF_QUIET_HOURS_KEY = 'guestbook_notif_quiet_hours';
+
+function loadNotifPrefs() {
+  try {
+    const raw = localStorage.getItem(NOTIF_PREFS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        reply: parsed.reply !== false,
+        mention: parsed.mention !== false,
+        subscription: parsed.subscription !== false,
+      };
+    }
+  } catch (e) { /* localStorage unavailable */ }
+  return { reply: true, mention: true, subscription: true };
+}
+
+function saveNotifPrefs(prefs) {
+  try {
+    localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(prefs));
+  } catch (e) { /* localStorage unavailable */ }
+}
+
+function loadQuietHours() {
+  try {
+    const raw = localStorage.getItem(NOTIF_QUIET_HOURS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: !!parsed.enabled,
+        start: typeof parsed.start === 'string' ? parsed.start : '22:00',
+        end: typeof parsed.end === 'string' ? parsed.end : '08:00',
+      };
+    }
+  } catch (e) { /* localStorage unavailable */ }
+  return { enabled: false, start: '22:00', end: '08:00' };
+}
+
+function saveQuietHours(qh) {
+  try {
+    localStorage.setItem(NOTIF_QUIET_HOURS_KEY, JSON.stringify(qh));
+  } catch (e) { /* localStorage unavailable */ }
+}
+
+function isQuietHours() {
+  const qh = loadQuietHours();
+  if (!qh.enabled) return false;
+  const now = new Date();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = qh.start.split(':').map(Number);
+  const [eh, em] = qh.end.split(':').map(Number);
+  const start = sh * 60 + sm;
+  const end = eh * 60 + em;
+  if (start <= end) {
+    return cur >= start && cur < end;
+  }
+  // crosses midnight
+  return cur >= start || cur < end;
+}
+
+function updateNotifSettingsBadge() {
+  const btn = document.getElementById('notif-settings-badge');
+  if (!btn) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !currentUser) {
+    btn.style.display = 'none';
+  } else {
+    btn.style.display = '';
+  }
+}
+
+function refreshNotifPanel() {
+  const prefs = loadNotifPrefs();
+  const qh = loadQuietHours();
+
+  const replyToggle = document.getElementById('notif-pref-reply');
+  if (replyToggle) replyToggle.checked = prefs.reply;
+
+  const mentionToggle = document.getElementById('notif-pref-mention');
+  if (mentionToggle) mentionToggle.checked = prefs.mention;
+
+  const subscriptionToggle = document.getElementById('notif-pref-subscription');
+  if (subscriptionToggle) subscriptionToggle.checked = prefs.subscription;
+
+  const quietToggle = document.getElementById('notif-pref-quiet-enabled');
+  if (quietToggle) quietToggle.checked = qh.enabled;
+
+  const quietTimes = document.getElementById('notif-quiet-times');
+  if (quietTimes) quietTimes.style.display = qh.enabled ? '' : 'none';
+
+  const startInput = document.getElementById('notif-quiet-start');
+  if (startInput) startInput.value = qh.start;
+
+  const endInput = document.getElementById('notif-quiet-end');
+  if (endInput) endInput.value = qh.end;
+}
+
 function maybeFireMentionNotification(msg) {
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   if (!currentUser) return;
   if (msg.authorId === currentUser.uid) return;
   if (document.visibilityState === 'visible') return;
+
+  const prefs = loadNotifPrefs();
+  if (!prefs.mention) return;
+  if (isQuietHours()) return;
 
   const displayName = currentUser.displayName;
   if (!displayName) return;
@@ -1358,6 +1462,10 @@ function maybeFireReplyNotification(msg, reply) {
   if (document.visibilityState === 'visible') return;
   if (!document.getElementById('msg-' + msg.id)) return;
 
+  const prefs = loadNotifPrefs();
+  if (!prefs.reply) return;
+  if (isQuietHours()) return;
+
   const raw = typeof reply.text === 'string' ? reply.text : '';
   const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
   const notif = new Notification('New reply on Guestbook', {
@@ -1380,6 +1488,10 @@ function maybeFireSubscriptionNotification(msg, reply) {
   if (document.visibilityState === 'visible') return;
   if (!isSubscribed(msg.id)) return;
   if (!document.getElementById('msg-' + msg.id)) return;
+
+  const prefs = loadNotifPrefs();
+  if (!prefs.subscription) return;
+  if (isQuietHours()) return;
 
   const raw = typeof reply.text === 'string' ? reply.text : '';
   const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
@@ -2418,6 +2530,8 @@ auth.onAuthStateChanged(async (user) => {
 
   // Check for past archives after alias load so mock order is predictable in tests
   if (_initInLiveMode) checkHasPastArchives();
+
+  updateNotifSettingsBadge();
 });
 
 // ========================================
@@ -6541,6 +6655,84 @@ if (mutedWordsInputEl) {
   });
 }
 
+// ========================================
+// Notification settings badge + panel setup
+// ========================================
+updateNotifSettingsBadge();
+
+const notifSettingsBadgeEl = document.getElementById('notif-settings-badge');
+if (notifSettingsBadgeEl) {
+  notifSettingsBadgeEl.addEventListener('click', () => {
+    const panel = document.getElementById('notif-settings-panel');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    if (isOpen) {
+      panel.style.display = 'none';
+      notifSettingsBadgeEl.setAttribute('aria-expanded', 'false');
+    } else {
+      panel.style.display = '';
+      notifSettingsBadgeEl.setAttribute('aria-expanded', 'true');
+      refreshNotifPanel();
+    }
+  });
+}
+
+const notifPrefReplyEl = document.getElementById('notif-pref-reply');
+if (notifPrefReplyEl) {
+  notifPrefReplyEl.addEventListener('change', () => {
+    const prefs = loadNotifPrefs();
+    prefs.reply = notifPrefReplyEl.checked;
+    saveNotifPrefs(prefs);
+  });
+}
+
+const notifPrefMentionEl = document.getElementById('notif-pref-mention');
+if (notifPrefMentionEl) {
+  notifPrefMentionEl.addEventListener('change', () => {
+    const prefs = loadNotifPrefs();
+    prefs.mention = notifPrefMentionEl.checked;
+    saveNotifPrefs(prefs);
+  });
+}
+
+const notifPrefSubscriptionEl = document.getElementById('notif-pref-subscription');
+if (notifPrefSubscriptionEl) {
+  notifPrefSubscriptionEl.addEventListener('change', () => {
+    const prefs = loadNotifPrefs();
+    prefs.subscription = notifPrefSubscriptionEl.checked;
+    saveNotifPrefs(prefs);
+  });
+}
+
+const notifPrefQuietEnabledEl = document.getElementById('notif-pref-quiet-enabled');
+if (notifPrefQuietEnabledEl) {
+  notifPrefQuietEnabledEl.addEventListener('change', () => {
+    const qh = loadQuietHours();
+    qh.enabled = notifPrefQuietEnabledEl.checked;
+    saveQuietHours(qh);
+    const quietTimes = document.getElementById('notif-quiet-times');
+    if (quietTimes) quietTimes.style.display = qh.enabled ? '' : 'none';
+  });
+}
+
+const notifQuietStartEl = document.getElementById('notif-quiet-start');
+if (notifQuietStartEl) {
+  notifQuietStartEl.addEventListener('change', () => {
+    const qh = loadQuietHours();
+    qh.start = notifQuietStartEl.value;
+    saveQuietHours(qh);
+  });
+}
+
+const notifQuietEndEl = document.getElementById('notif-quiet-end');
+if (notifQuietEndEl) {
+  notifQuietEndEl.addEventListener('change', () => {
+    const qh = loadQuietHours();
+    qh.end = notifQuietEndEl.value;
+    saveQuietHours(qh);
+  });
+}
+
 // Add formatting toolbar above the main message textarea
 messageInput.parentElement.insertBefore(createFormattingToolbar(messageInput), messageInput);
 
@@ -7127,5 +7319,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
 }

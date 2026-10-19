@@ -98,6 +98,7 @@ const APP_HTML = `
   <div id="typing-indicator" class="typing-indicator" style="display:none;"></div>
   <div id="activity-sparkline" style="display:none;"></div>
   <button id="new-messages-banner" type="button" class="new-messages-banner" style="display:none;"></button>
+  <button id="notif-settings-badge" style="display:none;"></button>
   <button id="muted-badge" style="display:none;"></button>
   <button id="muted-words-badge" style="display:none;"></button>
   <button id="saved-badge" style="display:none;"></button>
@@ -117,6 +118,16 @@ const APP_HTML = `
     <p id="muted-words-input-error" style="display:none;"></p>
     <div id="muted-words-panel-list"></div>
     <button id="muted-words-add-btn"></button>
+  </section>
+  <section id="notif-settings-panel" style="display:none;">
+    <input type="checkbox" id="notif-pref-reply" />
+    <input type="checkbox" id="notif-pref-mention" />
+    <input type="checkbox" id="notif-pref-subscription" />
+    <input type="checkbox" id="notif-pref-quiet-enabled" />
+    <div id="notif-quiet-times" style="display:none;">
+      <input type="time" id="notif-quiet-start" value="22:00" />
+      <input type="time" id="notif-quiet-end" value="08:00" />
+    </div>
   </section>
   <div id="author-panel-backdrop" style="display:none;"></div>
   <aside id="author-panel" style="display:none;">
@@ -11885,6 +11896,506 @@ describe('compact view mode', () => {
       expect(card.querySelector('.compact-row').getAttribute('aria-expanded')).toBe('false');
       expect(card.querySelector('.compact-chevron').textContent).toBe('▼');
     });
+  });
+});
+
+// ============================================================
+// Notification preferences — localStorage helpers
+// ============================================================
+describe('notification preferences — loadNotifPrefs / saveNotifPrefs', () => {
+  let loadNotifPrefs;
+  let saveNotifPrefs;
+  let NOTIF_PREFS_KEY;
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = mocks.firebase;
+
+    ({ loadNotifPrefs, saveNotifPrefs, NOTIF_PREFS_KEY } = require('../public/app.js'));
+  });
+
+  test('returns all-true defaults when localStorage is empty', () => {
+    const prefs = loadNotifPrefs();
+    expect(prefs).toEqual({ reply: true, mention: true, subscription: true });
+  });
+
+  test('returns saved values from localStorage', () => {
+    localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify({ reply: false, mention: true, subscription: false }));
+    const prefs = loadNotifPrefs();
+    expect(prefs.reply).toBe(false);
+    expect(prefs.mention).toBe(true);
+    expect(prefs.subscription).toBe(false);
+  });
+
+  test('missing keys in stored object default to true', () => {
+    localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify({ reply: false }));
+    const prefs = loadNotifPrefs();
+    expect(prefs.reply).toBe(false);
+    expect(prefs.mention).toBe(true);
+    expect(prefs.subscription).toBe(true);
+  });
+
+  test('saveNotifPrefs writes JSON to localStorage', () => {
+    saveNotifPrefs({ reply: false, mention: false, subscription: true });
+    const stored = JSON.parse(localStorage.getItem(NOTIF_PREFS_KEY));
+    expect(stored).toEqual({ reply: false, mention: false, subscription: true });
+  });
+
+  test('loadNotifPrefs does not throw when localStorage has invalid JSON', () => {
+    localStorage.setItem(NOTIF_PREFS_KEY, 'not-valid-json{{{');
+    expect(() => loadNotifPrefs()).not.toThrow();
+    const prefs = loadNotifPrefs();
+    expect(prefs).toEqual({ reply: true, mention: true, subscription: true });
+  });
+});
+
+// ============================================================
+// Notification preferences — loadQuietHours / saveQuietHours / isQuietHours
+// ============================================================
+describe('notification preferences — quiet hours helpers', () => {
+  let loadQuietHours;
+  let saveQuietHours;
+  let isQuietHours;
+  let NOTIF_QUIET_HOURS_KEY;
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = mocks.firebase;
+
+    ({ loadQuietHours, saveQuietHours, isQuietHours, NOTIF_QUIET_HOURS_KEY } = require('../public/app.js'));
+  });
+
+  test('returns disabled defaults when localStorage is empty', () => {
+    const qh = loadQuietHours();
+    expect(qh).toEqual({ enabled: false, start: '22:00', end: '08:00' });
+  });
+
+  test('returns saved values from localStorage', () => {
+    localStorage.setItem(NOTIF_QUIET_HOURS_KEY, JSON.stringify({ enabled: true, start: '23:00', end: '07:00' }));
+    const qh = loadQuietHours();
+    expect(qh).toEqual({ enabled: true, start: '23:00', end: '07:00' });
+  });
+
+  test('saveQuietHours writes JSON to localStorage', () => {
+    saveQuietHours({ enabled: true, start: '21:30', end: '09:00' });
+    const stored = JSON.parse(localStorage.getItem(NOTIF_QUIET_HOURS_KEY));
+    expect(stored).toEqual({ enabled: true, start: '21:30', end: '09:00' });
+  });
+
+  test('loadQuietHours does not throw on invalid JSON', () => {
+    localStorage.setItem(NOTIF_QUIET_HOURS_KEY, '{{invalid');
+    expect(() => loadQuietHours()).not.toThrow();
+    expect(loadQuietHours().enabled).toBe(false);
+  });
+
+  test('isQuietHours returns false when quiet hours are disabled', () => {
+    saveQuietHours({ enabled: false, start: '00:00', end: '23:59' });
+    expect(isQuietHours()).toBe(false);
+  });
+
+  test('isQuietHours returns true when current time is within non-midnight-crossing window', () => {
+    const now = new Date();
+    const h = now.getHours();
+    const m = now.getMinutes();
+    // Set window to encompass now: (h-1):00 to (h+1):00
+    const padH = n => String(n).padStart(2, '0');
+    const startH = ((h - 1) + 24) % 24;
+    const endH = (h + 1) % 24;
+    // Only run this sub-test if start < end (non-crossing window)
+    if (startH < endH) {
+      saveQuietHours({ enabled: true, start: `${padH(startH)}:00`, end: `${padH(endH)}:00` });
+      expect(isQuietHours()).toBe(true);
+    }
+  });
+
+  test('isQuietHours returns false when current time is outside non-midnight-crossing window', () => {
+    const now = new Date();
+    const h = now.getHours();
+    const padH = n => String(n).padStart(2, '0');
+    // Window entirely in the future or past, not containing now
+    const startH = (h + 2) % 24;
+    const endH = (h + 3) % 24;
+    if (startH < endH) {
+      saveQuietHours({ enabled: true, start: `${padH(startH)}:00`, end: `${padH(endH)}:00` });
+      expect(isQuietHours()).toBe(false);
+    }
+  });
+
+  test('isQuietHours handles midnight-crossing window: 22:00 – 08:00, current=23:30', () => {
+    // Simulate 23:30 by temporarily overriding Date
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 23, 30, 0); } }
+      getHours() { return 23; }
+      getMinutes() { return 30; }
+    }
+    global.Date = MockDate;
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    expect(isQuietHours()).toBe(true);
+    global.Date = RealDate;
+  });
+
+  test('isQuietHours handles midnight-crossing window: 22:00 – 08:00, current=07:59', () => {
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 7, 59, 0); } }
+      getHours() { return 7; }
+      getMinutes() { return 59; }
+    }
+    global.Date = MockDate;
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    expect(isQuietHours()).toBe(true);
+    global.Date = RealDate;
+  });
+
+  test('isQuietHours handles midnight-crossing window: 22:00 – 08:00, current=10:00 (outside)', () => {
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 10, 0, 0); } }
+      getHours() { return 10; }
+      getMinutes() { return 0; }
+    }
+    global.Date = MockDate;
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    expect(isQuietHours()).toBe(false);
+    global.Date = RealDate;
+  });
+});
+
+// ============================================================
+// Notification preferences — maybeFire* respect prefs and quiet hours
+// ============================================================
+describe('notification preferences — maybeFireReplyNotification respects prefs', () => {
+  let maybeFireReplyNotification;
+  let saveNotifPrefs;
+  let saveQuietHours;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Me', photoURL: '' };
+  const myMsg = { id: 'msg-pref-1', author: 'Me', text: 'Hello', timestamp: 1000, authorId: 'uid-me' };
+  const otherReply = { id: 'r1', author: 'Bob', text: 'Nice!', timestamp: 2000, authorId: 'uid-bob' };
+
+  function mockNotificationCtor(permission = 'granted') {
+    const instances = [];
+    const Ctor = jest.fn().mockImplementation(() => {
+      const inst = { addEventListener: jest.fn(), close: jest.fn() };
+      instances.push(inst);
+      return inst;
+    });
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    Ctor.instances = instances;
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  function addCard(msgId) {
+    const el = document.createElement('div');
+    el.id = 'msg-' + msgId;
+    document.getElementById('messages-container').appendChild(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true, writable: true });
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.firebase = mocks.firebase;
+
+    ({ maybeFireReplyNotification, saveNotifPrefs, saveQuietHours } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true, writable: true });
+  });
+
+  test('does not fire when reply pref is false', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    saveNotifPrefs({ reply: false, mention: true, subscription: true });
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('fires when reply pref is true', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not fire during quiet hours', () => {
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 23, 0, 0); } }
+      getHours() { return 23; }
+      getMinutes() { return 0; }
+    }
+    global.Date = MockDate;
+
+    const Ctor = mockNotificationCtor('granted');
+    addCard(myMsg.id);
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    maybeFireReplyNotification(myMsg, otherReply);
+    expect(Ctor).not.toHaveBeenCalled();
+    global.Date = RealDate;
+  });
+});
+
+describe('notification preferences — maybeFireMentionNotification respects prefs', () => {
+  let maybeFireMentionNotification;
+  let saveNotifPrefs;
+  let saveQuietHours;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Alice', photoURL: '' };
+  const mentionMsg = { id: 'msg-m-1', author: 'Bob', text: 'Hey @Alice check this', timestamp: 1000, authorId: 'uid-bob' };
+
+  function mockNotificationCtor(permission = 'granted') {
+    const instances = [];
+    const Ctor = jest.fn().mockImplementation(() => {
+      const inst = { addEventListener: jest.fn(), close: jest.fn() };
+      instances.push(inst);
+      return inst;
+    });
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    Ctor.instances = instances;
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true, writable: true });
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.firebase = mocks.firebase;
+
+    ({ maybeFireMentionNotification, saveNotifPrefs, saveQuietHours } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true, writable: true });
+  });
+
+  test('does not fire when mention pref is false', () => {
+    const Ctor = mockNotificationCtor('granted');
+    saveNotifPrefs({ reply: true, mention: false, subscription: true });
+    maybeFireMentionNotification(mentionMsg);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('fires when mention pref is true', () => {
+    const Ctor = mockNotificationCtor('granted');
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    maybeFireMentionNotification(mentionMsg);
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not fire during quiet hours', () => {
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 23, 0, 0); } }
+      getHours() { return 23; }
+      getMinutes() { return 0; }
+    }
+    global.Date = MockDate;
+
+    const Ctor = mockNotificationCtor('granted');
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    maybeFireMentionNotification(mentionMsg);
+    expect(Ctor).not.toHaveBeenCalled();
+    global.Date = RealDate;
+  });
+});
+
+describe('notification preferences — maybeFireSubscriptionNotification respects prefs', () => {
+  let maybeFireSubscriptionNotification;
+  let saveNotifPrefs;
+  let saveQuietHours;
+  let authStateCallback;
+  let mocks;
+
+  const currentUserMock = { uid: 'uid-me', displayName: 'Me', photoURL: '' };
+  const otherMsg = { id: 'msg-sub-1', author: 'Alice', text: 'Hello world', timestamp: 1000, authorId: 'uid-alice' };
+  const incomingReply = { id: 'r1', author: 'Bob', text: 'Great post!', timestamp: 2000, authorId: 'uid-bob' };
+
+  function mockNotificationCtor(permission = 'granted') {
+    const instances = [];
+    const Ctor = jest.fn().mockImplementation(() => {
+      const inst = { addEventListener: jest.fn(), close: jest.fn() };
+      instances.push(inst);
+      return inst;
+    });
+    Ctor.permission = permission;
+    Ctor.requestPermission = jest.fn().mockResolvedValue(permission);
+    Ctor.instances = instances;
+    global.Notification = Ctor;
+    return Ctor;
+  }
+
+  function addCard(msgId) {
+    const el = document.createElement('div');
+    el.id = 'msg-' + msgId;
+    document.getElementById('messages-container').appendChild(el);
+    return el;
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true, writable: true });
+
+    mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(cb => { authStateCallback = cb; });
+    mocks.dbRef.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.firebase = mocks.firebase;
+
+    ({ maybeFireSubscriptionNotification, saveNotifPrefs, saveQuietHours } = require('../public/app.js'));
+    authStateCallback(currentUserMock);
+    localStorage.setItem('guestbook_subscriptions', JSON.stringify([otherMsg.id]));
+  });
+
+  afterEach(() => {
+    delete global.Notification;
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true, writable: true });
+  });
+
+  test('does not fire when subscription pref is false', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    saveNotifPrefs({ reply: true, mention: true, subscription: false });
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+  });
+
+  test('fires when subscription pref is true', () => {
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not fire during quiet hours', () => {
+    const RealDate = global.Date;
+    class MockDate extends RealDate {
+      constructor(...args) { if (args.length) { super(...args); } else { super(2024, 0, 15, 23, 0, 0); } }
+      getHours() { return 23; }
+      getMinutes() { return 0; }
+    }
+    global.Date = MockDate;
+
+    const Ctor = mockNotificationCtor('granted');
+    addCard(otherMsg.id);
+    saveNotifPrefs({ reply: true, mention: true, subscription: true });
+    saveQuietHours({ enabled: true, start: '22:00', end: '08:00' });
+    maybeFireSubscriptionNotification(otherMsg, incomingReply);
+    expect(Ctor).not.toHaveBeenCalled();
+    global.Date = RealDate;
   });
 });
 
