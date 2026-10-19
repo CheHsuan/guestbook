@@ -56,6 +56,9 @@
         <button id="theme-toggle" class="btn-theme-toggle" aria-label="Switch to dark mode">
           <!-- icon updated by JS -->
         </button>
+        <button id="notif-settings-badge" class="notif-settings-badge" style="display:none;" aria-label="Notification settings" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="14" height="14"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><circle cx="19" cy="5" r="3" fill="currentColor" stroke="none"/></svg>
+        </button>
         <button id="muted-badge" class="muted-badge" style="display:none;" aria-label="View muted authors" aria-expanded="false"></button>
         <button id="muted-words-badge" class="muted-badge" style="display:none;" aria-label="View muted words" aria-expanded="false"></button>
         <button id="saved-badge" class="saved-badge" style="display:none;" aria-label="View saved messages" aria-expanded="false"></button>
@@ -217,6 +220,41 @@
           </div>
           <p id="muted-words-input-error" class="muted-words-panel-error" style="display:none;"></p>
           <div id="muted-words-panel-list" class="muted-panel-list"></div>
+        </section>
+        <!-- Notification settings panel — toggled by #notif-settings-badge in the header -->
+        <section id="notif-settings-panel" class="muted-panel notif-settings-panel" style="display:none;" aria-label="Notification settings">
+          <div class="muted-panel-header">
+            <span class="muted-panel-title">Notification settings</span>
+          </div>
+          <div class="notif-settings-body">
+            <label class="notif-settings-row">
+              <input type="checkbox" id="notif-pref-reply" class="notif-settings-checkbox">
+              <span class="notif-settings-label">Replies to my posts</span>
+            </label>
+            <label class="notif-settings-row">
+              <input type="checkbox" id="notif-pref-mention" class="notif-settings-checkbox">
+              <span class="notif-settings-label">@Mentions</span>
+            </label>
+            <label class="notif-settings-row">
+              <input type="checkbox" id="notif-pref-subscription" class="notif-settings-checkbox">
+              <span class="notif-settings-label">Thread updates (threads I follow)</span>
+            </label>
+            <div class="notif-settings-divider"></div>
+            <label class="notif-settings-row">
+              <input type="checkbox" id="notif-pref-quiet-enabled" class="notif-settings-checkbox">
+              <span class="notif-settings-label">Quiet hours</span>
+            </label>
+            <div id="notif-quiet-times" class="notif-quiet-times" style="display:none;">
+              <label class="notif-quiet-label">
+                From
+                <input type="time" id="notif-quiet-start" class="notif-quiet-input" value="22:00">
+              </label>
+              <label class="notif-quiet-label">
+                To
+                <input type="time" id="notif-quiet-end" class="notif-quiet-input" value="08:00">
+              </label>
+            </div>
+          </div>
         </section>
         <h2 class="section-title">
           <span id="messages-section-title">Messages from the last 24 hours</span>
