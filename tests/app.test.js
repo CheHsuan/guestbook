@@ -6910,6 +6910,112 @@ describe('author profile panel', () => {
 
     jest.useRealTimers();
   });
+
+  // --- shareable author URL: URL-opened panel (authorName === null) ---
+  test('URL-opened panel stays open when author has profile data', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    let callCount = 0;
+    dr.once.mockImplementation(() => {
+      callCount++;
+      if (callCount % 2 === 1) {
+        // messages snapshot — no messages
+        return Promise.resolve({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      }
+      // profile snapshot with displayName
+      return Promise.resolve({
+        exists: () => true,
+        val: () => ({ displayName: 'Alice', bio: null }),
+      });
+    });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    // null authorName = URL-opened
+    await oap('uid-alice', null, null);
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(true);
+  });
+
+  test('URL-opened panel closes with "Profile not found" toast when no profile and no messages', async () => {
+    const { firebase: fb, authInstance: ai, dbRef: dr } = makeFirebaseMock();
+    ai.onAuthStateChanged.mockImplementation(() => {});
+    // Default mock returns exists:false — no profile, no messages
+    dr.once.mockResolvedValue({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+    global.firebase = fb;
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { openAuthorPanel: oap } = require('../public/app.js');
+    await oap('uid-alice', null, null);
+
+    expect(document.getElementById('author-panel').classList.contains('author-panel--open')).toBe(false);
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe('Profile not found');
+  });
+
+  test('author panel footer contains copy-link button after opening', async () => {
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    const btn = document.querySelector('.author-panel-copy-link-btn');
+    expect(btn).not.toBeNull();
+  });
+
+  test('copy-link button click writes profile URL to clipboard and shows toast', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      writable: true,
+      configurable: true,
+    });
+    // Ensure no Web Share API so it falls through to clipboard
+    const origShare = navigator.share;
+    delete navigator.share;
+
+    await openAuthorPanel('uid-alice', 'Alice', null);
+    const btn = document.querySelector('.author-panel-copy-link-btn');
+    expect(btn).not.toBeNull();
+    btn.click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('author=uid-alice'));
+    const toast = document.querySelector('.permalink-toast');
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe('Link copied!');
+
+    if (origShare !== undefined) navigator.share = origShare;
+  });
 });
 
 // --- bio feature ---
@@ -10869,6 +10975,28 @@ describe('URL state management', () => {
       expect(url).not.toContain('q=');
       spy.mockRestore();
     });
+
+    test('includes author= param in URL when author panel is open', async () => {
+      await app.openAuthorPanel('uid-alice', 'Alice', null);
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '';
+      app.syncStateToUrl(false);
+      const [, , url] = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(url).toContain('author=uid-alice');
+      spy.mockRestore();
+      app.closeAuthorPanel();
+    });
+
+    test('omits author= param after author panel is closed', async () => {
+      await app.openAuthorPanel('uid-alice', 'Alice', null);
+      app.closeAuthorPanel();
+      const spy = jest.spyOn(window.history, 'replaceState');
+      document.getElementById('search-input').value = '';
+      app.syncStateToUrl(false);
+      const [, , url] = spy.mock.calls[spy.mock.calls.length - 1];
+      expect(url).not.toContain('author=');
+      spy.mockRestore();
+    });
   });
 
   describe('updateCopyLinkBtn', () => {
@@ -10912,6 +11040,19 @@ describe('URL state management', () => {
 
     test('truncates q param to 250 chars', () => {
       expect(document.getElementById('search-input').value.length).toBe(250);
+    });
+  });
+
+  describe('readUrlParams — ?author= param', () => {
+    test('valid ?author= UID is accepted (does not throw)', () => {
+      // setupApp loads the module; if author UID is valid it is stored as pendingAuthorUid
+      // without throwing. We verify the module loads cleanly.
+      expect(() => setupApp('/?author=uid-alice-123')).not.toThrow();
+    });
+
+    test('invalid ?author= UID (too long or bad chars) is silently ignored', () => {
+      const badUid = 'a'.repeat(200);
+      expect(() => setupApp('/?author=' + badUid)).not.toThrow();
     });
   });
 
