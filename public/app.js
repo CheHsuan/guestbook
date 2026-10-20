@@ -4160,7 +4160,7 @@ function getCompactPreviewText(msg) {
     return '📊 ' + (q.slice(0, COMPACT_PREVIEW_LENGTH) || 'Poll');
   }
   if (msg.type === 'gif') return 'GIF';
-  if (msg.type === 'image') return msg.text || '📷 Image';
+  if (msg.type === 'image') return msg.caption || '📷 Image';
   if (msg.type === 'audio') return msg.text || '🎙️ Voice message';
   return msg.text || '';
 }
@@ -4339,8 +4339,8 @@ function createMessageCard(msg, user, isNew, isArchive) {
   textEl.className = 'message-text';
   if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio') {
     renderMessageText(textEl, msg.text);
-  } else if (msg.type === 'image' && msg.text) {
-    renderMessageText(textEl, msg.text);
+  } else if (msg.type === 'image' && msg.caption) {
+    renderMessageText(textEl, msg.caption);
   }
 
   card.appendChild(header);
@@ -4374,7 +4374,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
     const imageImg = document.createElement('img');
     imageImg.className = 'image-message-img';
     imageImg.src = msg.imageUrl;
-    const resolvedAlt = msg.text || msg.imageAlt || 'Image';
+    const resolvedAlt = msg.imageAlt || msg.text || 'Image';
     imageImg.alt = resolvedAlt;
     imageImg.setAttribute('loading', 'lazy');
     imageImg.addEventListener('click', () => openLightbox(msg.imageUrl, resolvedAlt));
@@ -6084,6 +6084,13 @@ function enableImageMode() {
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Image';
   renderImageComposerEmpty();
+  try {
+    const savedCaption = localStorage.getItem(DRAFT_CAPTION_KEY);
+    if (savedCaption && imageCaptionInput) {
+      imageCaptionInput.value = savedCaption;
+      if (imageCaptionCounter) imageCaptionCounter.textContent = `${savedCaption.length} / 250`;
+    }
+  } catch (_) {}
   if (imageFileInput) imageFileInput.click();
 }
 
@@ -7126,7 +7133,7 @@ postForm.addEventListener('submit', async (e) => {
       const updates = {};
       updates[`/messages/${newMessageKey}`] = {
         type: 'image',
-        text: captionText,
+        caption: captionText,
         imageUrl: downloadUrl,
         imageAlt: altText,
         author: displayName,

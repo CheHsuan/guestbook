@@ -9341,6 +9341,7 @@ describe('image — createMessageCard renders image card', () => {
     type: 'image',
     author: 'Carol',
     text: 'Image posted by Carol',
+    caption: 'Image posted by Carol',
     imageUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/file.jpg?alt=media',
     imageAlt: 'Image posted by Carol',
     timestamp: Date.now(),
@@ -9404,18 +9405,25 @@ describe('image — createMessageCard renders image card', () => {
   });
 
   test('message-text is empty for image messages with no caption', () => {
-    const msg = { ...imageMsg, id: 'img-nocap', text: '' };
+    const msg = { ...imageMsg, id: 'img-nocap', text: '', caption: '' };
     const card = createMessageCard(msg, null);
     const textEl = card.querySelector('.message-text');
     expect(textEl).not.toBeNull();
     expect(textEl.textContent.trim()).toBe('');
   });
 
-  test('img alt uses msg.text as caption when present', () => {
-    const msg = { ...imageMsg, id: 'img-alt-cap', text: 'Sunset view', imageAlt: 'fallback alt' };
+  test('img alt uses imageAlt when present (imageAlt takes precedence over text)', () => {
+    const msg = { ...imageMsg, id: 'img-alt-cap', text: 'old alt text', imageAlt: 'Image posted by Carol' };
     const card = createMessageCard(msg, null);
     const img = card.querySelector('.image-message-img');
-    expect(img.alt).toBe('Sunset view');
+    expect(img.alt).toBe('Image posted by Carol');
+  });
+
+  test('img alt falls back to msg.text for old messages without imageAlt', () => {
+    const msg = { ...imageMsg, id: 'img-old-alt', text: 'Image posted by Carol', imageAlt: '' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
   });
 
   test('img alt falls back to imageAlt when msg.text is empty', () => {
@@ -11871,8 +11879,8 @@ describe('compact view mode', () => {
       expect(getCompactPreviewText({ type: 'image', imageUrl: 'https://example.com/img.jpg' })).toBe('📷 Image');
     });
 
-    test('returns image text when present', () => {
-      expect(getCompactPreviewText({ type: 'image', text: 'A photo', imageUrl: 'https://example.com/img.jpg' })).toBe('A photo');
+    test('returns caption when present', () => {
+      expect(getCompactPreviewText({ type: 'image', caption: 'A photo', imageUrl: 'https://example.com/img.jpg' })).toBe('A photo');
     });
 
     test('returns voice message label for audio type', () => {
