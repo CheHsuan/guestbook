@@ -160,6 +160,10 @@ const APP_HTML = `
   <input type="file" id="image-file-input" style="display:none;" />
   <div id="image-composer" style="display:none;">
     <div id="image-preview-wrap"></div>
+    <div class="textarea-wrapper">
+      <textarea id="image-caption-input" maxlength="250"></textarea>
+      <span id="image-caption-counter" class="char-counter">0 / 250</span>
+    </div>
   </div>
   <p id="image-upload-error" style="display:none;"></p>
   <button type="button" id="voice-toggle-btn" aria-pressed="false" style="display:none;"></button>
@@ -9385,18 +9389,40 @@ describe('image — createMessageCard renders image card', () => {
     expect(img.alt).toBe('Image posted by Carol');
   });
 
-  test('falls back to "Image" when imageAlt is empty', () => {
-    const msg = { ...imageMsg, id: 'img-noalt', imageAlt: '' };
+  test('falls back to "Image" when both msg.text and imageAlt are empty', () => {
+    const msg = { ...imageMsg, id: 'img-noalt', text: '', imageAlt: '' };
     const card = createMessageCard(msg, null);
     const img = card.querySelector('.image-message-img');
     expect(img.alt).toBe('Image');
   });
 
-  test('message-text element is empty for image messages', () => {
+  test('message-text renders caption for image messages with text', () => {
     const card = createMessageCard(imageMsg, null);
     const textEl = card.querySelector('.message-text');
     expect(textEl).not.toBeNull();
+    expect(textEl.textContent.trim()).toBe('Image posted by Carol');
+  });
+
+  test('message-text is empty for image messages with no caption', () => {
+    const msg = { ...imageMsg, id: 'img-nocap', text: '' };
+    const card = createMessageCard(msg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
     expect(textEl.textContent.trim()).toBe('');
+  });
+
+  test('img alt uses msg.text as caption when present', () => {
+    const msg = { ...imageMsg, id: 'img-alt-cap', text: 'Sunset view', imageAlt: 'fallback alt' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Sunset view');
+  });
+
+  test('img alt falls back to imageAlt when msg.text is empty', () => {
+    const msg = { ...imageMsg, id: 'img-alt-fb', text: '', imageAlt: 'Image posted by Carol' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
   });
 
   test('does not render edit button for image messages', () => {
