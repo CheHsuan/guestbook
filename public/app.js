@@ -262,6 +262,7 @@ function syncStateToUrl(usePushState) {
     if (q) params.set('q', q);
     if (currentSort !== SORT_NEWEST) params.set('sort', currentSort);
     if (currentTypeFilter !== TYPE_ALL) params.set('type', currentTypeFilter);
+    if (authorPanelUid) params.set('author', authorPanelUid);
 
     const search = params.toString() ? '?' + params.toString() : '';
     const url = location.pathname + search + location.hash;
@@ -302,6 +303,11 @@ function updateCopyLinkBtn() {
     const type = params.get('type');
     if (type && VALID_TYPES.has(type)) {
       currentTypeFilter = type;
+    }
+
+    const authorUid = params.get('author');
+    if (authorUid && /^[a-zA-Z0-9_-]{1,128}$/.test(authorUid)) {
+      pendingAuthorUid = authorUid;
     }
   } catch (_) {}
 })();
@@ -829,10 +835,14 @@ const authorPanelBodyEl = document.getElementById('author-panel-body');
 const authorPanelCloseBtn = document.getElementById('author-panel-close');
 
 let authorPanelOpen = false;
+let authorPanelUid = null;
+let pendingAuthorUid = null;
 
 function closeAuthorPanel() {
   if (!authorPanelOpen) return;
   authorPanelOpen = false;
+  authorPanelUid = null;
+  syncStateToUrl(false);
   authorPanelBackdropEl.classList.remove('author-panel-backdrop--visible');
   authorPanelEl.classList.remove('author-panel--open');
   setTimeout(() => {
@@ -844,15 +854,24 @@ function closeAuthorPanel() {
 }
 
 async function openAuthorPanel(authorId, authorName, photoURL) {
-  // Remove stale mute button from previous open
+  // Remove stale elements from previous open
   const existingMuteBtn = authorPanelEl.querySelector('.author-panel-mute-btn');
   if (existingMuteBtn) existingMuteBtn.remove();
+  const existingFooter = authorPanelEl.querySelector('.author-panel-footer');
+  if (existingFooter) existingFooter.remove();
+
+  // Track open panel UID for URL param management
+  authorPanelUid = authorId;
+
+  // null authorName means panel was opened from ?author= URL (no name known yet)
+  const isUrlOpen = authorName === null;
+  const initialName = isUrlOpen ? 'Loading…' : authorName;
 
   // Populate header immediately
   authorPanelAvatarEl.innerHTML = '';
-  const panelAvatar = createAvatarElement(photoURL, authorName);
+  const panelAvatar = createAvatarElement(isUrlOpen ? null : photoURL, initialName);
   authorPanelAvatarEl.appendChild(panelAvatar);
-  authorPanelNameEl.textContent = authorName; // textContent — XSS safe
+  authorPanelNameEl.textContent = initialName; // textContent — XSS safe
   authorPanelBioEl.textContent = '';
   authorPanelBioEl.style.display = 'none';
   authorPanelSubtitleEl.textContent = 'Loading…';
@@ -874,6 +893,9 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
   authorPanelEl.classList.add('author-panel--open');
   authorPanelOpen = true;
 
+  // Preserve ?author= in URL while panel is open
+  syncStateToUrl(false);
+
   const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
 
   try {
@@ -885,10 +907,49 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
     // Display bio if set
     const profileData = (profileSnap.exists() && typeof profileSnap.val === 'function') ? profileSnap.val() : null;
 
+    const messages = [];
+    snapshot.forEach(child => {
+      const data = child.val();
+      if (data.timestamp >= twentyFourHoursAgo) {
+        messages.push({ id: child.key, ...data });
+      }
+    });
+    messages.sort((a, b) => b.timestamp - a.timestamp);
+    const count = messages.length;
+
+    // For URL-opened panel: resolve display name from profile or messages
+    let resolvedName = authorName;
+    if (isUrlOpen) {
+      if (profileData && profileData.displayName) {
+        resolvedName = profileData.displayName;
+      } else if (count > 0) {
+        resolvedName = messages[0].author || 'Anonymous';
+      }
+    }
+
+    // Profile not found: only when opened via URL — no profile data and no recent messages
+    if (isUrlOpen && !profileData && count === 0) {
+      showToast('Profile not found');
+      closeAuthorPanel();
+      return;
+    }
+
+    // Update name and avatar now that we have resolved data
+    if (isUrlOpen && resolvedName) {
+      authorPanelNameEl.textContent = resolvedName; // textContent — XSS safe
+      if (!(profileData && profileData.avatarUrl)) {
+        authorPanelAvatarEl.innerHTML = '';
+        authorPanelAvatarEl.appendChild(createAvatarElement(null, resolvedName));
+      }
+    }
+
+    // Use resolvedName for all subsequent display (falls back to authorName for normal opens)
+    const displayName = resolvedName || authorName || 'Anonymous';
+
     // Update panel avatar if a custom avatarUrl is stored in profile
     if (profileData && profileData.avatarUrl) {
       authorPanelAvatarEl.innerHTML = '';
-      const updatedAvatar = createAvatarElement(profileData.avatarUrl, authorName);
+      const updatedAvatar = createAvatarElement(profileData.avatarUrl, displayName);
       authorPanelAvatarEl.appendChild(updatedAvatar);
     }
 
@@ -956,17 +1017,6 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
       authorPanelSubtitleEl.insertAdjacentElement('beforebegin', editWebsiteBtn);
     }
 
-    const messages = [];
-    snapshot.forEach(child => {
-      const data = child.val();
-      if (data.timestamp >= twentyFourHoursAgo) {
-        messages.push({ id: child.key, ...data });
-      }
-    });
-
-    messages.sort((a, b) => b.timestamp - a.timestamp);
-
-    const count = messages.length;
     authorPanelSubtitleEl.textContent = count === 1 ? '1 message today' : `${count} messages today`;
 
     authorPanelBodyEl.innerHTML = '';
@@ -1019,12 +1069,36 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
       });
     }
 
-    // Add mute/unmute button for non-self profiles
+    // Footer: Copy profile link (all visitors) + mute/unmute (non-self profiles)
+    const footer = document.createElement('div');
+    footer.className = 'author-panel-footer';
+
+    const profileUrl = location.origin + location.pathname + '?author=' + authorId;
+    const copyLinkBtn = document.createElement('button');
+    copyLinkBtn.className = 'author-panel-copy-link-btn';
+    copyLinkBtn.innerHTML = LINK_ICON + ' Copy link'; // LINK_ICON is a static SVG constant
+    copyLinkBtn.setAttribute('aria-label', 'Copy profile link');
+    copyLinkBtn.addEventListener('click', () => {
+      const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      if (isMobile && typeof navigator.share === 'function') {
+        const shareName = authorPanelNameEl.textContent || '';
+        navigator.share({
+          title: shareName ? shareName + "'s profile on Guestbook" : 'Guestbook Profile',
+          url: profileUrl,
+        }).catch(() => {
+          copyTextToClipboard(profileUrl);
+        });
+      } else {
+        copyTextToClipboard(profileUrl);
+      }
+    });
+    footer.appendChild(copyLinkBtn);
+
     if (!currentUser || authorId !== currentUser.uid) {
       const muted = isMuted(authorId);
       const muteBtn = document.createElement('button');
       muteBtn.className = 'author-panel-mute-btn' + (muted ? ' author-panel-mute-btn--unmute' : '');
-      muteBtn.textContent = muted ? `Unmute ${authorName}` : `Mute ${authorName}`; // textContent — XSS safe
+      muteBtn.textContent = muted ? `Unmute ${displayName}` : `Mute ${displayName}`; // textContent — XSS safe
 
       muteBtn.addEventListener('click', () => {
         if (isMuted(authorId)) {
@@ -1035,7 +1109,7 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
           filterMessages();
           updateMutedChip();
           closeAuthorPanel();
-          showToast(`Unmuted ${authorName}.`);
+          showToast(`Unmuted ${displayName}.`);
         } else {
           const success = addMuted(authorId);
           if (success) {
@@ -1045,13 +1119,15 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
             filterMessages();
             updateMutedChip();
             closeAuthorPanel();
-            showToast(`Muted ${authorName}. Their messages are now hidden.`);
+            showToast(`Muted ${displayName}. Their messages are now hidden.`);
           }
         }
       });
 
-      authorPanelBodyEl.insertAdjacentElement('beforebegin', muteBtn);
+      footer.appendChild(muteBtn);
     }
+
+    authorPanelEl.appendChild(footer);
   } catch (err) {
     console.error('Failed to load author messages:', err);
     authorPanelBodyEl.innerHTML = '';
@@ -1060,6 +1136,18 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
     errEl.textContent = 'Failed to load messages. Please try again.';
     authorPanelBodyEl.appendChild(errEl);
     authorPanelSubtitleEl.textContent = '';
+  }
+}
+
+function copyTextToClipboard(text) {
+  try {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Link copied!');
+    }).catch(() => {
+      showToast('Could not copy link.');
+    });
+  } catch (_) {
+    showToast('Could not copy link.');
   }
 }
 
@@ -2098,10 +2186,13 @@ function openDisplayNameEditor() {
 
     const googleName = currentUser.displayName || null;
     const newAlias = (trimmed.length > 0 && trimmed !== googleName) ? trimmed : null;
+    // Write the effective display name so ?author= deep-links can show a name
+    // even when no messages are in the live feed
+    const effectiveDisplayName = newAlias || googleName;
 
     try {
-      if (newAlias) {
-        await db.ref(`users/${currentUser.uid}/profile`).update({ displayName: newAlias });
+      if (effectiveDisplayName) {
+        await db.ref(`users/${currentUser.uid}/profile`).update({ displayName: effectiveDisplayName });
       } else {
         await db.ref(`users/${currentUser.uid}/profile/displayName`).remove();
       }
@@ -2188,7 +2279,11 @@ function openBioEditor() {
       saveBtn.disabled = true;
       cancelBtn.disabled = true;
       try {
+        const resolvedName = userAlias || (currentUser.displayName || null);
         await db.ref(`users/${currentUser.uid}/profile/bio`).remove();
+        if (resolvedName) {
+          await db.ref(`users/${currentUser.uid}/profile`).update({ displayName: resolvedName });
+        }
         userBio = null;
         closeEditor();
         showToast('Bio removed');
@@ -2211,7 +2306,10 @@ function openBioEditor() {
     cancelBtn.disabled = true;
 
     try {
-      await db.ref(`users/${currentUser.uid}/profile`).update({ bio: validation.text });
+      const resolvedName = userAlias || (currentUser.displayName || null);
+      const updates = { bio: validation.text };
+      if (resolvedName) updates.displayName = resolvedName;
+      await db.ref(`users/${currentUser.uid}/profile`).update(updates);
       userBio = validation.text;
       closeEditor();
       showToast('Bio saved');
@@ -2294,7 +2392,10 @@ function openWebsiteEditor() {
       saveBtn.disabled = true;
       cancelBtn.disabled = true;
       try {
-        await db.ref(`users/${currentUser.uid}/profile/website`).remove();
+        const resolvedName = userAlias || (currentUser.displayName || null);
+        const updates = { website: null };
+        if (resolvedName) updates.displayName = resolvedName;
+        await db.ref(`users/${currentUser.uid}/profile`).update(updates);
         userWebsite = null;
         closeEditor();
         showToast('Website removed');
@@ -2317,7 +2418,10 @@ function openWebsiteEditor() {
     cancelBtn.disabled = true;
 
     try {
-      await db.ref(`users/${currentUser.uid}/profile`).update({ website: validation.url });
+      const resolvedName = userAlias || (currentUser.displayName || null);
+      const updates = { website: validation.url };
+      if (resolvedName) updates.displayName = resolvedName;
+      await db.ref(`users/${currentUser.uid}/profile`).update(updates);
       userWebsite = validation.url;
       closeEditor();
       showToast('Website saved');
@@ -2532,6 +2636,17 @@ auth.onAuthStateChanged(async (user) => {
   if (_initInLiveMode) checkHasPastArchives();
 
   updateNotifSettingsBadge();
+
+  // Consume pending author panel from ?author=uid URL param (only fires once)
+  if (pendingAuthorUid && !authorPanelOpen) {
+    const uidToOpen = pendingAuthorUid;
+    pendingAuthorUid = null;
+    if (location.hash.startsWith('#msg-')) {
+      setTimeout(() => openAuthorPanel(uidToOpen, null, null), 500);
+    } else {
+      openAuthorPanel(uidToOpen, null, null);
+    }
+  }
 });
 
 // ========================================
@@ -7319,5 +7434,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
 }

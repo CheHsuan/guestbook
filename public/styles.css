@@ -3189,6 +3189,54 @@ body {
   overflow-y: auto;
 }
 
+.author-panel-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+.author-panel-copy-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+
+.author-panel-copy-link-btn svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.author-panel-copy-link-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.author-panel-copy-link-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.author-panel-footer .author-panel-mute-btn {
+  margin-bottom: 0;
+}
+
 .author-panel-loading {
   display: flex;
   justify-content: center;
