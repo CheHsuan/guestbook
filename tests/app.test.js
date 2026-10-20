@@ -160,6 +160,10 @@ const APP_HTML = `
   <input type="file" id="image-file-input" style="display:none;" />
   <div id="image-composer" style="display:none;">
     <div id="image-preview-wrap"></div>
+    <div class="textarea-wrapper">
+      <textarea id="image-caption-input" maxlength="250"></textarea>
+      <span id="image-caption-counter" class="char-counter">0 / 250</span>
+    </div>
   </div>
   <p id="image-upload-error" style="display:none;"></p>
   <button type="button" id="voice-toggle-btn" aria-pressed="false" style="display:none;"></button>
@@ -9337,6 +9341,7 @@ describe('image — createMessageCard renders image card', () => {
     type: 'image',
     author: 'Carol',
     text: 'Image posted by Carol',
+    caption: 'Image posted by Carol',
     imageUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/file.jpg?alt=media',
     imageAlt: 'Image posted by Carol',
     timestamp: Date.now(),
@@ -9385,18 +9390,47 @@ describe('image — createMessageCard renders image card', () => {
     expect(img.alt).toBe('Image posted by Carol');
   });
 
-  test('falls back to "Image" when imageAlt is empty', () => {
-    const msg = { ...imageMsg, id: 'img-noalt', imageAlt: '' };
+  test('falls back to "Image" when both msg.text and imageAlt are empty', () => {
+    const msg = { ...imageMsg, id: 'img-noalt', text: '', imageAlt: '' };
     const card = createMessageCard(msg, null);
     const img = card.querySelector('.image-message-img');
     expect(img.alt).toBe('Image');
   });
 
-  test('message-text element is empty for image messages', () => {
+  test('message-text renders caption for image messages with text', () => {
     const card = createMessageCard(imageMsg, null);
     const textEl = card.querySelector('.message-text');
     expect(textEl).not.toBeNull();
+    expect(textEl.textContent.trim()).toBe('Image posted by Carol');
+  });
+
+  test('message-text is empty for image messages with no caption', () => {
+    const msg = { ...imageMsg, id: 'img-nocap', text: '', caption: '' };
+    const card = createMessageCard(msg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
     expect(textEl.textContent.trim()).toBe('');
+  });
+
+  test('img alt uses imageAlt when present (imageAlt takes precedence over text)', () => {
+    const msg = { ...imageMsg, id: 'img-alt-cap', text: 'old alt text', imageAlt: 'Image posted by Carol' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
+  });
+
+  test('img alt falls back to msg.text for old messages without imageAlt', () => {
+    const msg = { ...imageMsg, id: 'img-old-alt', text: 'Image posted by Carol', imageAlt: '' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
+  });
+
+  test('img alt falls back to imageAlt when msg.text is empty', () => {
+    const msg = { ...imageMsg, id: 'img-alt-fb', text: '', imageAlt: 'Image posted by Carol' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.image-message-img');
+    expect(img.alt).toBe('Image posted by Carol');
   });
 
   test('does not render edit button for image messages', () => {
@@ -11845,8 +11879,8 @@ describe('compact view mode', () => {
       expect(getCompactPreviewText({ type: 'image', imageUrl: 'https://example.com/img.jpg' })).toBe('📷 Image');
     });
 
-    test('returns image text when present', () => {
-      expect(getCompactPreviewText({ type: 'image', text: 'A photo', imageUrl: 'https://example.com/img.jpg' })).toBe('A photo');
+    test('returns caption when present', () => {
+      expect(getCompactPreviewText({ type: 'image', caption: 'A photo', imageUrl: 'https://example.com/img.jpg' })).toBe('A photo');
     });
 
     test('returns voice message label for audio type', () => {
