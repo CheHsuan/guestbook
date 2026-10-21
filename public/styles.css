@@ -3336,6 +3336,81 @@ body {
 }
 
 /* ========================================
+   Time Capsule — composer controls
+   ======================================== */
+
+.capsule-date-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.capsule-date-input {
+  padding: 4px 8px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.capsule-date-input:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+#capsule-date-cancel {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition);
+}
+
+#capsule-date-cancel:hover {
+  color: var(--text-primary);
+}
+
+.capsule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-faint);
+  border: 1.5px solid var(--accent);
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+#capsule-chip-clear {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+  transition: opacity var(--transition);
+}
+
+#capsule-chip-clear:hover {
+  opacity: 1;
+}
+
+/* ========================================
    Mood Picker — popup + chip + card badge
    ======================================== */
 
@@ -4744,4 +4819,65 @@ body {
   .compact-author {
     max-width: 60px;
   }
+}
+
+/* ========================================
+   Time Capsule — message card banner
+   ======================================== */
+
+.capsule-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.capsule-banner--pending {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.capsule-banner--revealed {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #7c5800;
+}
+
+[data-theme="dark"] .capsule-banner--revealed {
+  background: #3a2e00;
+  border-color: #a07800;
+  color: #ffe082;
+}
+
+/* ========================================
+   Time Capsule — community pending chip
+   ======================================== */
+
+.pending-capsules-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  min-height: 32px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pending-capsules-chip:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
 }

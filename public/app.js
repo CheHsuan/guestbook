@@ -156,6 +156,16 @@ const moodChipClear = document.getElementById('mood-chip-clear');
 const moodPickerBackdrop = document.getElementById('mood-picker-backdrop');
 const moodPickerEl = document.getElementById('mood-picker');
 const moodPickerGrid = document.getElementById('mood-picker-grid');
+const capsuleToggleBtn = document.getElementById('capsule-toggle-btn');
+const capsuleDatePickerRow = document.getElementById('capsule-date-picker-row');
+const capsuleDateInput = document.getElementById('capsule-date-input');
+const capsuleDateCancel = document.getElementById('capsule-date-cancel');
+const capsuleChip = document.getElementById('capsule-chip');
+const capsuleChipLabel = document.getElementById('capsule-chip-label');
+const capsuleChipClear = document.getElementById('capsule-chip-clear');
+const myCapsulesBtnEl = document.getElementById('my-capsules-btn');
+const myCapsulesCount = document.getElementById('my-capsules-count');
+const pendingCapsulesChip = document.getElementById('pending-capsules-chip');
 
 // ========================================
 // State
@@ -174,6 +184,10 @@ let imagePreviewObjectUrl = null;
 let imageUploadTask = null;
 let voiceMode = false;
 let selectedMood = null; // { emoji, label } or null
+let capsuleMode = false;
+let scheduledRevealDate = null; // Date object for the selected reveal date, or null
+let myCapsulesActive = false;
+let pendingCapsulesListener = null;
 let voiceBlob = null;
 let voiceMediaRecorder = null;
 let voiceRecordingTimer = null;
@@ -1880,6 +1894,12 @@ function updateMyPostsBtnVisibility() {
   }
 }
 
+function updateMyCapsulesBtnVisibility() {
+  if (!myCapsulesBtnEl) return;
+  const isNonGuestUser = !!(currentUser && !currentUser.isAnonymous);
+  myCapsulesBtnEl.style.display = isNonGuestUser ? '' : 'none';
+}
+
 searchInput.addEventListener('input', () => {
   searchClearBtn.style.display = searchInput.value ? '' : 'none';
   clearTimeout(searchDebounceTimer);
@@ -2564,6 +2584,7 @@ auth.onAuthStateChanged(async (user) => {
     if (gifToggleBtn) gifToggleBtn.style.display = '';
     if (imageToggleBtn) imageToggleBtn.style.display = '';
     if (voiceToggleBtn) voiceToggleBtn.style.display = typeof MediaRecorder !== 'undefined' ? '' : 'none';
+    if (capsuleToggleBtn) capsuleToggleBtn.style.display = '';
     restoreDraft();
     initPromptCard();
     updateMyPostsBtnVisibility();
@@ -2586,6 +2607,8 @@ auth.onAuthStateChanged(async (user) => {
     if (gifToggleBtn) gifToggleBtn.style.display = 'none';
     if (imageToggleBtn) imageToggleBtn.style.display = 'none';
     if (voiceToggleBtn) voiceToggleBtn.style.display = 'none';
+    if (capsuleToggleBtn) capsuleToggleBtn.style.display = 'none';
+    disableCapsuleMode();
     hidePromptCard();
     if (myPostsBtn) myPostsBtn.style.display = 'none';
   } else {
@@ -2606,6 +2629,8 @@ auth.onAuthStateChanged(async (user) => {
       if (myPostsCount) myPostsCount.style.display = 'none';
     }
     if (myPostsBtn) myPostsBtn.style.display = 'none';
+    if (capsuleToggleBtn) capsuleToggleBtn.style.display = 'none';
+    disableCapsuleMode();
   }
 
   // Initialize the message feed once. In archive mode use loadArchiveDay; otherwise start the live listener.
@@ -2740,7 +2765,10 @@ async function startListeningMessages() {
       allNewMode = newCount > 0 && newCount === messages.length;
       oldestNewMsgId = _oldestNewMsgId;
 
+      const nowMs = Date.now();
       messages.forEach(msg => {
+        // Exclude pending capsules from the live feed (author sees them in My Capsules view)
+        if (msg.revealAt && msg.revealAt > nowMs) return;
         trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
         const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
         const card = createMessageCard(msg, currentUser, showBadge);
@@ -2756,6 +2784,8 @@ async function startListeningMessages() {
     }
 
     handleDeepLink();
+    startPendingCapsulesListener();
+    updateMyCapsulesBtnVisibility();
 
     // Check whether any messages exist before today so the ← prev button can be enabled/disabled
     db.ref('messages')
@@ -2801,6 +2831,9 @@ async function startListeningMessages() {
     realtimeAddedListener = queryRef.on('child_added', (childSnapshot) => {
       // Prevent processing if it's somehow an old message or we just posted it and it was already handled (though child_added usually fires for new)
       const msg = { id: childSnapshot.key, ...childSnapshot.val() };
+
+      // Exclude pending capsules from the live feed
+      if (msg.revealAt && msg.revealAt > Date.now()) return;
 
       // If we don't have a newestMessageTimestamp (empty DB on load), set it now
       if (!newestMessageTimestamp || msg.timestamp > newestMessageTimestamp) {
@@ -3019,7 +3052,10 @@ async function loadMoreMessages() {
       oldestMessageTimestamp = messages[messages.length - 1].timestamp;
     }
 
+    const nowMs2 = Date.now();
     messages.forEach(msg => {
+      // Exclude pending capsules from the live feed
+      if (msg.revealAt && msg.revealAt > nowMs2) return;
       trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
       const showBadge = !allNewMode && isNewSinceLastVisit(msg.timestamp, lastVisitTs);
       const card = createMessageCard(msg, currentUser, showBadge);
@@ -3088,6 +3124,8 @@ function stopListeningMessages() {
 
   window.removeEventListener('scroll', handleScroll);
 
+  stopPendingCapsulesListener();
+
   // Clear rendered messages
   const existingCards = messagesContainer.querySelectorAll('.message-card');
   existingCards.forEach((card) => card.remove());
@@ -3129,16 +3167,48 @@ async function loadArchiveDay(date) {
   const { start, end } = getUtcDayBounds(date);
 
   try {
-    const snap = await db.ref('messages')
-      .orderByChild('timestamp')
-      .startAt(start)
-      .endAt(end)
-      .limitToFirst(ARCHIVE_MESSAGE_LIMIT)
-      .once('value');
+    // Load regular messages AND time capsules revealed on this day in parallel
+    const [snap, capsuleSnap] = await Promise.all([
+      db.ref('messages')
+        .orderByChild('timestamp')
+        .startAt(start)
+        .endAt(end)
+        .limitToFirst(ARCHIVE_MESSAGE_LIMIT)
+        .once('value'),
+      db.ref('messages')
+        .orderByChild('revealAt')
+        .startAt(start)
+        .endAt(end)
+        .once('value'),
+    ]);
 
     loadingState.style.display = 'none';
 
-    if (!snap.exists()) {
+    const seenIds = new Set();
+    const messages = [];
+
+    if (snap.exists()) {
+      snap.forEach(child => {
+        const data = child.val();
+        // Exclude pending capsules that were created on this day but reveal in the future
+        if (data.revealAt && data.revealAt > end) return;
+        if (!seenIds.has(child.key)) {
+          seenIds.add(child.key);
+          messages.push({ id: child.key, ...data });
+        }
+      });
+    }
+
+    if (capsuleSnap && capsuleSnap.exists()) {
+      capsuleSnap.forEach(child => {
+        if (!seenIds.has(child.key)) {
+          seenIds.add(child.key);
+          messages.push({ id: child.key, ...child.val() });
+        }
+      });
+    }
+
+    if (messages.length === 0) {
       const emptyP = emptyState.querySelector('p');
       if (emptyP) emptyP.textContent = 'No messages on this day.';
       emptyState.style.display = 'block';
@@ -3146,12 +3216,15 @@ async function loadArchiveDay(date) {
     } else {
       emptyState.style.display = 'none';
 
-      const messages = [];
-      snap.forEach(child => messages.push({ id: child.key, ...child.val() }));
-      messages.sort((a, b) => b.timestamp - a.timestamp);
+      messages.sort((a, b) => {
+        const tsA = a.revealAt || a.timestamp;
+        const tsB = b.revealAt || b.timestamp;
+        return tsB - tsA;
+      });
 
       messages.forEach(msg => {
         trackAuthor(msg.author, msg.timestamp, msg.authorId, msg.photoURL);
+        // isArchive=true, isCapsule=false — capsule badge determined by revealAt presence
         const card = createMessageCard(msg, currentUser, false, true);
         messagesContainer.insertBefore(card, loadingState);
       });
@@ -4210,7 +4283,7 @@ function createCompactRow(msg) {
 // ========================================
 // Create Message Card Element
 // ========================================
-function createMessageCard(msg, user, isNew, isArchive) {
+function createMessageCard(msg, user, isNew, isArchive, isCapsule) {
   const card = document.createElement('div');
   card.className = 'message-card';
   card.id = `msg-${msg.id}`;
@@ -4220,6 +4293,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
   card.dataset.pinned = msg.pinned ? '1' : '0';
+  if (msg.revealAt) card.dataset.revealAt = String(msg.revealAt);
 
   if (isMuted(msg.authorId) || (msg.type !== 'audio' && isMutedByKeyword(msg.text))) {
     card.style.display = 'none';
@@ -4345,6 +4419,24 @@ function createMessageCard(msg, user, isNew, isArchive) {
     pinnedBadge.className = 'pinned-badge';
     pinnedBadge.textContent = '📌 Pinned';
     card.appendChild(pinnedBadge);
+  }
+
+  // Capsule badge: shown in archive view for revealed capsules, or in My Capsules view for pending ones
+  if (msg.revealAt && (isCapsule || isArchive)) {
+    const capsuleBanner = document.createElement('div');
+    capsuleBanner.className = 'capsule-banner';
+    if (isCapsule) {
+      const revealDateStr = new Date(msg.revealAt).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+      });
+      capsuleBanner.textContent = '🔒 Scheduled · Reveals on ' + revealDateStr;
+      capsuleBanner.classList.add('capsule-banner--pending');
+    } else {
+      const createdStr = formatTimestamp(msg.timestamp);
+      capsuleBanner.textContent = '⏳ Scheduled on ' + createdStr + ' · Opened today';
+      capsuleBanner.classList.add('capsule-banner--revealed');
+    }
+    card.appendChild(capsuleBanner);
   }
 
   card.appendChild(textEl);
@@ -5705,6 +5797,7 @@ function resetPollComposer() {
 
 function enablePollMode() {
   pollMode = true;
+  disableCapsuleMode();
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = '';
@@ -5814,6 +5907,7 @@ function isGifUrlAllowed(url) {
 function enableGifMode() {
   gifMode = true;
   selectedGif = null;
+  disableCapsuleMode();
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = 'none';
@@ -6068,6 +6162,7 @@ function generateImageAlt(displayName) {
 function enableImageMode() {
   imageMode = true;
   selectedImageFile = null;
+  disableCapsuleMode();
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = 'none';
@@ -6324,6 +6419,7 @@ function voiceFormatDuration(seconds) {
 function enableVoiceMode() {
   voiceMode = true;
   voiceBlob = null;
+  disableCapsuleMode();
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = 'none';
@@ -6641,6 +6737,254 @@ if (moodChipClear) {
 }
 
 // ========================================
+// Time Capsule Schedule Feature
+// ========================================
+
+function getCapsuleDateMin() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().slice(0, 10);
+}
+
+function getCapsuleDateMax() {
+  const maxDate = new Date();
+  maxDate.setDate(maxDate.getDate() + 365);
+  return maxDate.toISOString().slice(0, 10);
+}
+
+function enableCapsuleMode() {
+  capsuleMode = true;
+  if (capsuleToggleBtn) capsuleToggleBtn.setAttribute('aria-pressed', 'true');
+  if (capsuleDatePickerRow) capsuleDatePickerRow.style.display = '';
+  if (capsuleDateInput) {
+    capsuleDateInput.min = getCapsuleDateMin();
+    capsuleDateInput.max = getCapsuleDateMax();
+    capsuleDateInput.value = '';
+    capsuleDateInput.focus();
+  }
+}
+
+function disableCapsuleMode() {
+  capsuleMode = false;
+  scheduledRevealDate = null;
+  if (capsuleToggleBtn) capsuleToggleBtn.setAttribute('aria-pressed', 'false');
+  if (capsuleDatePickerRow) capsuleDatePickerRow.style.display = 'none';
+  if (capsuleChip) capsuleChip.style.display = 'none';
+  if (capsuleDateInput) capsuleDateInput.value = '';
+  updateSubmitBtnLabel();
+}
+
+function updateCapsuleChip() {
+  if (!capsuleChip || !capsuleChipLabel) return;
+  if (scheduledRevealDate) {
+    const display = scheduledRevealDate.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+    });
+    capsuleChipLabel.textContent = '📅 Reveals on ' + display;
+    capsuleChip.style.display = '';
+  } else {
+    capsuleChip.style.display = 'none';
+  }
+}
+
+function updateSubmitBtnLabel() {
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (!btnText) return;
+  if (capsuleMode && scheduledRevealDate) {
+    btnText.textContent = 'Schedule Capsule';
+  } else if (pollMode) {
+    btnText.textContent = 'Post Poll';
+  } else if (gifMode) {
+    btnText.textContent = 'Post GIF';
+  } else if (imageMode) {
+    btnText.textContent = 'Post Image';
+  } else if (voiceMode) {
+    btnText.textContent = 'Post Voice';
+  } else {
+    btnText.textContent = 'Post Message';
+  }
+}
+
+if (capsuleToggleBtn) {
+  capsuleToggleBtn.addEventListener('click', () => {
+    if (capsuleMode) {
+      disableCapsuleMode();
+    } else {
+      enableCapsuleMode();
+    }
+  });
+}
+
+if (capsuleDateInput) {
+  capsuleDateInput.addEventListener('change', () => {
+    const val = capsuleDateInput.value;
+    if (!val) {
+      scheduledRevealDate = null;
+      updateCapsuleChip();
+      updateSubmitBtnLabel();
+      return;
+    }
+    const parts = val.split('-').map(Number);
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    if (isNaN(d.getTime())) {
+      scheduledRevealDate = null;
+      updateCapsuleChip();
+      updateSubmitBtnLabel();
+      return;
+    }
+    scheduledRevealDate = d;
+    if (capsuleDatePickerRow) capsuleDatePickerRow.style.display = 'none';
+    updateCapsuleChip();
+    updateSubmitBtnLabel();
+  });
+}
+
+if (capsuleDateCancel) {
+  capsuleDateCancel.addEventListener('click', () => disableCapsuleMode());
+}
+
+if (capsuleChipClear) {
+  capsuleChipClear.addEventListener('click', () => disableCapsuleMode());
+}
+
+// ========================================
+// My Capsules View
+// ========================================
+
+function loadPendingCapsules() {
+  if (!currentUser || currentUser.isAnonymous) return;
+
+  const uid = currentUser.uid;
+  const now = Date.now();
+
+  messagesContainer.querySelectorAll('.message-card').forEach(c => c.remove());
+  const existingLimitNotice = document.getElementById('archive-limit-notice');
+  if (existingLimitNotice) existingLimitNotice.remove();
+
+  loadingState.style.display = 'block';
+  emptyState.style.display = 'none';
+
+  db.ref('messages')
+    .orderByChild('authorId')
+    .equalTo(uid)
+    .once('value')
+    .then(snap => {
+      loadingState.style.display = 'none';
+
+      const capsules = [];
+      if (snap.exists()) {
+        snap.forEach(child => {
+          const data = child.val();
+          if (data.revealAt && data.revealAt > now) {
+            capsules.push({ id: child.key, ...data });
+          }
+        });
+      }
+
+      capsules.sort((a, b) => a.revealAt - b.revealAt);
+
+      if (capsules.length === 0) {
+        const emptyP = searchEmptyState.querySelector('p');
+        if (emptyP) emptyP.textContent = "You have no scheduled capsules. Use the 📅 Schedule button to create one!";
+        searchEmptyState.style.display = 'block';
+        if (myCapsulesCount) myCapsulesCount.style.display = 'none';
+      } else {
+        searchEmptyState.style.display = 'none';
+        capsules.forEach(msg => {
+          const card = createMessageCard(msg, currentUser, false, false, true);
+          messagesContainer.insertBefore(card, loadingState);
+        });
+        if (myCapsulesCount) {
+          myCapsulesCount.textContent = `📅 ${capsules.length} scheduled capsule${capsules.length === 1 ? '' : 's'}`;
+          myCapsulesCount.style.display = 'block';
+        }
+      }
+    })
+    .catch(err => {
+      console.error('Failed to load capsules:', err);
+      loadingState.style.display = 'none';
+    });
+}
+
+function exitMyCapsulesView() {
+  myCapsulesActive = false;
+  if (myCapsulesBtnEl) {
+    myCapsulesBtnEl.setAttribute('aria-pressed', 'false');
+    myCapsulesBtnEl.classList.remove('my-posts-btn--active');
+  }
+  if (myCapsulesCount) myCapsulesCount.style.display = 'none';
+  searchEmptyState.style.display = 'none';
+}
+
+if (myCapsulesBtnEl) {
+  myCapsulesBtnEl.addEventListener('click', () => {
+    if (myCapsulesActive) {
+      // Return to live feed
+      myCapsulesActive = false;
+      myCapsulesBtnEl.setAttribute('aria-pressed', 'false');
+      myCapsulesBtnEl.classList.remove('my-posts-btn--active');
+      if (myCapsulesCount) myCapsulesCount.style.display = 'none';
+      startListeningMessages();
+    } else {
+      // Deactivate My Posts if active
+      if (myPostsActive) {
+        myPostsActive = false;
+        if (myPostsBtn) {
+          myPostsBtn.setAttribute('aria-pressed', 'false');
+          myPostsBtn.classList.remove('my-posts-btn--active');
+        }
+        if (myPostsCount) myPostsCount.style.display = 'none';
+      }
+      myCapsulesActive = true;
+      myCapsulesBtnEl.setAttribute('aria-pressed', 'true');
+      myCapsulesBtnEl.classList.add('my-posts-btn--active');
+      stopListeningMessages();
+      loadPendingCapsules();
+    }
+  });
+}
+
+// ========================================
+// Community Pending Capsules Count
+// ========================================
+
+function startPendingCapsulesListener() {
+  if (pendingCapsulesListener) return;
+  const now = Date.now();
+  pendingCapsulesListener = db.ref('messages')
+    .orderByChild('revealAt')
+    .startAt(now)
+    .on('value', snap => {
+      const count = snap ? snap.numChildren() : 0;
+      if (pendingCapsulesChip) {
+        if (count > 0) {
+          pendingCapsulesChip.textContent = '🔒 ' + count + ' capsule' + (count === 1 ? '' : 's') + ' pending';
+          pendingCapsulesChip.style.display = '';
+        } else {
+          pendingCapsulesChip.style.display = 'none';
+        }
+      }
+    }, () => {
+      if (pendingCapsulesChip) pendingCapsulesChip.style.display = 'none';
+    });
+}
+
+function stopPendingCapsulesListener() {
+  if (pendingCapsulesListener) {
+    db.ref('messages').off('value', pendingCapsulesListener);
+    pendingCapsulesListener = null;
+  }
+  if (pendingCapsulesChip) pendingCapsulesChip.style.display = 'none';
+}
+
+if (pendingCapsulesChip) {
+  pendingCapsulesChip.addEventListener('click', () => {
+    if (!currentUser || currentUser.isAnonymous || !myCapsulesBtnEl) return;
+    myCapsulesBtnEl.click();
+  });
+}
+
+// ========================================
 // Bookmark badge + saved panel setup
 // ========================================
 updateSavedBadge();
@@ -6946,6 +7290,7 @@ postForm.addEventListener('submit', async (e) => {
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+        ...(capsuleMode && scheduledRevealDate && { revealAt: scheduledRevealDate.getTime() }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -6953,6 +7298,7 @@ postForm.addEventListener('submit', async (e) => {
 
       disablePollMode();
       resetPollComposer();
+      if (capsuleMode) disableCapsuleMode();
 
     } catch (error) {
       console.error('Poll post error:', error);
@@ -6997,12 +7343,14 @@ postForm.addEventListener('submit', async (e) => {
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+        ...(capsuleMode && scheduledRevealDate && { revealAt: scheduledRevealDate.getTime() }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
       await db.ref().update(updates);
 
       disableGifMode();
+      if (capsuleMode) disableCapsuleMode();
     } catch (error) {
       console.error('GIF post error:', error);
       if (error.code === 'PERMISSION_DENIED') {
@@ -7085,12 +7433,14 @@ postForm.addEventListener('submit', async (e) => {
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+        ...(capsuleMode && scheduledRevealDate && { revealAt: scheduledRevealDate.getTime() }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
       await db.ref().update(updates);
 
       disableImageMode();
+      if (capsuleMode) disableCapsuleMode();
     } catch (error) {
       console.error('Image post error:', error);
       imageUploadTask = null;
@@ -7178,12 +7528,14 @@ postForm.addEventListener('submit', async (e) => {
         timestamp: firebase.database.ServerValue.TIMESTAMP,
         photoURL: userAvatarUrl || currentUser.photoURL || '',
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+        ...(capsuleMode && scheduledRevealDate && { revealAt: scheduledRevealDate.getTime() }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
       await db.ref().update(updates);
 
       disableVoiceMode();
+      if (capsuleMode) disableCapsuleMode();
     } catch (error) {
       console.error('Voice post error:', error);
       if (voiceUploadProgress) voiceUploadProgress.style.display = 'none';
@@ -7242,6 +7594,7 @@ postForm.addEventListener('submit', async (e) => {
       ...(isGuest && { isGuest: true }),
       ...(selectedMood && MOOD_VALID_EMOJIS.has(selectedMood.emoji) && { mood: selectedMood.emoji }),
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+      ...(!isGuest && capsuleMode && scheduledRevealDate && { revealAt: scheduledRevealDate.getTime() }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
 
@@ -7267,6 +7620,7 @@ postForm.addEventListener('submit', async (e) => {
     charCounter.textContent = '0 / 250';
     charCounter.classList.remove('warning', 'danger');
     clearMood();
+    if (capsuleMode) disableCapsuleMode();
 
   } catch (error) {
     console.error('Post error:', error);
@@ -7434,5 +7788,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY, enableCapsuleMode, disableCapsuleMode, getCapsuleDateMin, getCapsuleDateMax, updateMyCapsulesBtnVisibility, loadPendingCapsules, exitMyCapsulesView, startPendingCapsulesListener, stopPendingCapsulesListener };
 }

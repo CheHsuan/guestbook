@@ -118,6 +118,16 @@
               <button type="button" id="image-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach an image">&#x1F4F7; Image</button>
               <button type="button" id="voice-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Record a voice message" style="display:none;">&#x1F399;&#xFE0F; Voice</button>
               <button type="button" id="mood-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Attach a mood">&#x1F60A; Mood</button>
+              <button type="button" id="capsule-toggle-btn" class="poll-toggle-btn" aria-pressed="false" title="Schedule this post as a time capsule" style="display:none;">&#x1F4C5; Schedule</button>
+            </div>
+            <div id="capsule-date-picker-row" class="capsule-date-picker-row" style="display:none;" aria-live="polite">
+              <label for="capsule-date-input" class="capsule-date-label">Reveal on:</label>
+              <input type="date" id="capsule-date-input" class="capsule-date-input" aria-label="Reveal date">
+              <button type="button" id="capsule-date-cancel" class="capsule-date-cancel" aria-label="Cancel scheduling">&#x2715;</button>
+            </div>
+            <div id="capsule-chip" class="capsule-chip" style="display:none;" aria-live="polite">
+              <span id="capsule-chip-label" class="capsule-chip-label"></span>
+              <button type="button" id="capsule-chip-clear" class="capsule-chip-clear" aria-label="Remove schedule">&#xD7;</button>
             </div>
             <div id="mood-chip" class="mood-chip" style="display:none;" aria-live="polite">
               <span id="mood-chip-emoji" class="mood-chip-emoji" aria-hidden="true"></span>
@@ -270,6 +280,9 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="14" height="14"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               My Posts
             </button>
+            <button id="my-capsules-btn" class="my-posts-btn my-capsules-btn" aria-pressed="false" style="display:none;" title="Show my scheduled time capsules">
+              &#x1F4C5; My Capsules
+            </button>
             <button id="density-toggle-btn" class="density-toggle-btn" aria-pressed="false" aria-label="Switch to compact view" title="Switch to compact view">☰</button>
           </div>
         </h2>
@@ -287,6 +300,8 @@
         </div>
         <p id="sort-disclaimer" class="sort-disclaimer" style="display:none;">Sorting applies to messages loaded so far.</p>
         <p id="my-posts-count" class="my-posts-count" style="display:none;"></p>
+        <p id="my-capsules-count" class="my-posts-count" style="display:none;"></p>
+        <button id="pending-capsules-chip" class="pending-capsules-chip" style="display:none;" type="button" aria-label="View pending time capsules"></button>
         <div id="type-filter-row" class="type-filter-row" role="group" aria-label="Filter by message type" style="display:none;"></div>
         <p id="new-since-visit-summary" class="new-since-visit-summary" style="display:none;" role="button" tabindex="0"></p>
         <div id="typing-indicator" class="typing-indicator" style="display:none;" aria-live="polite" aria-atomic="true"></div>

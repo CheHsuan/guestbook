@@ -123,6 +123,27 @@ describe('messages: field validation', () => {
     await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
   });
 
+  test('accepts a valid revealAt timestamp in the future', async () => {
+    const msg = { ...validMessage(), revealAt: Date.now() + 86400000 };
+    await assertSucceeds(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+
+  test('rejects revealAt in the past', async () => {
+    const msg = { ...validMessage(), revealAt: Date.now() - 1000 };
+    await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+
+  test('rejects revealAt beyond 366 days', async () => {
+    // Use 2× the limit to stay well clear of server-clock drift
+    const msg = { ...validMessage(), revealAt: Date.now() + 31622400000 * 2 };
+    await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+
+  test('rejects revealAt that is not a number', async () => {
+    const msg = { ...validMessage(), revealAt: 'tomorrow' };
+    await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
+  });
+
   test('rejects message missing required text field', async () => {
     const { text: _, ...msg } = validMessage();
     await assertFails(set(ref(aliceDb(), 'messages/msg1'), msg));
