@@ -182,6 +182,15 @@ const APP_HTML = `
       <span id="voice-upload-label">Uploading…</span>
     </div>
   </div>
+  <button id="qr-share-btn"></button>
+  <div id="qr-modal-backdrop" style="display:none;"></div>
+  <div id="qr-modal" style="display:none;">
+    <button id="qr-modal-close"></button>
+    <canvas id="qr-canvas" width="256" height="256"></canvas>
+    <input id="qr-url-display" type="text" readonly />
+    <button id="qr-download-btn"></button>
+    <button id="qr-native-share-btn" style="display:none;"></button>
+  </div>
 `;
 
 // --- Firebase mock factory — re-created each test to reset call counts ---
@@ -12537,6 +12546,127 @@ describe('notification preferences — maybeFireSubscriptionNotification respect
     maybeFireSubscriptionNotification(otherMsg, incomingReply);
     expect(Ctor).not.toHaveBeenCalled();
     global.Date = RealDate;
+  });
+});
+
+// ========================================
+// QR Code Share Modal
+// ========================================
+describe('QR code share modal', () => {
+  let openQrModal, closeQrModal;
+
+  function setupGlobals() {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.QRCode = { toCanvas: jest.fn((canvas, url, opts, cb) => cb && cb(null)) };
+  }
+
+  beforeEach(() => {
+    jest.resetModules();
+    localStorage.clear();
+    document.body.innerHTML = APP_HTML;
+    setupGlobals();
+    const mocks = makeFirebaseMock();
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    global.firebase = mocks.firebase;
+    ({ openQrModal, closeQrModal } = require('../public/app.js'));
+  });
+
+  afterEach(() => {
+    delete global.QRCode;
+  });
+
+  test('openQrModal shows backdrop and modal', () => {
+    openQrModal();
+    const backdrop = document.getElementById('qr-modal-backdrop');
+    const modal = document.getElementById('qr-modal');
+    expect(backdrop.style.display).not.toBe('none');
+    expect(modal.style.display).not.toBe('none');
+    expect(modal.classList.contains('qr-modal--open')).toBe(true);
+    expect(backdrop.classList.contains('qr-modal-backdrop--visible')).toBe(true);
+  });
+
+  test('openQrModal populates URL display with location.href', () => {
+    window.history.replaceState({}, '', '/app?q=hello');
+    openQrModal();
+    const urlDisplay = document.getElementById('qr-url-display');
+    expect(urlDisplay.value).toContain('q=hello');
+  });
+
+  test('openQrModal calls QRCode.toCanvas with location.href', () => {
+    window.history.replaceState({}, '', '/app?sort=oldest');
+    openQrModal();
+    expect(global.QRCode.toCanvas).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      expect.stringContaining('sort=oldest'),
+      expect.objectContaining({ width: 256 }),
+      expect.any(Function)
+    );
+  });
+
+  test('closeQrModal removes open classes', () => {
+    openQrModal();
+    closeQrModal();
+    const modal = document.getElementById('qr-modal');
+    const backdrop = document.getElementById('qr-modal-backdrop');
+    expect(modal.classList.contains('qr-modal--open')).toBe(false);
+    expect(backdrop.classList.contains('qr-modal-backdrop--visible')).toBe(false);
+  });
+
+  test('openQrModal handles missing QRCode gracefully', () => {
+    delete global.QRCode;
+    expect(() => openQrModal()).not.toThrow();
+    const modal = document.getElementById('qr-modal');
+    expect(modal.classList.contains('qr-modal--open')).toBe(true);
+  });
+
+  test('Escape key closes the modal', () => {
+    openQrModal();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const modal = document.getElementById('qr-modal');
+    expect(modal.classList.contains('qr-modal--open')).toBe(false);
+  });
+
+  test('backdrop click closes the modal', () => {
+    openQrModal();
+    document.getElementById('qr-modal-backdrop').click();
+    const modal = document.getElementById('qr-modal');
+    expect(modal.classList.contains('qr-modal--open')).toBe(false);
+  });
+
+  test('close button click closes the modal', () => {
+    openQrModal();
+    document.getElementById('qr-modal-close').click();
+    const modal = document.getElementById('qr-modal');
+    expect(modal.classList.contains('qr-modal--open')).toBe(false);
+  });
+
+  test('native share button hidden when navigator.share is unavailable', () => {
+    openQrModal();
+    const btn = document.getElementById('qr-native-share-btn');
+    expect(btn.style.display).toBe('none');
+  });
+
+  test('native share button shown on mobile with navigator.share', () => {
+    Object.defineProperty(navigator, 'share', { value: jest.fn().mockResolvedValue(undefined), configurable: true });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 1, configurable: true });
+    openQrModal();
+    const btn = document.getElementById('qr-native-share-btn');
+    expect(btn.style.display).not.toBe('none');
+    delete navigator.share;
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: 0, configurable: true });
   });
 });
 
