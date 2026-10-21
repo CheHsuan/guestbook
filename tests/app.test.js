@@ -12540,3 +12540,78 @@ describe('notification preferences — maybeFireSubscriptionNotification respect
   });
 });
 
+// ============================================================
+// Time Capsule — createMessageCard capsule rendering
+// ============================================================
+describe('createMessageCard: time capsule rendering', () => {
+  let createMessageCard;
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  const FUTURE_TS = Date.now() + 86400000 * 30; // 30 days from now
+  const baseMsg = {
+    id: 'cap1',
+    author: 'Alice',
+    text: 'Hello future',
+    timestamp: Date.now() - 60000,
+    authorId: 'uid-alice',
+    revealAt: FUTURE_TS,
+  };
+
+  test('pending capsule (isCapsule=true) shows pending banner with lock icon', () => {
+    const card = createMessageCard(baseMsg, null, false, false, true);
+    const banner = card.querySelector('.capsule-banner');
+    expect(banner).not.toBeNull();
+    expect(banner.classList.contains('capsule-banner--pending')).toBe(true);
+    expect(banner.textContent).toMatch(/Reveals on/);
+  });
+
+  test('revealed capsule in archive (isCapsule=false, isArchive=true) shows revealed banner', () => {
+    const card = createMessageCard(baseMsg, null, false, true, false);
+    const banner = card.querySelector('.capsule-banner');
+    expect(banner).not.toBeNull();
+    expect(banner.classList.contains('capsule-banner--revealed')).toBe(true);
+    expect(banner.textContent).toMatch(/Scheduled on/);
+    expect(banner.textContent).toMatch(/Opened today/);
+  });
+
+  test('stores revealAt in card dataset', () => {
+    const card = createMessageCard(baseMsg, null, false, false, true);
+    expect(card.dataset.revealAt).toBe(String(FUTURE_TS));
+  });
+
+  test('no capsule banner when revealAt is absent', () => {
+    const msg = { id: 'cap2', author: 'Alice', text: 'Hello', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createMessageCard(msg, null, false, false, false);
+    expect(card.querySelector('.capsule-banner')).toBeNull();
+  });
+
+  test('no capsule banner in live feed mode (isCapsule=false, isArchive=false)', () => {
+    const card = createMessageCard(baseMsg, null, false, false, false);
+    expect(card.querySelector('.capsule-banner')).toBeNull();
+  });
+});
+
