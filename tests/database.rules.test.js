@@ -5,7 +5,7 @@
 'use strict';
 
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { ref, set, get, remove } = require('firebase/database');
+const { ref, set, get, remove, update } = require('firebase/database');
 const { readFileSync } = require('fs');
 const path = require('path');
 
@@ -345,6 +345,67 @@ describe('views: write access', () => {
   test('views must be a number — rejects string', async () => {
     await assertFails(
       set(ref(anonDb(), `messages/${MSG_ID}/views`), 'lots')
+    );
+  });
+});
+
+// ============================================================
+// Messages — edit (update text, edited, editedAt)
+// ============================================================
+describe('messages: edit own message', () => {
+  const MSG_ID = 'msg-edit-test';
+
+  beforeEach(async () => {
+    await seedMessage(`messages/${MSG_ID}`, validMessage('uid-alice'));
+  });
+
+  test('owner can update text and editedAt on their own message', async () => {
+    await assertSucceeds(
+      update(ref(aliceDb(), `messages/${MSG_ID}`), {
+        text: 'Updated text',
+        edited: true,
+        editedAt: Date.now(),
+      })
+    );
+  });
+
+  test('non-owner cannot update text on another user\'s message', async () => {
+    await assertFails(
+      update(ref(bobDb(), `messages/${MSG_ID}`), {
+        text: 'Hacked text',
+        edited: true,
+        editedAt: Date.now(),
+      })
+    );
+  });
+
+  test('unauthenticated user cannot update text on a message', async () => {
+    await assertFails(
+      update(ref(anonDb(), `messages/${MSG_ID}`), {
+        text: 'Hacked text',
+        edited: true,
+        editedAt: Date.now(),
+      })
+    );
+  });
+
+  test('edited field rejects false (only true is valid)', async () => {
+    await assertFails(
+      update(ref(aliceDb(), `messages/${MSG_ID}`), {
+        text: 'Updated text',
+        edited: false,
+        editedAt: Date.now(),
+      })
+    );
+  });
+
+  test('owner cannot change authorId via update', async () => {
+    await assertFails(
+      update(ref(aliceDb(), `messages/${MSG_ID}`), {
+        text: 'Updated text',
+        authorId: 'uid-bob',
+        editedAt: Date.now(),
+      })
     );
   });
 });

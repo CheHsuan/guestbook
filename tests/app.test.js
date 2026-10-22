@@ -454,6 +454,7 @@ describe('createMessageCard', () => {
     expect(di.ref).toHaveBeenCalledWith('messages/msg1');
     expect(dr.update).toHaveBeenCalledWith({
       text: 'Updated text',
+      edited: true,
       editedAt: 'SERVER_TIMESTAMP',
     });
     expect(card.querySelector('.message-text').textContent).toBe('Updated text');
@@ -462,19 +463,26 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.message-text').style.display).toBe('');
   });
 
-  // --- Edit window (5-minute gate) ---
-  test('hides edit button for own message posted more than 5 minutes ago', () => {
+  // --- Edit window (15-minute gate) ---
+  test('hides edit button for own message posted more than 15 minutes ago', () => {
     const ownUser = { uid: 'uid-alice' };
-    const oldMsg = { ...baseMsg, timestamp: Date.now() - 6 * 60 * 1000 };
+    const oldMsg = { ...baseMsg, timestamp: Date.now() - 16 * 60 * 1000 };
     const card = createMessageCard(oldMsg, ownUser);
     expect(card.querySelector('.btn-edit')).toBeNull();
   });
 
-  test('shows edit button for own message posted within the last 5 minutes', () => {
+  test('shows edit button for own message posted within the last 15 minutes', () => {
     const ownUser = { uid: 'uid-alice' };
     const recentMsg = { ...baseMsg, timestamp: Date.now() - 60 * 1000 };
     const card = createMessageCard(recentMsg, ownUser);
     expect(card.querySelector('.btn-edit')).not.toBeNull();
+  });
+
+  test('hides edit button for anonymous (guest) user', () => {
+    const anonUser = { uid: 'uid-alice', isAnonymous: true };
+    const recentMsg = { ...baseMsg, timestamp: Date.now() - 60 * 1000 };
+    const card = createMessageCard(recentMsg, anonUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
   });
 
   test('(edited) label includes title tooltip with formatted edit time', () => {

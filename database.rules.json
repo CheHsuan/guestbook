@@ -63,6 +63,9 @@
         "editedAt": {
           ".validate": "newData.isNumber()"
         },
+        "edited": {
+          ".validate": "newData.isBoolean() && newData.val() === true"
+        },
         "photoURL": {
           ".validate": "newData.isString()"
         },
