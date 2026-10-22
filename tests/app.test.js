@@ -478,6 +478,13 @@ describe('createMessageCard', () => {
     expect(card.querySelector('.btn-edit')).not.toBeNull();
   });
 
+  test('hides edit button for anonymous (guest) user', () => {
+    const anonUser = { uid: 'uid-alice', isAnonymous: true };
+    const recentMsg = { ...baseMsg, timestamp: Date.now() - 60 * 1000 };
+    const card = createMessageCard(recentMsg, anonUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
   test('(edited) label includes title tooltip with formatted edit time', () => {
     const editedAt = Date.now();
     const editedMsg = { ...baseMsg, editedAt };
