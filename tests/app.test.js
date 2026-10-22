@@ -67,10 +67,24 @@ const APP_HTML = `
   </div>
   <span id="messages-section-title">Messages from the last 24 hours</span>
   <div id="date-nav-bar" class="date-nav-bar">
+    <button id="heatmap-calendar-btn" class="date-nav-btn date-nav-btn--calendar" aria-label="Open activity calendar" title="Activity calendar" style="display:none;" aria-expanded="false">&#x1F4C5;</button>
     <button id="date-nav-prev" class="date-nav-btn" aria-label="Previous day">&#x2190;</button>
     <span id="date-nav-label" class="date-nav-label">Today</span>
     <button id="date-nav-next" class="date-nav-btn" aria-label="Next day" disabled>&#x2192;</button>
     <button id="surprise-btn" class="date-nav-btn date-nav-btn--surprise" title="Jump to a random archived message" aria-label="Surprise me" style="display:none;"><span class="surprise-icon">🎲</span><span class="surprise-label"> Surprise me</span></button>
+  </div>
+  <div id="heatmap-panel" class="heatmap-panel" style="display:none;" role="dialog" aria-modal="false" aria-label="Archive activity calendar">
+    <div class="heatmap-dow-labels" aria-hidden="true">
+      <span class="heatmap-dow-label">Su</span>
+      <span class="heatmap-dow-label">Mo</span>
+      <span class="heatmap-dow-label">Tu</span>
+      <span class="heatmap-dow-label">We</span>
+      <span class="heatmap-dow-label">Th</span>
+      <span class="heatmap-dow-label">Fr</span>
+      <span class="heatmap-dow-label">Sa</span>
+    </div>
+    <div id="heatmap-grid" class="heatmap-grid" role="grid" aria-label="Daily message activity"></div>
+    <div id="heatmap-tooltip" class="heatmap-tooltip" role="tooltip" style="display:none;" aria-hidden="true"></div>
   </div>
   <div id="archive-banner" class="archive-banner" style="display:none;">
     Viewing archive for <strong id="archive-banner-date"></strong>
@@ -198,6 +212,7 @@ function makeFirebaseMock() {
     }),
     remove: jest.fn().mockResolvedValue(undefined),
     orderByChild: jest.fn().mockReturnThis(),
+    orderByKey: jest.fn().mockReturnThis(),
     startAt: jest.fn().mockReturnThis(),
     startAfter: jest.fn().mockReturnThis(),
     endAt: jest.fn().mockReturnThis(),
@@ -228,7 +243,7 @@ function makeFirebaseMock() {
   });
 
   const dbFn = Object.assign(jest.fn().mockReturnValue(dbInstance), {
-    ServerValue: { TIMESTAMP: 'SERVER_TIMESTAMP' },
+    ServerValue: { TIMESTAMP: 'SERVER_TIMESTAMP', increment: jest.fn().mockImplementation(n => n) },
   });
 
   const storageRef = {
@@ -12537,6 +12552,155 @@ describe('notification preferences — maybeFireSubscriptionNotification respect
     maybeFireSubscriptionNotification(otherMsg, incomingReply);
     expect(Ctor).not.toHaveBeenCalled();
     global.Date = RealDate;
+  });
+});
+
+// =====================================================================
+// Heatmap calendar feature
+// =====================================================================
+
+describe('heatmap calendar', () => {
+  function setupHeatmapApp() {
+    window.history.pushState({}, '', '/');
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.validateBio = utils.validateBio || (() => ({ valid: true }));
+    global.validateWebsiteURL = utils.validateWebsiteURL || (() => ({ valid: true }));
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+    global.countryCodeToFlag = utils.countryCodeToFlag;
+    global.fetchCountryData = jest.fn().mockResolvedValue(null);
+
+    const { firebase, authInstance, dbRef } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    const app = require('../public/app.js');
+    return { app, dbRef };
+  }
+
+  describe('calendar button — hidden until hasPastArchives is set', () => {
+    let app;
+
+    beforeAll(() => {
+      ({ app } = setupHeatmapApp());
+    });
+
+    test('heatmap-calendar-btn exists in DOM', () => {
+      expect(document.getElementById('heatmap-calendar-btn')).not.toBeNull();
+    });
+
+    test('button is hidden when no past archives exist', () => {
+      expect(document.getElementById('heatmap-calendar-btn').style.display).toBe('none');
+    });
+  });
+
+  describe('calendar button — visible after checkHasPastArchives finds past messages', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupHeatmapApp());
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+    });
+
+    test('calendar button is visible in live mode', () => {
+      expect(document.getElementById('heatmap-calendar-btn').style.display).toBe('');
+    });
+  });
+
+  describe('openHeatmap / closeHeatmap', () => {
+    let app, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupHeatmapApp());
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: jest.fn(), numChildren: () => 1 });
+      await app.checkHasPastArchives();
+      // stub loadHeatmapData so renderHeatmapPanel does not hit real DB
+      dbRef.once.mockResolvedValue({ exists: () => true, val: () => ({}), forEach: jest.fn(), numChildren: () => 0 });
+    });
+
+    test('openHeatmap shows the panel and sets aria-expanded', async () => {
+      await app.openHeatmap();
+      expect(document.getElementById('heatmap-panel').style.display).toBe('');
+      expect(document.getElementById('heatmap-calendar-btn').getAttribute('aria-expanded')).toBe('true');
+    });
+
+    test('closeHeatmap hides the panel and resets aria-expanded', () => {
+      app.closeHeatmap();
+      expect(document.getElementById('heatmap-panel').style.display).toBe('none');
+      expect(document.getElementById('heatmap-calendar-btn').getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  describe('renderHeatmapGrid — builds date cells', () => {
+    let app, gridEl;
+
+    beforeAll(() => {
+      ({ app } = setupHeatmapApp());
+      gridEl = document.getElementById('heatmap-grid');
+
+      // Build a small counts map: only 2 days have messages
+      const counts = { '2026-09-01': 3, '2026-09-15': 7 };
+      app.renderHeatmapGrid(gridEl, counts);
+    });
+
+    test('grid is not empty', () => {
+      expect(gridEl.children.length).toBeGreaterThan(0);
+    });
+
+    test('cells with data have a level class', () => {
+      const levelCells = gridEl.querySelectorAll('.heatmap-cell--l1, .heatmap-cell--l2, .heatmap-cell--l3');
+      expect(levelCells.length).toBeGreaterThan(0);
+    });
+
+    test('cells are labelled with data-date-key attributes', () => {
+      const cellsWithDate = gridEl.querySelectorAll('[data-date-key]');
+      expect(cellsWithDate.length).toBeGreaterThan(0);
+    });
+
+    test('month label rows span the full grid', () => {
+      const labels = gridEl.querySelectorAll('.heatmap-month-label');
+      expect(labels.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('updateHeatmapHighlight — marks current archive date cell', () => {
+    let app, gridEl, dbRef;
+
+    beforeAll(async () => {
+      ({ app, dbRef } = setupHeatmapApp());
+      dbRef.once.mockResolvedValue({ exists: () => true, val: () => ({}), forEach: jest.fn(), numChildren: () => 0 });
+      gridEl = document.getElementById('heatmap-grid');
+
+      // Render with a known date
+      const counts = { '2026-09-01': 5 };
+      app.renderHeatmapGrid(gridEl, counts);
+
+      // Open the heatmap so updateHeatmapHighlight can work
+      await app.openHeatmap();
+
+      // Load archive day so archiveDate is set
+      dbRef.once.mockResolvedValueOnce({ exists: () => true, forEach: cb => cb({ key: 'msg1', val: () => ({ author: 'Alice', text: 'Hi', timestamp: Date.UTC(2026, 8, 1), authorId: 'uid1' }) }), numChildren: () => 1 });
+      dbRef.once.mockResolvedValueOnce({ exists: () => false, forEach: jest.fn(), numChildren: () => 0 });
+      app.loadArchiveDay(new Date(Date.UTC(2026, 8, 1)));
+    });
+
+    test('updateHeatmapHighlight does not throw', () => {
+      expect(() => app.updateHeatmapHighlight()).not.toThrow();
+    });
   });
 });
 
