@@ -2665,7 +2665,7 @@ let hasMoreMessages = true;
 let totalMessagesListener = null;
 let expiryInterval = null;
 const INITIAL_LOAD_LIMIT = 20;
-const EDIT_WINDOW_MS = 5 * 60 * 1000; // 5-minute edit window
+const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15-minute edit window
 
 // ========================================
 // Realtime Database: Listen for Messages
@@ -4399,8 +4399,8 @@ function createMessageCard(msg, user, isNew, isArchive) {
     card.classList.add('has-actions');
 
     const elapsedMs = Date.now() - msg.timestamp;
-    // Polls, GIFs, images, and audio cannot be edited
-    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && elapsedMs < EDIT_WINDOW_MS;
+    // Polls, GIFs, images, audio, and guest (anonymous) messages cannot be edited
+    const withinEditWindow = !user.isAnonymous && msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && elapsedMs < EDIT_WINDOW_MS;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -4507,11 +4507,27 @@ function createMessageCard(msg, user, isNew, isArchive) {
             e.preventDefault();
             saveBtn.click();
           }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelBtn.click();
+          }
         });
 
         textarea.focus();
 
+        // Timer: disable Save and show error if the edit window expires while the user is typing
+        const editWindowRemainingMs = EDIT_WINDOW_MS - (Date.now() - msg.timestamp);
+        let expiryTimer = setTimeout(() => {
+          if (editWrapper.parentNode) {
+            saveBtn.disabled = true;
+            editHint.style.display = 'none';
+            editError.textContent = 'Edit window has closed. Your changes were not saved.';
+            editError.style.display = 'block';
+          }
+        }, editWindowRemainingMs);
+
         cancelBtn.addEventListener('click', () => {
+          clearTimeout(expiryTimer);
           editWrapper.remove();
           textEl.style.display = '';
           if (editBtn.parentNode) editBtn.style.display = '';
@@ -4535,8 +4551,11 @@ function createMessageCard(msg, user, isNew, isArchive) {
           try {
             await db.ref(`messages/${msg.id}`).update({
               text: validation.text,
+              edited: true,
               editedAt: firebase.database.ServerValue.TIMESTAMP,
             });
+
+            clearTimeout(expiryTimer);
 
             // Update in-memory msg for re-edits
             msg.text = validation.text;
@@ -4573,7 +4592,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
         });
       });
 
-      // Auto-remove edit button when the 5-minute edit window closes
+      // Auto-remove edit button when the 15-minute edit window closes
       const remainingMs = EDIT_WINDOW_MS - elapsedMs;
       setTimeout(() => {
         if (editBtn.parentNode) editBtn.remove();
