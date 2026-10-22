@@ -358,6 +358,7 @@ function updateArchiveUI() {
   const sectionTitle = document.getElementById('messages-section-title');
   const typingIndicatorEl = document.getElementById('typing-indicator');
   const surpriseBtn = document.getElementById('surprise-btn');
+  const calendarBtn = document.getElementById('heatmap-calendar-btn');
 
   if (isArchiveMode && archiveDate) {
     const dateDisplay = formatArchiveDateDisplay(archiveDate);
@@ -370,6 +371,8 @@ function updateArchiveUI() {
     if (typingIndicatorEl) { typingIndicatorEl.classList.remove('typing-indicator--visible'); typingIndicatorEl.style.display = 'none'; }
     hideNewMessagesBanner();
     if (surpriseBtn) surpriseBtn.style.display = 'none';
+    if (calendarBtn) calendarBtn.style.display = hasPastArchives ? '' : 'none';
+    updateHeatmapHighlight();
   } else {
     if (navLabel) navLabel.textContent = 'Today';
     if (nextBtn) nextBtn.disabled = true;
@@ -378,6 +381,7 @@ function updateArchiveUI() {
     if (sectionTitle) sectionTitle.textContent = 'Messages from the last 24 hours';
     // Post section visibility is restored by auth state (don't force-show here)
     if (surpriseBtn) surpriseBtn.style.display = hasPastArchives ? '' : 'none';
+    if (calendarBtn) calendarBtn.style.display = hasPastArchives ? '' : 'none';
   }
 }
 
@@ -3302,6 +3306,235 @@ async function surpriseMe() {
 }
 
 // ========================================
+// Activity Heatmap
+// ========================================
+let heatmapOpen = false;
+
+function openHeatmap() {
+  const panel = document.getElementById('heatmap-panel');
+  const btn = document.getElementById('heatmap-calendar-btn');
+  if (!panel || !btn) return;
+  heatmapOpen = true;
+  btn.setAttribute('aria-expanded', 'true');
+  panel.style.display = '';
+  renderHeatmapPanel();
+}
+
+function closeHeatmap() {
+  const panel = document.getElementById('heatmap-panel');
+  const btn = document.getElementById('heatmap-calendar-btn');
+  const tooltip = document.getElementById('heatmap-tooltip');
+  if (!panel) return;
+  heatmapOpen = false;
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  panel.style.display = 'none';
+  if (tooltip) tooltip.style.display = 'none';
+}
+
+async function renderHeatmapPanel() {
+  const gridEl = document.getElementById('heatmap-grid');
+  if (!gridEl) return;
+
+  gridEl.innerHTML = '';
+  const loadingWrap = document.createElement('div');
+  loadingWrap.className = 'heatmap-loading';
+  const spinEl = document.createElement('div');
+  spinEl.className = 'spinner';
+  loadingWrap.appendChild(spinEl);
+  gridEl.appendChild(loadingWrap);
+
+  try {
+    const counts = await loadHeatmapData();
+    renderHeatmapGrid(gridEl, counts);
+  } catch (_) {
+    gridEl.innerHTML = '';
+    const errEl = document.createElement('p');
+    errEl.className = 'heatmap-error';
+    errEl.textContent = 'Could not load activity data.';
+    gridEl.appendChild(errEl);
+  }
+}
+
+async function loadHeatmapData() {
+  const todayMs = getTodayUtcMidnight();
+  const startKey = formatArchiveDateForHash(new Date(todayMs - 89 * 86400000));
+  const todayKey = formatArchiveDateForHash(new Date(todayMs));
+
+  const snap = await db.ref('daily_counts')
+    .orderByKey()
+    .startAt(startKey)
+    .endAt(todayKey)
+    .once('value');
+
+  const counts = {};
+  if (snap.exists()) {
+    snap.forEach(child => {
+      counts[child.key] = child.val() || 0;
+    });
+  }
+  return counts;
+}
+
+function renderHeatmapGrid(gridEl, counts) {
+  gridEl.innerHTML = '';
+
+  const todayMs = getTodayUtcMidnight();
+  const startMs = todayMs - 89 * 86400000;
+
+  // Find the Sunday on or before startDate for proper calendar alignment
+  const startDow = new Date(startMs).getUTCDay();
+  const gridStartMs = startMs - startDow * 86400000;
+
+  let currentMs = gridStartMs;
+  let prevMonth = -1;
+
+  while (currentMs <= todayMs) {
+    // Insert a month label when the first in-range day of this week is in a new month
+    for (let d = 0; d < 7; d++) {
+      const dateMs = currentMs + d * 86400000;
+      if (dateMs >= startMs && dateMs <= todayMs) {
+        const month = new Date(dateMs).getUTCMonth();
+        if (month !== prevMonth) {
+          const monthEl = document.createElement('div');
+          monthEl.className = 'heatmap-month-label';
+          monthEl.textContent = new Date(dateMs).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+          monthEl.setAttribute('aria-hidden', 'true');
+          gridEl.appendChild(monthEl);
+          prevMonth = month;
+        }
+        break;
+      }
+    }
+
+    for (let d = 0; d < 7; d++) {
+      const dateMs = currentMs + d * 86400000;
+      const cell = document.createElement('div');
+
+      if (dateMs < startMs || dateMs > todayMs) {
+        cell.className = 'heatmap-cell heatmap-cell--spacer';
+        cell.setAttribute('aria-hidden', 'true');
+        gridEl.appendChild(cell);
+        continue;
+      }
+
+      const date = new Date(dateMs);
+      const dateKey = formatArchiveDateForHash(date);
+      const isToday = dateMs === todayMs;
+
+      if (isToday) {
+        cell.className = 'heatmap-cell heatmap-cell--today';
+        cell.setAttribute('aria-label', 'Today');
+        cell.setAttribute('role', 'gridcell');
+      } else {
+        const count = (counts && counts[dateKey]) ? counts[dateKey] : 0;
+        const level = count === 0 ? 0 : count < 10 ? 1 : count < 30 ? 2 : 3;
+        cell.className = 'heatmap-cell heatmap-cell--l' + level;
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('tabindex', '0');
+        cell.dataset.dateKey = dateKey;
+        cell.dataset.count = String(count);
+
+        if (isArchiveMode && archiveDate && formatArchiveDateForHash(archiveDate) === dateKey) {
+          cell.classList.add('heatmap-cell--active');
+        }
+
+        const countLabel = count + ' message' + (count !== 1 ? 's' : '');
+        const dateLabel = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        cell.setAttribute('aria-label', countLabel + ' \xB7 ' + dateLabel);
+
+        const capturedDate = new Date(dateMs);
+        const capturedCount = count;
+        cell.addEventListener('mouseenter', (e) => showHeatmapTooltip(e.currentTarget, capturedCount, capturedDate));
+        cell.addEventListener('mouseleave', hideHeatmapTooltip);
+        cell.addEventListener('focus', (e) => showHeatmapTooltip(e.currentTarget, capturedCount, capturedDate));
+        cell.addEventListener('blur', hideHeatmapTooltip);
+        cell.addEventListener('click', () => { closeHeatmap(); loadArchiveDay(capturedDate); });
+        cell.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            closeHeatmap();
+            loadArchiveDay(capturedDate);
+          }
+        });
+      }
+
+      gridEl.appendChild(cell);
+    }
+
+    currentMs += 7 * 86400000;
+  }
+}
+
+function showHeatmapTooltip(cellEl, count, date) {
+  const tooltip = document.getElementById('heatmap-tooltip');
+  const panel = document.getElementById('heatmap-panel');
+  if (!tooltip || !panel) return;
+
+  const countStr = count + ' message' + (count !== 1 ? 's' : '');
+  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  tooltip.textContent = countStr + ' \xB7 ' + dateStr; // textContent — XSS safe
+
+  tooltip.style.display = '';
+  const cellRect = cellEl.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const left = cellRect.left - panelRect.left + cellRect.width / 2;
+  const top = cellRect.top - panelRect.top - tooltip.offsetHeight - 6;
+  tooltip.style.left = left + 'px';
+  tooltip.style.top = top + 'px';
+  tooltip.removeAttribute('aria-hidden');
+}
+
+function hideHeatmapTooltip() {
+  const tooltip = document.getElementById('heatmap-tooltip');
+  if (!tooltip) return;
+  tooltip.style.display = 'none';
+  tooltip.setAttribute('aria-hidden', 'true');
+}
+
+function updateHeatmapHighlight() {
+  if (!heatmapOpen) return;
+  const gridEl = document.getElementById('heatmap-grid');
+  if (!gridEl) return;
+
+  gridEl.querySelectorAll('.heatmap-cell--active').forEach(el => el.classList.remove('heatmap-cell--active'));
+
+  if (isArchiveMode && archiveDate) {
+    const key = formatArchiveDateForHash(archiveDate);
+    const cell = gridEl.querySelector(`.heatmap-cell[data-date-key="${key}"]`);
+    if (cell) cell.classList.add('heatmap-cell--active');
+  }
+}
+
+(function initHeatmap() {
+  const btn = document.getElementById('heatmap-calendar-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (heatmapOpen) {
+      closeHeatmap();
+    } else {
+      openHeatmap();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!heatmapOpen) return;
+    const panel = document.getElementById('heatmap-panel');
+    if (panel && !panel.contains(e.target) && e.target !== btn) {
+      closeHeatmap();
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && heatmapOpen) {
+      closeHeatmap();
+      btn.focus();
+    }
+  });
+})();
+
+// ========================================
 // Expiry Countdown
 // ========================================
 const MESSAGE_LIFETIME_MS = 86400000; // 24 hours
@@ -4441,6 +4674,12 @@ function createMessageCard(msg, user, isNew, isArchive) {
           }
         }
         await db.ref(`messages/${msg.id}`).remove();
+        try {
+          const msgDateKey = formatArchiveDateForHash(new Date(msg.timestamp));
+          const dcUpdates = {};
+          dcUpdates[`/daily_counts/${msgDateKey}`] = firebase.database.ServerValue.increment(-1);
+          await db.ref().update(dcUpdates);
+        } catch (_) {}
       } catch (err) {
         console.error('Failed to delete:', err);
         alert('Failed to delete message.');
@@ -6948,6 +7187,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/daily_counts/${formatArchiveDateForHash(new Date())}`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -6999,6 +7239,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/daily_counts/${formatArchiveDateForHash(new Date())}`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7087,6 +7328,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/daily_counts/${formatArchiveDateForHash(new Date())}`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7180,6 +7422,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/daily_counts/${formatArchiveDateForHash(new Date())}`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7244,6 +7487,7 @@ postForm.addEventListener('submit', async (e) => {
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+    updates[`/daily_counts/${formatArchiveDateForHash(new Date())}`] = firebase.database.ServerValue.increment(1);
 
     // Send the atomic update
     await db.ref().update(updates);
@@ -7434,5 +7678,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY, openHeatmap, closeHeatmap, renderHeatmapPanel, loadHeatmapData, renderHeatmapGrid, updateHeatmapHighlight };
 }
