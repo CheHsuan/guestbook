@@ -18,6 +18,18 @@
             ".validate": false
           }
         },
+        "stats": {
+          ".read": true,
+          "totalMessages": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "totalViews": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
         "$other": {
           ".validate": false
         }

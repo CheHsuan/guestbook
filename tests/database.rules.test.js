@@ -348,3 +348,49 @@ describe('views: write access', () => {
     );
   });
 });
+
+// ============================================================
+// users/$uid/stats — read and write access
+// ============================================================
+describe('users/$uid/stats: read and write access', () => {
+  test('unauthenticated users can read stats (public)', async () => {
+    await seedMessage('users/uid-alice/stats', { totalMessages: 5, totalViews: 100 });
+    await assertSucceeds(get(ref(anonDb(), 'users/uid-alice/stats')));
+  });
+
+  test('authenticated user can read their own stats', async () => {
+    await assertSucceeds(get(ref(aliceDb(), 'users/uid-alice/stats')));
+  });
+
+  test('another authenticated user can read stats (public)', async () => {
+    await assertSucceeds(get(ref(bobDb(), 'users/uid-alice/stats')));
+  });
+
+  test('authenticated user can write totalMessages to their own stats', async () => {
+    await assertSucceeds(set(ref(aliceDb(), 'users/uid-alice/stats/totalMessages'), 5));
+  });
+
+  test('authenticated user can write totalViews to their own stats', async () => {
+    await assertSucceeds(set(ref(aliceDb(), 'users/uid-alice/stats/totalViews'), 10));
+  });
+
+  test('user cannot write stats to another user\'s node', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-bob/stats/totalMessages'), 5));
+  });
+
+  test('unauthenticated user cannot write stats', async () => {
+    await assertFails(set(ref(anonDb(), 'users/uid-alice/stats/totalMessages'), 5));
+  });
+
+  test('rejects unknown fields under stats ($other)', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/stats/unknownField'), 'not allowed'));
+  });
+
+  test('rejects negative totalMessages', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/stats/totalMessages'), -1));
+  });
+
+  test('rejects negative totalViews', async () => {
+    await assertFails(set(ref(aliceDb(), 'users/uid-alice/stats/totalViews'), -1));
+  });
+});

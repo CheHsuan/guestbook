@@ -899,9 +899,10 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
   const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
 
   try {
-    const [snapshot, profileSnap] = await Promise.all([
+    const [snapshot, profileSnap, statsSnap] = await Promise.all([
       db.ref('messages').orderByChild('authorId').equalTo(authorId).once('value'),
       db.ref(`users/${authorId}/profile`).once('value'),
+      db.ref(`users/${authorId}/stats`).once('value'),
     ]);
 
     // Display bio if set
@@ -1017,7 +1018,15 @@ async function openAuthorPanel(authorId, authorName, photoURL) {
       authorPanelSubtitleEl.insertAdjacentElement('beforebegin', editWebsiteBtn);
     }
 
-    authorPanelSubtitleEl.textContent = count === 1 ? '1 message today' : `${count} messages today`;
+    let subtitleText = count === 1 ? '1 message today' : `${count} messages today`;
+    const statsData = (statsSnap && statsSnap.exists() && typeof statsSnap.val === 'function') ? statsSnap.val() : null;
+    if (statsData && typeof statsData.totalMessages === 'number' && statsData.totalMessages > 0) {
+      subtitleText += ' \xB7 ' + (statsData.totalMessages === 1 ? '1 total' : statsData.totalMessages.toLocaleString() + ' total');
+      if (typeof statsData.totalViews === 'number' && statsData.totalViews > 0) {
+        subtitleText += ' \xB7 ' + statsData.totalViews.toLocaleString() + ' views';
+      }
+    }
+    authorPanelSubtitleEl.textContent = subtitleText;
 
     authorPanelBodyEl.innerHTML = '';
 
@@ -4220,6 +4229,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
   card.dataset.authorId = msg.authorId || '';
   card.dataset.type = msg.type || 'text';
   card.dataset.pinned = msg.pinned ? '1' : '0';
+  card.dataset.isGuest = msg.isGuest ? '1' : '0';
 
   if (isMuted(msg.authorId) || (msg.type !== 'audio' && isMutedByKeyword(msg.text))) {
     card.style.display = 'none';
@@ -5491,6 +5501,11 @@ const viewObserver = (typeof IntersectionObserver !== 'undefined')
         viewObserver.unobserve(card);
         db.ref('messages/' + msgId).update({ views: firebase.database.ServerValue.increment(1) })
           .catch(err => console.error('Failed to increment view count:', err));
+        const viewAuthorId = card.dataset.authorId;
+        if (viewAuthorId && card.dataset.isGuest !== '1') {
+          db.ref(`users/${viewAuthorId}/stats`).update({ totalViews: firebase.database.ServerValue.increment(1) })
+            .catch(err => console.error('Failed to increment totalViews:', err));
+        }
       });
     }, { threshold: 0.5 })
   : null;
@@ -6948,6 +6963,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -6999,6 +7015,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7087,6 +7104,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7180,6 +7198,7 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
 
       await db.ref().update(updates);
 
@@ -7244,6 +7263,9 @@ postForm.addEventListener('submit', async (e) => {
       ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
     };
     updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+    if (!isGuest) {
+      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+    }
 
     // Send the atomic update
     await db.ref().update(updates);

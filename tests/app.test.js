@@ -228,7 +228,7 @@ function makeFirebaseMock() {
   });
 
   const dbFn = Object.assign(jest.fn().mockReturnValue(dbInstance), {
-    ServerValue: { TIMESTAMP: 'SERVER_TIMESTAMP' },
+    ServerValue: { TIMESTAMP: 'SERVER_TIMESTAMP', increment: jest.fn(n => ({ '.sv': { 'increment': n } })) },
   });
 
   const storageRef = {
