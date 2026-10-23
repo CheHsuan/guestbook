@@ -5501,11 +5501,6 @@ const viewObserver = (typeof IntersectionObserver !== 'undefined')
         viewObserver.unobserve(card);
         db.ref('messages/' + msgId).update({ views: firebase.database.ServerValue.increment(1) })
           .catch(err => console.error('Failed to increment view count:', err));
-        const viewAuthorId = card.dataset.authorId;
-        if (viewAuthorId && card.dataset.isGuest !== '1') {
-          db.ref(`users/${viewAuthorId}/stats`).update({ totalViews: firebase.database.ServerValue.increment(1) })
-            .catch(err => console.error('Failed to increment totalViews:', err));
-        }
       });
     }, { threshold: 0.5 })
   : null;
@@ -6963,7 +6958,9 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
-      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      if (!currentUser.isAnonymous) {
+        updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      }
 
       await db.ref().update(updates);
 
@@ -7015,7 +7012,9 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
-      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      if (!currentUser.isAnonymous) {
+        updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      }
 
       await db.ref().update(updates);
 
@@ -7104,7 +7103,9 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
-      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      if (!currentUser.isAnonymous) {
+        updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      }
 
       await db.ref().update(updates);
 
@@ -7198,7 +7199,9 @@ postForm.addEventListener('submit', async (e) => {
         ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
       };
       updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
-      updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      if (!currentUser.isAnonymous) {
+        updates[`/users/${currentUser.uid}/stats/totalMessages`] = firebase.database.ServerValue.increment(1);
+      }
 
       await db.ref().update(updates);
 
