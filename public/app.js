@@ -167,6 +167,7 @@ let myPostsActive = false;
 let pollMode = false;
 let gifMode = false;
 let selectedGif = null; // { gifUrl, gifPreviewUrl, gifAlt }
+let gifPickerCallback = null; // set when GIF picker is opened from a reply form
 let gifSearchDebounceTimer = null;
 let imageMode = false;
 let selectedImageFile = null;
@@ -3957,6 +3958,29 @@ function createReplyCard(reply, user, msgId) {
 
   card.appendChild(textEl);
 
+  if (reply.gifUrl && isGifUrlAllowed(reply.gifUrl)) {
+    const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false;
+    const gifImg = document.createElement('img');
+    gifImg.className = 'reply-media-img';
+    const usePreview = prefersReducedMotion && reply.gifPreviewUrl && isGifUrlAllowed(reply.gifPreviewUrl);
+    gifImg.src = usePreview ? reply.gifPreviewUrl : reply.gifUrl;
+    gifImg.alt = reply.gifAlt || 'GIF';
+    gifImg.setAttribute('loading', 'lazy');
+    card.appendChild(gifImg);
+  }
+
+  if (reply.imageUrl) {
+    const imageImg = document.createElement('img');
+    imageImg.className = 'reply-media-img reply-media-img--clickable';
+    imageImg.src = reply.imageUrl;
+    imageImg.alt = reply.imageAlt || 'Image';
+    imageImg.setAttribute('loading', 'lazy');
+    imageImg.addEventListener('click', () => openLightbox(reply.imageUrl, reply.imageAlt || 'Image'));
+    card.appendChild(imageImg);
+  }
+
   return card;
 }
 
@@ -4768,9 +4792,140 @@ function createMessageCard(msg, user, isNew, isArchive) {
       replyActions.appendChild(replyPostBtn);
       replyActions.appendChild(replyCancelBtn);
 
+      // ---- Reply media attachment state ----
+      let replySelectedGif = null;
+      let replySelectedImageFile = null;
+      let replyImagePreviewObjectUrl = null;
+      let replyImageUploadTask = null;
+
+      // Media toggle row (GIF + Image buttons)
+      const replyMediaRow = document.createElement('div');
+      replyMediaRow.className = 'reply-media-row';
+
+      const replyGifToggleBtn = document.createElement('button');
+      replyGifToggleBtn.type = 'button';
+      replyGifToggleBtn.className = 'poll-toggle-btn';
+      replyGifToggleBtn.setAttribute('aria-pressed', 'false');
+      replyGifToggleBtn.textContent = 'GIF';
+
+      const replyImageToggleBtn = document.createElement('button');
+      replyImageToggleBtn.type = 'button';
+      replyImageToggleBtn.className = 'poll-toggle-btn';
+      replyImageToggleBtn.setAttribute('aria-pressed', 'false');
+      replyImageToggleBtn.textContent = 'Image';
+
+      replyMediaRow.appendChild(replyGifToggleBtn);
+      replyMediaRow.appendChild(replyImageToggleBtn);
+
+      // Hidden file input for reply image selection
+      const replyImageFileInput = document.createElement('input');
+      replyImageFileInput.type = 'file';
+      replyImageFileInput.accept = IMAGE_ALLOWED_TYPES.join(',');
+      replyImageFileInput.style.display = 'none';
+      replyImageFileInput.setAttribute('aria-hidden', 'true');
+      formWrapper.appendChild(replyImageFileInput);
+
+      // Attachment preview area
+      const replyAttachmentWrap = document.createElement('div');
+      replyAttachmentWrap.className = 'reply-attachment-wrap';
+      replyAttachmentWrap.style.display = 'none';
+
+      // Image upload error
+      const replyImageError = document.createElement('p');
+      replyImageError.className = 'image-upload-error';
+      replyImageError.style.display = 'none';
+
+      function clearReplyAttachment() {
+        replySelectedGif = null;
+        if (replyImagePreviewObjectUrl) {
+          URL.revokeObjectURL(replyImagePreviewObjectUrl);
+          replyImagePreviewObjectUrl = null;
+        }
+        if (replyImageUploadTask) {
+          replyImageUploadTask.cancel();
+          replyImageUploadTask = null;
+        }
+        replySelectedImageFile = null;
+        replyGifToggleBtn.setAttribute('aria-pressed', 'false');
+        replyImageToggleBtn.setAttribute('aria-pressed', 'false');
+        replyAttachmentWrap.innerHTML = '';
+        replyAttachmentWrap.style.display = 'none';
+        replyImageError.style.display = 'none';
+      }
+
+      function renderReplyAttachmentPreview(src, alt, isImage) {
+        replyAttachmentWrap.innerHTML = '';
+        replyAttachmentWrap.style.display = '';
+
+        const img = document.createElement('img');
+        img.className = 'gif-composer-preview';
+        img.src = src;
+        img.alt = alt;
+        img.setAttribute('loading', 'lazy');
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'image-remove-btn';
+        removeBtn.textContent = '✕';
+        removeBtn.setAttribute('aria-label', isImage ? 'Remove image' : 'Remove GIF');
+        removeBtn.addEventListener('click', clearReplyAttachment);
+
+        replyAttachmentWrap.appendChild(img);
+        replyAttachmentWrap.appendChild(removeBtn);
+      }
+
+      replyGifToggleBtn.addEventListener('click', () => {
+        if (replySelectedGif) {
+          clearReplyAttachment();
+          return;
+        }
+        // Clear any existing image attachment
+        if (replySelectedImageFile) clearReplyAttachment();
+        // Open the shared GIF picker with a reply-scoped callback
+        gifPickerCallback = (gif) => {
+          replySelectedGif = gif;
+          replyGifToggleBtn.setAttribute('aria-pressed', 'true');
+          renderReplyAttachmentPreview(gif.gifPreviewUrl, gif.gifAlt || 'GIF', false);
+        };
+        openGifPicker();
+      });
+
+      replyImageToggleBtn.addEventListener('click', () => {
+        if (replySelectedImageFile) {
+          clearReplyAttachment();
+          return;
+        }
+        // Clear any existing GIF attachment
+        if (replySelectedGif) clearReplyAttachment();
+        replyImageFileInput.value = '';
+        replyImageFileInput.click();
+      });
+
+      replyImageFileInput.addEventListener('change', () => {
+        const file = replyImageFileInput.files && replyImageFileInput.files[0];
+        if (!file) return;
+        const validation = validateImageFile(file);
+        if (!validation.valid) {
+          replyImageError.textContent = validation.error;
+          replyImageError.style.display = '';
+          replyImageFileInput.value = '';
+          return;
+        }
+        replyImageError.style.display = 'none';
+        replySelectedImageFile = file;
+        const objectUrl = URL.createObjectURL(file);
+        replyImagePreviewObjectUrl = objectUrl;
+        replyImageToggleBtn.setAttribute('aria-pressed', 'true');
+        renderReplyAttachmentPreview(objectUrl, file.name, true);
+        replyImageFileInput.value = '';
+      });
+
       formWrapper.appendChild(createFormattingToolbar(replyTextarea));
       formWrapper.appendChild(replyTextarea);
       formWrapper.appendChild(replyCounter);
+      formWrapper.appendChild(replyMediaRow);
+      formWrapper.appendChild(replyAttachmentWrap);
+      formWrapper.appendChild(replyImageError);
       formWrapper.appendChild(replyError);
       formWrapper.appendChild(replyActions);
       formWrapper.appendChild(replyHint);
@@ -4792,17 +4947,28 @@ function createMessageCard(msg, user, isNew, isArchive) {
       replyTextarea.focus();
 
       replyCancelBtn.addEventListener('click', () => {
+        clearReplyAttachment();
         formWrapper.remove();
       });
 
       replyPostBtn.addEventListener('click', async () => {
-        const validation = validateMessage(replyTextarea.value);
-        if (!validation.valid) {
-          replyError.textContent = validation.error;
-          replyError.style.display = 'block';
-          replyTextarea.classList.add('input-error');
-          return;
+        const hasAttachment = !!(replySelectedGif || replySelectedImageFile);
+        const textVal = replyTextarea.value;
+        let replyText = '';
+
+        if (hasAttachment) {
+          replyText = textVal.trim();
+        } else {
+          const validation = validateMessage(textVal);
+          if (!validation.valid) {
+            replyError.textContent = validation.error;
+            replyError.style.display = 'block';
+            replyTextarea.classList.add('input-error');
+            return;
+          }
+          replyText = validation.text;
         }
+
         replyError.style.display = 'none';
         replyTextarea.classList.remove('input-error');
 
@@ -4811,10 +4977,10 @@ function createMessageCard(msg, user, isNew, isArchive) {
 
         try {
           const newReplyKey = db.ref(`messages/${msg.id}/replies`).push().key;
-          const updates = {};
+          const displayName = userAlias || user.displayName || 'Anonymous';
           const replyPayload = {
-            text: validation.text,
-            author: userAlias || user.displayName || 'Anonymous',
+            text: replyText,
+            author: displayName,
             authorId: user.uid,
             timestamp: firebase.database.ServerValue.TIMESTAMP,
           };
@@ -4822,6 +4988,54 @@ function createMessageCard(msg, user, isNew, isArchive) {
             replyPayload.quotedText = activeQuotedSnippet;
             replyPayload.quotedAuthor = msg.author || '';
           }
+
+          if (replySelectedGif) {
+            if (!isGifUrlAllowed(replySelectedGif.gifUrl)) {
+              replyError.textContent = 'Invalid GIF URL.';
+              replyError.style.display = 'block';
+              replyPostBtn.disabled = false;
+              replyCancelBtn.disabled = false;
+              return;
+            }
+            replyPayload.gifUrl = replySelectedGif.gifUrl;
+            replyPayload.gifPreviewUrl = replySelectedGif.gifPreviewUrl;
+            replyPayload.gifAlt = replySelectedGif.gifAlt || '';
+          } else if (replySelectedImageFile) {
+            const imgValidation = validateImageFile(replySelectedImageFile);
+            if (!imgValidation.valid) {
+              replyImageError.textContent = imgValidation.error;
+              replyImageError.style.display = '';
+              replyPostBtn.disabled = false;
+              replyCancelBtn.disabled = false;
+              return;
+            }
+            const fileToUpload = replySelectedImageFile;
+            const ext = fileToUpload.type.split('/')[1];
+            const randomId = Math.random().toString(36).slice(2, 9);
+            const storagePath = `message-images/${user.uid}/${Date.now()}-${randomId}.${ext}`;
+            const storageRef = storage.ref(storagePath);
+            replyImageUploadTask = storageRef.put(fileToUpload);
+            const downloadUrl = await new Promise((resolve, reject) => {
+              replyImageUploadTask.on('state_changed', null, reject, async () => {
+                try {
+                  const url = await replyImageUploadTask.snapshot.ref.getDownloadURL();
+                  resolve(url);
+                } catch (e) { reject(e); }
+              });
+            });
+            if (!replySelectedImageFile) {
+              replyImageUploadTask = null;
+              try { await storageRef.delete(); } catch (_) {}
+              replyPostBtn.disabled = false;
+              replyCancelBtn.disabled = false;
+              return;
+            }
+            replyImageUploadTask = null;
+            replyPayload.imageUrl = downloadUrl;
+            replyPayload.imageAlt = generateImageAlt(displayName);
+          }
+
+          const updates = {};
           updates[`/messages/${msg.id}/replies/${newReplyKey}`] = replyPayload;
           updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
           await db.ref().update(updates);
@@ -4839,13 +5053,23 @@ function createMessageCard(msg, user, isNew, isArchive) {
             showToast("You're now following this thread.");
           }
 
+          clearReplyAttachment();
           formWrapper.remove();
         } catch (err) {
           console.error('Failed to post reply:', err);
-          replyError.textContent = err.code === 'PERMISSION_DENIED'
-            ? 'Please wait a few seconds before replying again.'
-            : 'Failed to post reply.';
-          replyError.style.display = 'block';
+          replyImageUploadTask = null;
+          if (err.code === 'storage/canceled') {
+            // User cancelled deliberately — no error UI
+          } else if (err.code === 'PERMISSION_DENIED') {
+            replyError.textContent = 'Please wait a few seconds before replying again.';
+            replyError.style.display = 'block';
+          } else if (replySelectedImageFile && err.code && err.code.startsWith('storage/')) {
+            replyImageError.textContent = 'Image upload failed. Please try again.';
+            replyImageError.style.display = '';
+          } else {
+            replyError.textContent = 'Failed to post reply.';
+            replyError.style.display = 'block';
+          }
           replyPostBtn.disabled = false;
           replyCancelBtn.disabled = false;
         }
@@ -5998,9 +6222,15 @@ function renderGifGrid(results) {
 }
 
 function selectGif(gif) {
-  selectedGif = gif;
   closeGifPicker();
-  renderGifComposerPreview(gif);
+  if (gifPickerCallback) {
+    const cb = gifPickerCallback;
+    gifPickerCallback = null;
+    cb(gif);
+  } else {
+    selectedGif = gif;
+    renderGifComposerPreview(gif);
+  }
 }
 
 if (gifToggleBtn) {
@@ -6017,6 +6247,7 @@ if (gifToggleBtn) {
 if (gifPickerBackdrop) {
   gifPickerBackdrop.addEventListener('click', () => {
     closeGifPicker();
+    gifPickerCallback = null;
     if (!selectedGif && gifMode) disableGifMode();
   });
 }
@@ -6024,6 +6255,7 @@ if (gifPickerBackdrop) {
 if (document.getElementById('gif-picker-close')) {
   document.getElementById('gif-picker-close').addEventListener('click', () => {
     closeGifPicker();
+    gifPickerCallback = null;
     if (!selectedGif && gifMode) disableGifMode();
   });
 }

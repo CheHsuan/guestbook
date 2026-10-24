@@ -1778,6 +1778,33 @@ body {
   margin-bottom: 4px;
 }
 
+.reply-media-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reply-attachment-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.reply-media-img {
+  max-width: 320px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin-top: 6px;
+}
+
+.reply-media-img--clickable {
+  cursor: zoom-in;
+}
+
 /* ========================================
    Replies Section
    ======================================== */
