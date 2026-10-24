@@ -135,6 +135,8 @@ const gifSearchError = document.getElementById('gif-search-error');
 const imageToggleBtn = document.getElementById('image-toggle-btn');
 const imageComposer = document.getElementById('image-composer');
 const imagePreviewWrap = document.getElementById('image-preview-wrap');
+const imageCaptionInput = document.getElementById('image-caption-input');
+const imageCaptionCounter = document.getElementById('image-caption-counter');
 const imageFileInput = document.getElementById('image-file-input');
 const imageUploadError = document.getElementById('image-upload-error');
 const voiceToggleBtn = document.getElementById('voice-toggle-btn');
@@ -3779,8 +3781,10 @@ function pruneExpiredSubscriptions() {
 // Draft Auto-save (localStorage)
 // ========================================
 const DRAFT_KEY = 'guestbook_draft';
+const DRAFT_CAPTION_KEY = 'guestbook_draft_caption';
 const MAX_DRAFT_LENGTH = 250;
 let draftDebounceTimer = null;
+let captionDraftDebounceTimer = null;
 
 function saveDraft(text) {
   try {
@@ -4156,7 +4160,7 @@ function getCompactPreviewText(msg) {
     return '📊 ' + (q.slice(0, COMPACT_PREVIEW_LENGTH) || 'Poll');
   }
   if (msg.type === 'gif') return 'GIF';
-  if (msg.type === 'image') return msg.text || '📷 Image';
+  if (msg.type === 'image') return msg.caption || '📷 Image';
   if (msg.type === 'audio') return msg.text || '🎙️ Voice message';
   return msg.text || '';
 }
@@ -4335,6 +4339,8 @@ function createMessageCard(msg, user, isNew, isArchive) {
   textEl.className = 'message-text';
   if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio') {
     renderMessageText(textEl, msg.text);
+  } else if (msg.type === 'image' && msg.caption) {
+    renderMessageText(textEl, msg.caption);
   }
 
   card.appendChild(header);
@@ -4368,9 +4374,10 @@ function createMessageCard(msg, user, isNew, isArchive) {
     const imageImg = document.createElement('img');
     imageImg.className = 'image-message-img';
     imageImg.src = msg.imageUrl;
-    imageImg.alt = msg.imageAlt || 'Image';
+    const resolvedAlt = msg.imageAlt || msg.text || 'Image';
+    imageImg.alt = resolvedAlt;
     imageImg.setAttribute('loading', 'lazy');
-    imageImg.addEventListener('click', () => openLightbox(msg.imageUrl, msg.imageAlt || 'Image'));
+    imageImg.addEventListener('click', () => openLightbox(msg.imageUrl, resolvedAlt));
     card.appendChild(imageImg);
   }
 
@@ -6077,6 +6084,13 @@ function enableImageMode() {
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Image';
   renderImageComposerEmpty();
+  try {
+    const savedCaption = localStorage.getItem(DRAFT_CAPTION_KEY);
+    if (savedCaption && imageCaptionInput) {
+      imageCaptionInput.value = savedCaption;
+      if (imageCaptionCounter) imageCaptionCounter.textContent = `${savedCaption.length} / 250`;
+    }
+  } catch (_) {}
   if (imageFileInput) imageFileInput.click();
 }
 
@@ -6097,6 +6111,9 @@ function disableImageMode() {
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Message';
   if (imageUploadError) imageUploadError.style.display = 'none';
+  if (imageCaptionInput) imageCaptionInput.value = '';
+  if (imageCaptionCounter) { imageCaptionCounter.textContent = '0 / 250'; imageCaptionCounter.className = 'char-counter'; }
+  try { localStorage.removeItem(DRAFT_CAPTION_KEY); } catch (_) {}
   maybeShowPromptCard();
 }
 
@@ -6904,6 +6921,44 @@ messageInput.addEventListener('blur', () => {
 });
 
 // ========================================
+// Image Caption Input
+// ========================================
+if (imageCaptionInput) {
+  imageCaptionInput.addEventListener('input', () => {
+    const len = imageCaptionInput.value.length;
+    if (imageCaptionCounter) {
+      imageCaptionCounter.textContent = `${len} / 250`;
+      imageCaptionCounter.classList.remove('warning', 'danger');
+      if (len >= 230) imageCaptionCounter.classList.add('danger');
+      else if (len >= 200) imageCaptionCounter.classList.add('warning');
+    }
+    clearTimeout(captionDraftDebounceTimer);
+    captionDraftDebounceTimer = setTimeout(() => {
+      try {
+        if (imageCaptionInput.value) {
+          localStorage.setItem(DRAFT_CAPTION_KEY, imageCaptionInput.value.slice(0, MAX_DRAFT_LENGTH));
+        } else {
+          localStorage.removeItem(DRAFT_CAPTION_KEY);
+        }
+      } catch (_) {}
+    }, 1000);
+  });
+
+  imageCaptionInput.addEventListener('blur', () => {
+    if (!imageCaptionInput.value.trim()) {
+      try { localStorage.removeItem(DRAFT_CAPTION_KEY); } catch (_) {}
+    }
+  });
+
+  imageCaptionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      postForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    }
+  });
+}
+
+// ========================================
 // Post Message
 // ========================================
 postForm.addEventListener('submit', async (e) => {
@@ -7073,11 +7128,12 @@ postForm.addEventListener('submit', async (e) => {
       const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
       const displayName = userAlias || currentUser.displayName || 'Anonymous';
-      const altText = generateImageAlt(displayName);
+      const captionText = imageCaptionInput ? imageCaptionInput.value.trim() : '';
+      const altText = captionText || generateImageAlt(displayName);
       const updates = {};
       updates[`/messages/${newMessageKey}`] = {
         type: 'image',
-        text: altText,
+        caption: captionText,
         imageUrl: downloadUrl,
         imageAlt: altText,
         author: displayName,
