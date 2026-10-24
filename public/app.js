@@ -45,6 +45,7 @@ const BELL_FILLED_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="c
 const PENCIL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const SPEAKER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
 const SPEAKER_STOP_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const QR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="5" y="5" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/></svg>';
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -7432,7 +7433,100 @@ async function handleAvatarRemove() {
   }
 }());
 
+// ========================================
+// QR Code Share Modal
+// ========================================
+function openQrModal() {
+  const url = location.href;
+  const backdrop = document.getElementById('qr-modal-backdrop');
+  const modal = document.getElementById('qr-modal');
+  const canvas = document.getElementById('qr-canvas');
+  const urlDisplay = document.getElementById('qr-url-display');
+  const nativeShareBtn = document.getElementById('qr-native-share-btn');
+  if (!backdrop || !modal || !canvas) return;
+
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  if (nativeShareBtn) {
+    nativeShareBtn.style.display = (isMobile && typeof navigator.share === 'function') ? '' : 'none';
+  }
+
+  if (urlDisplay) urlDisplay.value = url;
+
+  if (typeof QRCode !== 'undefined') {
+    QRCode.toCanvas(canvas, url, { width: 256, margin: 2, color: { dark: '#000000', light: '#ffffff' } }, (err) => {
+      if (err) console.error('QR generation failed:', err);
+    });
+  }
+
+  backdrop.style.display = '';
+  modal.style.display = '';
+  void modal.offsetWidth;
+  backdrop.classList.add('qr-modal-backdrop--visible');
+  modal.classList.add('qr-modal--open');
+
+  const closeBtn = document.getElementById('qr-modal-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+function closeQrModal() {
+  const backdrop = document.getElementById('qr-modal-backdrop');
+  const modal = document.getElementById('qr-modal');
+  if (!backdrop || !modal) return;
+  backdrop.classList.remove('qr-modal-backdrop--visible');
+  modal.classList.remove('qr-modal--open');
+  setTimeout(() => {
+    if (!modal.classList.contains('qr-modal--open')) {
+      backdrop.style.display = 'none';
+      modal.style.display = 'none';
+    }
+  }, 200);
+}
+
+(function initQrShareModal() {
+  const openBtn = document.getElementById('qr-share-btn');
+  if (openBtn) openBtn.addEventListener('click', openQrModal);
+
+  const closeBtn = document.getElementById('qr-modal-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeQrModal);
+
+  const backdrop = document.getElementById('qr-modal-backdrop');
+  if (backdrop) backdrop.addEventListener('click', closeQrModal);
+
+  const downloadBtn = document.getElementById('qr-download-btn');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      const canvas = document.getElementById('qr-canvas');
+      if (!canvas) return;
+      try {
+        const dataURL = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.href = dataURL;
+        link.download = 'guestbook-qr.png';
+        link.click();
+      } catch (_) {
+        showToast('Right-click to save the QR image.');
+      }
+    });
+  }
+
+  const nativeShareBtn = document.getElementById('qr-native-share-btn');
+  if (nativeShareBtn) {
+    nativeShareBtn.addEventListener('click', () => {
+      if (typeof navigator.share === 'function') {
+        navigator.share({ title: 'Guestbook', url: location.href }).catch(() => {});
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('qr-modal');
+      if (modal && modal.classList.contains('qr-modal--open')) closeQrModal();
+    }
+  });
+}());
+
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY, openQrModal, closeQrModal, QR_ICON };
 }

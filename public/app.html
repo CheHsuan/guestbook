@@ -351,7 +351,29 @@
     <a href="/privacy">Privacy Policy</a>
     <span>·</span>
     <a href="/terms">Terms of Service</a>
+    <span>·</span>
+    <button id="qr-share-btn" class="qr-share-btn" aria-label="Share via QR code">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="5" y="5" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/><rect x="16" y="5" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/><rect x="5" y="16" width="3" height="3" rx="0.5" fill="currentColor" stroke="none"/><rect x="14" y="14" width="3" height="2" fill="currentColor" stroke="none"/><rect x="19" y="14" width="2" height="3" fill="currentColor" stroke="none"/><rect x="14" y="18" width="2" height="3" fill="currentColor" stroke="none"/><rect x="17" y="17" width="4" height="1" fill="currentColor" stroke="none"/><rect x="17" y="19" width="1" height="2" fill="currentColor" stroke="none"/></svg>
+      QR Code
+    </button>
   </footer>
+
+  <!-- QR Code Share Modal -->
+  <div id="qr-modal-backdrop" class="qr-modal-backdrop" style="display:none;" aria-hidden="true"></div>
+  <div id="qr-modal" class="qr-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+    <div class="qr-modal-header">
+      <span id="qr-modal-title" class="qr-modal-title">Share this Guestbook</span>
+      <button id="qr-modal-close" class="qr-modal-close" aria-label="Close QR code dialog">&#x2715;</button>
+    </div>
+    <div class="qr-modal-body">
+      <canvas id="qr-canvas" class="qr-canvas" width="256" height="256"></canvas>
+      <input id="qr-url-display" class="qr-url-display" type="text" readonly aria-label="Guestbook URL" tabindex="0">
+      <div class="qr-modal-actions">
+        <button id="qr-download-btn" class="qr-download-btn">Download PNG</button>
+        <button id="qr-native-share-btn" class="qr-native-share-btn" style="display:none;">Share</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Mood Picker Popup -->
   <div id="mood-picker-backdrop" class="mood-picker-backdrop" style="display:none;" aria-hidden="true"></div>
@@ -397,7 +419,8 @@
 
   <script src="/config.js"></script>
   <script src="utils.js?v=5"></script>
-  <script src="app.js?v=6"></script>
+  <script src="https://unpkg.com/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="app.js?v=7"></script>
 </body>
 
 </html>
