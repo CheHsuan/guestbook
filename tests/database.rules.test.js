@@ -348,3 +348,81 @@ describe('views: write access', () => {
     );
   });
 });
+
+// ============================================================
+// Sub-replies (nested reply threads — depth 2)
+// ============================================================
+describe('sub-replies: write access and validation', () => {
+  const MSG_ID = 'msg-sub-reply-test';
+  const REPLY_ID = 'r1';
+  const SUB_ID = 's1';
+  const SUB_PATH = `messages/${MSG_ID}/replies/${REPLY_ID}/replies/${SUB_ID}`;
+
+  function validSubReply(authorId = 'uid-alice') {
+    return {
+      text: 'Hello from sub-reply',
+      author: 'Test User',
+      authorId,
+      timestamp: Date.now(),
+    };
+  }
+
+  beforeEach(async () => {
+    await seedMessage(`messages/${MSG_ID}`, validMessage('uid-alice'));
+    await seedMessage(`messages/${MSG_ID}/replies/${REPLY_ID}`, {
+      text: 'Direct reply',
+      author: 'Test User',
+      authorId: 'uid-alice',
+      timestamp: Date.now(),
+    });
+  });
+
+  test('authenticated user can write a valid sub-reply', async () => {
+    await assertSucceeds(set(ref(aliceDb(), SUB_PATH), validSubReply('uid-alice')));
+  });
+
+  test('unauthenticated user cannot write a sub-reply', async () => {
+    await assertFails(set(ref(anonDb(), SUB_PATH), validSubReply('uid-alice')));
+  });
+
+  test('sub-reply rejects text longer than 250 characters', async () => {
+    const sub = { ...validSubReply(), text: 'A'.repeat(251) };
+    await assertFails(set(ref(aliceDb(), SUB_PATH), sub));
+  });
+
+  test('sub-reply accepts text at exactly 250 characters', async () => {
+    const sub = { ...validSubReply(), text: 'A'.repeat(250) };
+    await assertSucceeds(set(ref(aliceDb(), SUB_PATH), sub));
+  });
+
+  test('sub-reply rejects empty text', async () => {
+    const sub = { ...validSubReply(), text: '' };
+    await assertFails(set(ref(aliceDb(), SUB_PATH), sub));
+  });
+
+  test('sub-reply rejects unknown fields ($other)', async () => {
+    const sub = { ...validSubReply(), extraField: 'not allowed' };
+    await assertFails(set(ref(aliceDb(), SUB_PATH), sub));
+  });
+
+  test('sub-reply rejects authorId that does not match auth.uid', async () => {
+    const sub = { ...validSubReply(), authorId: 'uid-bob' };
+    await assertFails(set(ref(aliceDb(), SUB_PATH), sub));
+  });
+
+  test('user can delete their own sub-reply', async () => {
+    await seedMessage(SUB_PATH, validSubReply('uid-alice'));
+    await assertSucceeds(remove(ref(aliceDb(), SUB_PATH)));
+  });
+
+  test('user cannot delete another user\'s sub-reply', async () => {
+    await seedMessage(SUB_PATH, validSubReply('uid-alice'));
+    await assertFails(remove(ref(bobDb(), SUB_PATH)));
+  });
+
+  test('deleting a reply with sub-replies succeeds (cascade)', async () => {
+    await seedMessage(SUB_PATH, validSubReply('uid-bob'));
+    // Alice owns the parent reply — she can delete it even though it has sub-replies
+    await assertSucceeds(remove(ref(aliceDb(), `messages/${MSG_ID}/replies/${REPLY_ID}`)));
+  });
+});

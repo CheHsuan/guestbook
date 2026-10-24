@@ -2396,6 +2396,184 @@ describe('reply feature', () => {
   });
 });
 
+// --- nested reply threads (sub-reply) ---
+describe('nested reply threads (sub-reply)', () => {
+  let createMessageCard;
+  let createReplyCard;
+  let replyAddedCallback;
+
+  const baseMsg = {
+    id: 'nested-msg-1',
+    author: 'Alice',
+    text: 'Hello',
+    timestamp: Date.now(),
+    authorId: 'uid-alice',
+  };
+
+  function makeReplySnap(id, overrides = {}) {
+    return {
+      key: id,
+      val: () => ({
+        author: 'Bob',
+        text: `Reply ${id}`,
+        timestamp: Date.now(),
+        authorId: 'uid-bob',
+        ...overrides,
+      }),
+    };
+  }
+
+  // Build a path-aware Firebase mock so sub-reply listeners don't overwrite
+  // the captured top-level replyAddedCallback.
+  function makePathAwareMock() {
+    const mocks = makeFirebaseMock();
+    let lastPath = '';
+    mocks.dbInstance.ref.mockImplementation((p) => {
+      lastPath = typeof p === 'string' ? p : '';
+      return mocks.dbRef;
+    });
+    mocks.dbRef.on.mockImplementation((event, cb) => {
+      if (!/replies\/[^/]+\/replies$/.test(lastPath)) {
+        if (event === 'child_added') replyAddedCallback = cb;
+      }
+      return 'listener-token';
+    });
+    return mocks;
+  }
+
+  beforeAll(() => {
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const mocks = makePathAwareMock();
+    global.firebase = mocks.firebase;
+    mocks.authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    document.body.innerHTML = APP_HTML;
+    jest.resetModules();
+    ({ createMessageCard, createReplyCard } = require('../public/app.js'));
+  });
+
+  beforeEach(() => {
+    replyAddedCallback = null;
+  });
+
+  // --- createReplyCard depth structure tests ---
+
+  test('createReplyCard depth=1 with auth user renders a Reply button', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1', 1, null, null);
+    expect(card.querySelector('.btn-reply')).not.toBeNull();
+  });
+
+  test('createReplyCard depth=2 (sub-reply) does NOT render a Reply button', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1', 2, null, null);
+    expect(card.querySelector('.btn-reply')).toBeNull();
+  });
+
+  test('createReplyCard depth=2 has reply-card--sub CSS class', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1', 2, null, null);
+    expect(card.classList.contains('reply-card--sub')).toBe(true);
+  });
+
+  test('createReplyCard depth=1 without user does NOT render a Reply button', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, null, 'msg1', 1, null, null);
+    expect(card.querySelector('.btn-reply')).toBeNull();
+  });
+
+  test('createReplyCard depth=1 shows sub-reply count label when count > 0', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1', 1, { data: [], count: 3 }, null);
+    const label = card.querySelector('.sub-reply-count');
+    expect(label).not.toBeNull();
+    expect(label.style.display).not.toBe('none');
+    expect(label.textContent).toContain('3');
+  });
+
+  test('createReplyCard depth=1 hides sub-reply count label when count is 0', () => {
+    const reply = { id: 'sr1', author: 'Alice', text: 'Hi', timestamp: Date.now(), authorId: 'uid-alice' };
+    const card = createReplyCard(reply, { uid: 'uid-bob' }, 'msg1', 1, null, null);
+    const label = card.querySelector('.sub-reply-count');
+    if (label) expect(label.style.display).toBe('none');
+  });
+
+  // --- sub-reply form behavior tests (via createMessageCard) ---
+
+  test('clicking Reply on a depth-1 reply card opens the sub-reply form', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'nested-form-1' }, { uid: 'uid-bob', displayName: 'Bob' });
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r1', { author: 'Alice', authorId: 'uid-alice' }));
+    const replyCard = card.querySelector('#reply-r1');
+    expect(replyCard).not.toBeNull();
+    replyCard.querySelector('.btn-reply').click();
+    expect(replyCard.querySelector('.reply-form-wrapper')).not.toBeNull();
+  });
+
+  test('sub-reply form textarea is pre-filled with @authorName', () => {
+    const card = createMessageCard({ ...baseMsg, id: 'nested-form-2' }, { uid: 'uid-bob', displayName: 'Bob' });
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r1', { author: 'Alice', authorId: 'uid-alice' }));
+    const replyCard = card.querySelector('#reply-r1');
+    replyCard.querySelector('.btn-reply').click();
+    expect(replyCard.querySelector('.reply-textarea').value).toMatch(/^@Alice/);
+  });
+
+  test('sub-reply form cancel removes form without Firebase write', async () => {
+    const m = makePathAwareMock();
+    global.firebase = m.firebase;
+    m.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc({ ...baseMsg, id: 'nested-cancel' }, { uid: 'uid-bob', displayName: 'Bob' });
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r1', { author: 'Alice', authorId: 'uid-alice' }));
+    const replyCard = card.querySelector('#reply-r1');
+    replyCard.querySelector('.btn-reply').click();
+    replyCard.querySelector('.btn-reply-cancel').click();
+
+    expect(replyCard.querySelector('.reply-form-wrapper')).toBeNull();
+    expect(m.dbRef.update).not.toHaveBeenCalled();
+  });
+
+  test('submitting a sub-reply calls Firebase with the correct nested path', async () => {
+    const m = makePathAwareMock();
+    global.firebase = m.firebase;
+    m.authInstance.onAuthStateChanged.mockImplementation(() => {});
+    jest.resetModules();
+    const { createMessageCard: cmc } = require('../public/app.js');
+
+    const card = cmc({ ...baseMsg, id: 'nested-post' }, { uid: 'uid-bob', displayName: 'Bob' });
+    if (replyAddedCallback) replyAddedCallback(makeReplySnap('r1', { author: 'Alice', authorId: 'uid-alice' }));
+    const replyCard = card.querySelector('#reply-r1');
+    replyCard.querySelector('.btn-reply').click();
+    replyCard.querySelector('.reply-textarea').value = 'Hello @Alice!';
+    replyCard.querySelector('.btn-reply-post').click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(m.dbRef.update).toHaveBeenCalledTimes(1);
+    const updateArg = m.dbRef.update.mock.calls[0][0];
+    const subKey = Object.keys(updateArg).find(k => k.includes('/replies/r1/replies/'));
+    expect(subKey).toBeTruthy();
+    const subData = updateArg[subKey];
+    expect(subData.text).toBe('Hello @Alice!');
+    expect(subData.authorId).toBe('uid-bob');
+  });
+});
+
 // --- collapsible reply threads ---
 describe('collapsible reply threads', () => {
   let createMessageCard;
@@ -2439,12 +2617,25 @@ describe('collapsible reply threads', () => {
     global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
     global.stripInlineMarkdown = utils.stripInlineMarkdown;
 
-    const { firebase, authInstance, dbRef } = makeFirebaseMock();
+    const { firebase, authInstance, dbInstance, dbRef } = makeFirebaseMock();
 
-    // Capture child_added and child_removed callbacks so tests can simulate events
+    // Track the most-recent db.ref() path so we can distinguish top-level reply
+    // listeners from sub-reply listeners (which share the same dbRef mock object).
+    let lastRefPath = '';
+    dbInstance.ref.mockImplementation((path) => {
+      lastRefPath = typeof path === 'string' ? path : '';
+      return dbRef;
+    });
+
+    // Only capture child_added/child_removed for the top-level replies path.
+    // Sub-reply paths match /replies/<id>/replies — those must NOT overwrite the
+    // captured callbacks or subsequent test calls would fire the wrong handler.
     dbRef.on.mockImplementation((event, callback) => {
-      if (event === 'child_added') replyAddedCallback = callback;
-      if (event === 'child_removed') replyRemovedCallback = callback;
+      const isSubReplyPath = /replies\/[^/]+\/replies$/.test(lastRefPath);
+      if (!isSubReplyPath) {
+        if (event === 'child_added') replyAddedCallback = callback;
+        if (event === 'child_removed') replyRemovedCallback = callback;
+      }
       return 'listener-token';
     });
 

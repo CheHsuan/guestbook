@@ -1595,6 +1595,28 @@ function maybeFireSubscriptionNotification(msg, reply) {
   });
 }
 
+function maybeFireSubReplyNotification(msg, parentReply, subReply) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  if (!currentUser || parentReply.authorId !== currentUser.uid) return;
+  if (subReply.authorId === currentUser.uid) return;
+  if (document.visibilityState === 'visible') return;
+  if (!document.getElementById('msg-' + msg.id)) return;
+
+  const raw = typeof subReply.text === 'string' ? subReply.text : '';
+  const snippet = raw.length > 80 ? raw.slice(0, 80) + '…' : raw;
+  const notif = new Notification('New reply on Guestbook', {
+    body: (subReply.author || 'Someone') + ' replied to your reply: ' + snippet,
+    icon: '/icon.png',
+  });
+  notif.addEventListener('click', () => {
+    window.focus();
+    const card = document.getElementById('msg-' + msg.id);
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+    notif.close();
+  });
+}
+
 // ========================================
 // Permalink: Toast + Deep-link
 // ========================================
@@ -3896,10 +3918,17 @@ function truncateQuote(text) {
 
 // ========================================
 // Create Reply Card Element
+// depth: 1 = direct reply, 2 = sub-reply (no further nesting)
+// subReplyData: { data: [], count: 0 } for depth 1 initial render
+// onReplyBtnClick: callback(parentReply, replyCardEl, subRepliesSection) for depth 1
 // ========================================
-function createReplyCard(reply, user, msgId) {
+function createReplyCard(reply, user, msgId, depth, subReplyData, onReplyBtnClick) {
+  depth = depth || 1;
+  const subData = (depth === 1 && subReplyData) ? subReplyData : { data: [], count: 0 };
+
   const card = document.createElement('div');
   card.className = 'reply-card';
+  if (depth === 2) card.classList.add('reply-card--sub');
   card.id = `reply-${reply.id}`;
 
   const header = document.createElement('div');
@@ -3922,9 +3951,17 @@ function createReplyCard(reply, user, msgId) {
     deleteBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
     deleteBtn.title = 'Delete reply';
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Delete this reply?')) return;
+      const subCount = depth === 1 ? subData.count : 0;
+      const confirmMsg = subCount > 0
+        ? `Delete this reply and its ${subCount} ${subCount === 1 ? 'reply' : 'replies'}?`
+        : 'Delete this reply?';
+      if (!confirm(confirmMsg)) return;
       try {
-        await db.ref(`messages/${msgId}/replies/${reply.id}`).remove();
+        // reply.parentReplyId is set on sub-replies; delete at correct path
+        const deletePath = reply.parentReplyId
+          ? `messages/${msgId}/replies/${reply.parentReplyId}/replies/${reply.id}`
+          : `messages/${msgId}/replies/${reply.id}`;
+        await db.ref(deletePath).remove();
       } catch (err) {
         console.error('Failed to delete reply:', err);
         alert('Failed to delete reply.');
@@ -3956,6 +3993,48 @@ function createReplyCard(reply, user, msgId) {
   }
 
   card.appendChild(textEl);
+
+  // Sub-replies section and Reply button — depth 1 only (nesting capped at 2 levels)
+  if (depth === 1) {
+    const subRepliesSection = document.createElement('div');
+    subRepliesSection.className = 'sub-replies-section';
+    subRepliesSection.style.display = subData.count > 0 ? '' : 'none';
+
+    subData.data.forEach(subReply => {
+      const subCard = createReplyCard(subReply, user, msgId, 2, null, null);
+      subRepliesSection.appendChild(subCard);
+    });
+
+    if (user) {
+      const replyFooter = document.createElement('div');
+      replyFooter.className = 'reply-card-footer';
+
+      const subReplyCountEl = document.createElement('span');
+      subReplyCountEl.className = 'sub-reply-count';
+      if (subData.count > 0) {
+        subReplyCountEl.textContent = `${subData.count} ${subData.count === 1 ? 'reply' : 'replies'}`;
+      }
+      subReplyCountEl.style.display = subData.count > 0 ? '' : 'none';
+      replyFooter.appendChild(subReplyCountEl);
+
+      const subReplyBtn = document.createElement('button');
+      subReplyBtn.className = 'btn-reply';
+      subReplyBtn.textContent = 'Reply';
+      subReplyBtn.title = 'Reply to this reply';
+      subReplyBtn.addEventListener('click', () => {
+        if (onReplyBtnClick) onReplyBtnClick(reply, card, subRepliesSection);
+      });
+      replyFooter.appendChild(subReplyBtn);
+      card.appendChild(replyFooter);
+    } else if (subData.count > 0) {
+      const subReplyCountEl = document.createElement('span');
+      subReplyCountEl.className = 'sub-reply-count';
+      subReplyCountEl.textContent = `${subData.count} ${subData.count === 1 ? 'reply' : 'replies'}`;
+      card.appendChild(subReplyCountEl);
+    }
+
+    card.appendChild(subRepliesSection);
+  }
 
   return card;
 }
@@ -5030,6 +5109,10 @@ function createMessageCard(msg, user, isNew, isArchive) {
   let initialReplyLoadComplete = false;
   const repliesRef = db.ref(`messages/${msg.id}/replies`).orderByChild('timestamp');
 
+  // Sub-reply state: keyed by direct reply ID
+  const subReplyDataMap = new Map(); // replyId -> { data: subReply[], count: number }
+  const subReplyListenerMap = new Map(); // replyId -> Firebase ref (for cleanup)
+
   // Toggle button — reveals or hides overflow replies beyond the threshold
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'btn-replies-toggle';
@@ -5048,11 +5131,198 @@ function createMessageCard(msg, user, isNew, isArchive) {
       : `▾ ${overflow} more ${overflow === 1 ? 'reply' : 'replies'}`;
   }
 
+  // Recomputes and updates the reply count badge to include all sub-replies
+  function updateTotalReplyBadge() {
+    let subTotal = 0;
+    for (const sd of subReplyDataMap.values()) subTotal += sd.count;
+    const total = localReplyCount + subTotal;
+    replyCountEl.textContent = `${total} ${total === 1 ? 'reply' : 'replies'}`;
+    replyCountMap.set(msg.id, total);
+    card.dataset.replyCount = String(total);
+  }
+
+  // Fine-grained in-place update of a reply card's sub-reply section after listener fires
+  function updateSubReplySectionInDOM(replyId, onReplyBtnClick) {
+    const replyCardEl = repliesSection.querySelector(`#reply-${replyId}`);
+    if (!replyCardEl) return; // card not currently rendered (collapsed below threshold)
+
+    const subSection = replyCardEl.querySelector('.sub-replies-section');
+    if (!subSection) return;
+
+    const subData = subReplyDataMap.get(replyId);
+    if (!subData) return;
+
+    Array.from(subSection.querySelectorAll('.reply-card--sub')).forEach(el => el.remove());
+    subData.data.forEach(subReply => {
+      const subCard = createReplyCard(subReply, user, msg.id, 2, null, null);
+      subSection.appendChild(subCard);
+    });
+
+    subSection.style.display = subData.count > 0 ? '' : 'none';
+
+    const subCountEl = replyCardEl.querySelector('.sub-reply-count');
+    if (subCountEl) {
+      subCountEl.textContent = subData.count > 0
+        ? `${subData.count} ${subData.count === 1 ? 'reply' : 'replies'}`
+        : '';
+      subCountEl.style.display = subData.count > 0 ? '' : 'none';
+    }
+  }
+
+  // Opens / closes the inline sub-reply composer on a level-1 reply card
+  function handleSubReplyBtnClick(parentReply, replyCardEl, subRepliesSection) {
+    const existing = replyCardEl.querySelector('.reply-form-wrapper');
+    if (existing) { existing.remove(); return; }
+
+    const formWrapper = document.createElement('div');
+    formWrapper.className = 'reply-form-wrapper';
+    formWrapper.style.position = 'relative';
+
+    const replyTextarea = document.createElement('textarea');
+    replyTextarea.className = 'reply-textarea edit-textarea';
+    replyTextarea.placeholder = 'Write a reply...';
+    replyTextarea.maxLength = 250;
+    replyTextarea.value = '@' + (parentReply.author || '') + ' ';
+
+    const replyCounter = document.createElement('span');
+    replyCounter.className = 'edit-char-counter';
+    updateEditCounter(replyCounter, replyTextarea.value.length);
+
+    replyTextarea.addEventListener('input', () => {
+      updateEditCounter(replyCounter, replyTextarea.value.length);
+    });
+
+    const replyError = document.createElement('p');
+    replyError.className = 'edit-error-msg';
+    replyError.style.display = 'none';
+
+    const replyActions = document.createElement('div');
+    replyActions.className = 'edit-actions';
+
+    const replyPostBtn = document.createElement('button');
+    replyPostBtn.className = 'btn btn-save btn-reply-post';
+    replyPostBtn.textContent = 'Post';
+
+    const replyCancelBtn = document.createElement('button');
+    replyCancelBtn.className = 'btn btn-cancel btn-reply-cancel';
+    replyCancelBtn.textContent = 'Cancel';
+
+    const replyHint = document.createElement('span');
+    replyHint.className = 'submit-hint';
+    replyHint.textContent = SUBMIT_HINT_TEXT;
+
+    replyActions.appendChild(replyPostBtn);
+    replyActions.appendChild(replyCancelBtn);
+
+    formWrapper.appendChild(createFormattingToolbar(replyTextarea));
+    formWrapper.appendChild(replyTextarea);
+    formWrapper.appendChild(replyCounter);
+    formWrapper.appendChild(replyError);
+    formWrapper.appendChild(replyActions);
+    formWrapper.appendChild(replyHint);
+
+    replyTextarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        replyPostBtn.click();
+      }
+    });
+
+    attachMentionAutocomplete(replyTextarea, formWrapper);
+    attachHashtagAutocomplete(replyTextarea, formWrapper);
+
+    replyCardEl.insertBefore(formWrapper, subRepliesSection);
+    replyTextarea.focus();
+    const len = replyTextarea.value.length;
+    replyTextarea.setSelectionRange(len, len);
+
+    replyCancelBtn.addEventListener('click', () => formWrapper.remove());
+
+    replyPostBtn.addEventListener('click', async () => {
+      const validation = validateMessage(replyTextarea.value);
+      if (!validation.valid) {
+        replyError.textContent = validation.error;
+        replyError.style.display = 'block';
+        replyTextarea.classList.add('input-error');
+        return;
+      }
+      replyError.style.display = 'none';
+      replyTextarea.classList.remove('input-error');
+
+      replyPostBtn.disabled = true;
+      replyCancelBtn.disabled = true;
+
+      try {
+        const newSubKey = db.ref(`messages/${msg.id}/replies/${parentReply.id}/replies`).push().key;
+        const updates = {};
+        updates[`/messages/${msg.id}/replies/${parentReply.id}/replies/${newSubKey}`] = {
+          text: validation.text,
+          author: userAlias || user.displayName || 'Anonymous',
+          authorId: user.uid,
+          timestamp: firebase.database.ServerValue.TIMESTAMP,
+        };
+        updates[`/users/${user.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+        await db.ref().update(updates);
+        formWrapper.remove();
+      } catch (err) {
+        console.error('Failed to post sub-reply:', err);
+        replyError.textContent = err.code === 'PERMISSION_DENIED'
+          ? 'Please wait a few seconds before replying again.'
+          : 'Failed to post reply.';
+        replyError.style.display = 'block';
+        replyPostBtn.disabled = false;
+        replyCancelBtn.disabled = false;
+      }
+    });
+  }
+
+  // Sets up the Firebase sub-reply listener for a given direct reply
+  function setupSubReplyListener(reply) {
+    if (subReplyListenerMap.has(reply.id)) return;
+
+    const subData = { data: [], count: 0 };
+    subReplyDataMap.set(reply.id, subData);
+
+    const subRepliesRef = db.ref(`messages/${msg.id}/replies/${reply.id}/replies`).orderByChild('timestamp');
+    let subInitialLoadDone = false;
+
+    Promise.resolve().then(() => { subInitialLoadDone = true; });
+
+    subRepliesRef.on('child_added', (snap) => {
+      const subReply = { id: snap.key, parentReplyId: reply.id, ...snap.val() };
+      subData.data.push(subReply);
+      subData.count++;
+
+      updateSubReplySectionInDOM(reply.id);
+      updateTotalReplyBadge();
+
+      if (subInitialLoadDone) {
+        maybeFireSubReplyNotification(msg, reply, subReply);
+        maybeFireSubscriptionNotification(msg, subReply);
+        if (currentSort === SORT_ACTIVE) applySortOrder();
+      }
+    });
+
+    subRepliesRef.on('child_removed', (snap) => {
+      const idx = subData.data.findIndex(r => r.id === snap.key);
+      if (idx !== -1) subData.data.splice(idx, 1);
+      subData.count = Math.max(0, subData.count - 1);
+
+      updateSubReplySectionInDOM(reply.id);
+      updateTotalReplyBadge();
+
+      if (currentSort === SORT_ACTIVE) applySortOrder();
+    });
+
+    subReplyListenerMap.set(reply.id, subRepliesRef);
+  }
+
   function syncReplyDOM() {
     Array.from(repliesSection.querySelectorAll('.reply-card')).forEach(el => el.remove());
     const visible = isExpanded ? allRepliesData : allRepliesData.slice(0, REPLIES_COLLAPSE_THRESHOLD);
     visible.forEach(reply => {
-      const replyCard = createReplyCard(reply, user, msg.id);
+      const subData = subReplyDataMap.get(reply.id) || { data: [], count: 0 };
+      const replyCard = createReplyCard(reply, user, msg.id, 1, subData, handleSubReplyBtnClick);
       repliesSection.insertBefore(replyCard, toggleBtn);
     });
     updateToggleBtn();
@@ -5078,22 +5348,23 @@ function createMessageCard(msg, user, isNew, isArchive) {
     const reply = { id: snap.key, ...snap.val() };
     allRepliesData.push(reply);
     localReplyCount++;
-    replyCountMap.set(msg.id, localReplyCount);
-    card.dataset.replyCount = String(localReplyCount);
 
-    replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+    setupSubReplyListener(reply);
+    updateTotalReplyBadge();
     replyCountEl.style.display = '';
     repliesSection.style.display = '';
     cardFooter.style.display = '';
 
     if (localReplyCount <= REPLIES_COLLAPSE_THRESHOLD) {
       // Within visible threshold — always render in DOM
-      const replyCard = createReplyCard(reply, user, msg.id);
+      const subData = subReplyDataMap.get(reply.id) || { data: [], count: 0 };
+      const replyCard = createReplyCard(reply, user, msg.id, 1, subData, handleSubReplyBtnClick);
       repliesSection.insertBefore(replyCard, toggleBtn);
       updateToggleBtn();
     } else if (isExpanded) {
       // Thread is expanded — append new card with entrance animation
-      const replyCard = createReplyCard(reply, user, msg.id);
+      const subData = subReplyDataMap.get(reply.id) || { data: [], count: 0 };
+      const replyCard = createReplyCard(reply, user, msg.id, 1, subData, handleSubReplyBtnClick);
       replyCard.classList.add('reply-card--appearing');
       repliesSection.insertBefore(replyCard, toggleBtn);
       updateToggleBtn();
@@ -5113,17 +5384,25 @@ function createMessageCard(msg, user, isNew, isArchive) {
     const removedIdx = allRepliesData.findIndex(r => r.id === snap.key);
     if (removedIdx !== -1) allRepliesData.splice(removedIdx, 1);
 
+    // Clean up sub-reply listener and data for the removed reply
+    const subRef = subReplyListenerMap.get(snap.key);
+    if (subRef) {
+      subRef.off();
+      subReplyListenerMap.delete(snap.key);
+    }
+    subReplyDataMap.delete(snap.key);
+
     localReplyCount = Math.max(0, localReplyCount - 1);
-    replyCountMap.set(msg.id, localReplyCount);
-    card.dataset.replyCount = String(localReplyCount);
 
     if (localReplyCount === 0) {
       replyCountEl.style.display = 'none';
       repliesSection.style.display = 'none';
       Array.from(repliesSection.querySelectorAll('.reply-card')).forEach(el => el.remove());
       toggleBtn.style.display = 'none';
+      replyCountMap.set(msg.id, 0);
+      card.dataset.replyCount = '0';
     } else {
-      replyCountEl.textContent = `${localReplyCount} ${localReplyCount === 1 ? 'reply' : 'replies'}`;
+      updateTotalReplyBadge();
       syncReplyDOM();
     }
     if (currentSort === SORT_ACTIVE) applySortOrder();
