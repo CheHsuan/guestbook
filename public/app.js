@@ -169,9 +169,8 @@ let gifMode = false;
 let selectedGif = null; // { gifUrl, gifPreviewUrl, gifAlt }
 let gifSearchDebounceTimer = null;
 let imageMode = false;
-let selectedImageFile = null;
-let imagePreviewObjectUrl = null;
-let imageUploadTask = null;
+let selectedImageFiles = [];
+let imagePreviewObjectUrls = [];
 let voiceMode = false;
 let selectedMood = null; // { emoji, label } or null
 let voiceBlob = null;
@@ -4363,15 +4362,34 @@ function createMessageCard(msg, user, isNew, isArchive) {
     card.appendChild(gifImg);
   }
 
-  // Render image for image messages
-  if (msg.type === 'image' && msg.imageUrl) {
-    const imageImg = document.createElement('img');
-    imageImg.className = 'image-message-img';
-    imageImg.src = msg.imageUrl;
-    imageImg.alt = msg.imageAlt || 'Image';
-    imageImg.setAttribute('loading', 'lazy');
-    imageImg.addEventListener('click', () => openLightbox(msg.imageUrl, msg.imageAlt || 'Image'));
-    card.appendChild(imageImg);
+  // Render image grid for image messages (handles both new `images` array and legacy `imageUrl`)
+  if (msg.type === 'image') {
+    const imageEntries = (msg.images && msg.images.length > 0)
+      ? msg.images.map(entry => ({ url: entry.url, alt: msg.imageAlt || 'Image' }))
+      : (msg.imageUrl ? [{ url: msg.imageUrl, alt: msg.imageAlt || 'Image' }] : []);
+
+    if (imageEntries.length > 0) {
+      const n = imageEntries.length;
+      const grid = document.createElement('div');
+      grid.className = `image-grid image-grid--${n}`;
+
+      imageEntries.forEach((entry, i) => {
+        const item = document.createElement('div');
+        item.className = 'image-grid-item';
+
+        const imageImg = document.createElement('img');
+        imageImg.className = 'image-message-img';
+        imageImg.src = entry.url;
+        imageImg.alt = entry.alt;
+        imageImg.setAttribute('loading', 'lazy');
+        imageImg.addEventListener('click', () => openLightbox(imageEntries, i));
+
+        item.appendChild(imageImg);
+        grid.appendChild(item);
+      });
+
+      card.appendChild(grid);
+    }
   }
 
   // Render audio player for voice messages
@@ -4426,11 +4444,14 @@ function createMessageCard(msg, user, isNew, isArchive) {
         if (msg.type === 'poll') {
           await db.ref(`pollVotes/${msg.id}`).remove();
         }
-        if (msg.type === 'image' && msg.imageUrl) {
-          try {
-            await storage.refFromURL(msg.imageUrl).delete();
-          } catch (storageErr) {
-            console.error('Failed to delete image from Storage:', storageErr);
+        if (msg.type === 'image') {
+          const urlsToDelete = (msg.images && msg.images.length > 0)
+            ? msg.images.map(e => e.url)
+            : (msg.imageUrl ? [msg.imageUrl] : []);
+          for (const url of urlsToDelete) {
+            try { await storage.refFromURL(url).delete(); } catch (storageErr) {
+              console.error('Failed to delete image from Storage:', storageErr);
+            }
           }
         }
         if (msg.type === 'audio' && msg.audioUrl) {
@@ -6065,9 +6086,12 @@ function generateImageAlt(displayName) {
   return `Image posted by ${displayName || 'Anonymous'}`;
 }
 
+const IMAGE_MAX_FILES = 4;
+
 function enableImageMode() {
   imageMode = true;
-  selectedImageFile = null;
+  selectedImageFiles = [];
+  imagePreviewObjectUrls = [];
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
   if (pollComposer) pollComposer.style.display = 'none';
@@ -6076,21 +6100,15 @@ function enableImageMode() {
   if (imageToggleBtn) imageToggleBtn.setAttribute('aria-pressed', 'true');
   const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
   if (btnText) btnText.textContent = 'Post Image';
-  renderImageComposerEmpty();
+  renderImageComposerGrid();
   if (imageFileInput) imageFileInput.click();
 }
 
 function disableImageMode() {
   imageMode = false;
-  selectedImageFile = null;
-  if (imagePreviewObjectUrl) {
-    URL.revokeObjectURL(imagePreviewObjectUrl);
-    imagePreviewObjectUrl = null;
-  }
-  if (imageUploadTask) {
-    imageUploadTask.cancel();
-    imageUploadTask = null;
-  }
+  imagePreviewObjectUrls.forEach(u => URL.revokeObjectURL(u));
+  selectedImageFiles = [];
+  imagePreviewObjectUrls = [];
   if (textComposer) textComposer.style.display = '';
   if (imageComposer) imageComposer.style.display = 'none';
   if (imageToggleBtn) imageToggleBtn.setAttribute('aria-pressed', 'false');
@@ -6100,53 +6118,83 @@ function disableImageMode() {
   maybeShowPromptCard();
 }
 
-function renderImageComposerEmpty() {
-  if (!imagePreviewWrap) return;
-  imagePreviewWrap.innerHTML = '';
-  const hint = document.createElement('p');
-  hint.className = 'gif-composer-hint';
-  hint.textContent = 'No image selected.';
-  imagePreviewWrap.appendChild(hint);
-}
-
-function renderImageComposerPreview(file, objectUrl) {
+function renderImageComposerGrid() {
   if (!imagePreviewWrap) return;
   imagePreviewWrap.innerHTML = '';
 
-  const img = document.createElement('img');
-  img.className = 'gif-composer-preview';
-  img.src = objectUrl;
-  img.alt = file.name;
-  img.setAttribute('loading', 'lazy');
+  const n = selectedImageFiles.length;
 
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button';
-  removeBtn.className = 'image-remove-btn';
-  removeBtn.textContent = '✕';
-  removeBtn.setAttribute('aria-label', 'Remove image');
-  removeBtn.addEventListener('click', () => {
-    if (imageUploadTask) {
-      imageUploadTask.cancel();
-      imageUploadTask = null;
-    }
-    disableImageMode();
-  });
+  if (n > 0) {
+    const grid = document.createElement('div');
+    grid.className = `image-grid image-grid--${n}`;
 
-  imagePreviewWrap.appendChild(img);
-  imagePreviewWrap.appendChild(removeBtn);
+    selectedImageFiles.forEach((file, i) => {
+      const slot = document.createElement('div');
+      slot.className = 'image-grid-item';
+
+      const img = document.createElement('img');
+      img.src = imagePreviewObjectUrls[i];
+      img.alt = file.name;
+      img.setAttribute('loading', 'lazy');
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'image-remove-btn';
+      removeBtn.textContent = '✕';
+      removeBtn.setAttribute('aria-label', `Remove image ${i + 1}`);
+      removeBtn.addEventListener('click', () => {
+        URL.revokeObjectURL(imagePreviewObjectUrls[i]);
+        selectedImageFiles.splice(i, 1);
+        imagePreviewObjectUrls.splice(i, 1);
+        if (selectedImageFiles.length === 0) {
+          disableImageMode();
+        } else {
+          renderImageComposerGrid();
+        }
+      });
+
+      slot.appendChild(img);
+      slot.appendChild(removeBtn);
+      grid.appendChild(slot);
+    });
+
+    imagePreviewWrap.appendChild(grid);
+  }
+
+  if (n < IMAGE_MAX_FILES) {
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'image-add-btn';
+    addBtn.textContent = n === 0 ? 'No image selected — click to add' : '+ Add photo';
+    addBtn.setAttribute('aria-label', 'Add photo');
+    addBtn.addEventListener('click', () => {
+      if (imageFileInput) imageFileInput.click();
+    });
+    imagePreviewWrap.appendChild(addBtn);
+  }
 }
 
-function openLightbox(src, alt) {
+function openLightbox(srcOrImages, altOrIndex) {
+  // Accept both legacy (src, alt) and new ([{url,alt}], index) signatures
+  let images, currentIndex;
+  if (typeof srcOrImages === 'string') {
+    images = [{ url: srcOrImages, alt: altOrIndex || 'Image' }];
+    currentIndex = 0;
+  } else {
+    images = srcOrImages;
+    currentIndex = typeof altOrIndex === 'number' ? altOrIndex : 0;
+  }
+
   const backdrop = document.createElement('div');
   backdrop.className = 'lightbox-backdrop';
   backdrop.setAttribute('role', 'dialog');
   backdrop.setAttribute('aria-modal', 'true');
-  backdrop.setAttribute('aria-label', alt || 'Image');
+  backdrop.setAttribute('aria-label', images[currentIndex].alt || 'Image');
 
   const img = document.createElement('img');
   img.className = 'lightbox-img';
-  img.src = src;
-  img.alt = alt;
+  img.src = images[currentIndex].url;
+  img.alt = images[currentIndex].alt || 'Image';
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'lightbox-close';
@@ -6162,6 +6210,44 @@ function openLightbox(src, alt) {
   });
 
   backdrop.appendChild(img);
+
+  // Counter and navigation for multi-image lightboxes
+  let counterEl = null;
+  let prevBtn = null;
+  let nextBtn = null;
+
+  if (images.length > 1) {
+    counterEl = document.createElement('div');
+    counterEl.className = 'lightbox-counter';
+    counterEl.textContent = `${currentIndex + 1} / ${images.length}`;
+    backdrop.appendChild(counterEl);
+
+    prevBtn = document.createElement('button');
+    prevBtn.className = 'lightbox-nav lightbox-nav--prev';
+    prevBtn.textContent = '‹';
+    prevBtn.setAttribute('aria-label', 'Previous image');
+
+    nextBtn = document.createElement('button');
+    nextBtn.className = 'lightbox-nav lightbox-nav--next';
+    nextBtn.textContent = '›';
+    nextBtn.setAttribute('aria-label', 'Next image');
+
+    const navigate = (newIndex) => {
+      currentIndex = (newIndex + images.length) % images.length;
+      img.src = images[currentIndex].url;
+      img.alt = images[currentIndex].alt || 'Image';
+      img.style.display = '';
+      counterEl.textContent = `${currentIndex + 1} / ${images.length}`;
+      backdrop.setAttribute('aria-label', images[currentIndex].alt || 'Image');
+    };
+
+    prevBtn.addEventListener('click', (e) => { e.stopPropagation(); navigate(currentIndex - 1); });
+    nextBtn.addEventListener('click', (e) => { e.stopPropagation(); navigate(currentIndex + 1); });
+
+    backdrop.appendChild(prevBtn);
+    backdrop.appendChild(nextBtn);
+  }
+
   backdrop.appendChild(closeBtn);
   document.body.appendChild(backdrop);
 
@@ -6184,8 +6270,11 @@ function openLightbox(src, alt) {
   const onKeyDown = (e) => {
     if (e.key === 'Escape') {
       close();
+    } else if (e.key === 'ArrowLeft' && prevBtn) {
+      prevBtn.click();
+    } else if (e.key === 'ArrowRight' && nextBtn) {
+      nextBtn.click();
     } else if (e.key === 'Tab') {
-      // Focus trap: only focusable element is closeBtn
       e.preventDefault();
       closeBtn.focus();
     }
@@ -6207,26 +6296,42 @@ if (imageToggleBtn) {
 
 if (imageFileInput) {
   imageFileInput.addEventListener('change', () => {
-    const file = imageFileInput.files && imageFileInput.files[0];
-    if (!file) {
-      if (imageMode && !selectedImageFile) disableImageMode();
+    const files = imageFileInput.files;
+    if (!files || files.length === 0) {
+      if (imageMode && selectedImageFiles.length === 0) disableImageMode();
       return;
     }
-    const validation = validateImageFile(file);
-    if (!validation.valid) {
-      if (imageUploadError) {
-        imageUploadError.textContent = validation.error;
-        imageUploadError.style.display = '';
+
+    let addedCount = 0;
+    let firstError = null;
+
+    for (let i = 0; i < files.length; i++) {
+      if (selectedImageFiles.length >= IMAGE_MAX_FILES) break;
+      const file = files[i];
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        if (!firstError) firstError = validation.error;
+        continue;
       }
-      if (imageMode && !selectedImageFile) disableImageMode();
-      imageFileInput.value = '';
-      return;
+      const objectUrl = URL.createObjectURL(file);
+      selectedImageFiles.push(file);
+      imagePreviewObjectUrls.push(objectUrl);
+      addedCount++;
     }
-    if (imageUploadError) imageUploadError.style.display = 'none';
-    selectedImageFile = file;
-    const objectUrl = URL.createObjectURL(file);
-    imagePreviewObjectUrl = objectUrl;
-    renderImageComposerPreview(file, objectUrl);
+
+    if (firstError && imageUploadError) {
+      imageUploadError.textContent = firstError;
+      imageUploadError.style.display = '';
+    } else if (imageUploadError) {
+      imageUploadError.style.display = 'none';
+    }
+
+    if (addedCount === 0 && selectedImageFiles.length === 0) {
+      disableImageMode();
+    } else {
+      renderImageComposerGrid();
+    }
+
     imageFileInput.value = '';
   });
 }
@@ -6250,10 +6355,14 @@ function handlePastedImageFile(file) {
     return;
   }
 
+  if (selectedImageFiles.length >= IMAGE_MAX_FILES) return;
+
   if (!imageMode) {
     if (pollMode) disablePollMode();
     if (gifMode) disableGifMode();
     imageMode = true;
+    selectedImageFiles = [];
+    imagePreviewObjectUrls = [];
     hidePromptCard();
     if (textComposer) textComposer.style.display = 'none';
     if (pollComposer) pollComposer.style.display = 'none';
@@ -6264,19 +6373,11 @@ function handlePastedImageFile(file) {
     if (btnText) btnText.textContent = 'Post Image';
   }
 
-  if (imagePreviewObjectUrl) {
-    URL.revokeObjectURL(imagePreviewObjectUrl);
-    imagePreviewObjectUrl = null;
-  }
-  if (imageUploadTask) {
-    imageUploadTask.cancel();
-    imageUploadTask = null;
-  }
   if (imageUploadError) imageUploadError.style.display = 'none';
-  selectedImageFile = file;
   const objectUrl = URL.createObjectURL(file);
-  imagePreviewObjectUrl = objectUrl;
-  renderImageComposerPreview(file, objectUrl);
+  selectedImageFiles.push(file);
+  imagePreviewObjectUrls.push(objectUrl);
+  renderImageComposerGrid();
 }
 
 document.addEventListener('paste', (e) => {
@@ -7023,13 +7124,18 @@ postForm.addEventListener('submit', async (e) => {
 
   // ---- Image submission path ----
   if (imageMode) {
-    if (!selectedImageFile) {
+    if (selectedImageFiles.length === 0) {
       if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Please select an image before posting.'; emptyErrorMsg.style.display = 'block'; }
       return;
     }
-    const imgValidation = validateImageFile(selectedImageFile);
-    if (!imgValidation.valid) {
-      if (imageUploadError) { imageUploadError.textContent = imgValidation.error; imageUploadError.style.display = ''; }
+
+    let firstError = null;
+    for (const f of selectedImageFiles) {
+      const v = validateImageFile(f);
+      if (!v.valid) { firstError = v.error; break; }
+    }
+    if (firstError) {
+      if (imageUploadError) { imageUploadError.textContent = firstError; imageUploadError.style.display = ''; }
       return;
     }
 
@@ -7042,33 +7148,29 @@ postForm.addEventListener('submit', async (e) => {
     if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
     if (imageUploadError) imageUploadError.style.display = 'none';
 
+    const filesToUpload = selectedImageFiles.slice();
+    const succeededRefs = [];
+
     try {
-      const fileToUpload = selectedImageFile;
-      const ext = fileToUpload.type.split('/')[1];
-      const randomId = Math.random().toString(36).slice(2, 9);
-      const storagePath = `message-images/${currentUser.uid}/${Date.now()}-${randomId}.${ext}`;
-      const storageRef = storage.ref(storagePath);
+      // Upload all images concurrently; track each storage ref for cleanup on failure
+      const downloadUrls = await Promise.all(filesToUpload.map(async (file) => {
+        const ext = file.type.split('/')[1];
+        const randomId = Math.random().toString(36).slice(2, 9);
+        const storagePath = `message-images/${currentUser.uid}/${Date.now()}-${randomId}.${ext}`;
+        const storageRef = storage.ref(storagePath);
+        const task = storageRef.put(file);
 
-      imageUploadTask = storageRef.put(fileToUpload);
-
-      const downloadUrl = await new Promise((resolve, reject) => {
-        imageUploadTask.on('state_changed', null, reject, async () => {
-          try {
-            const url = await imageUploadTask.snapshot.ref.getDownloadURL();
-            resolve(url);
-          } catch (e) {
-            reject(e);
-          }
+        const url = await new Promise((resolve, reject) => {
+          task.on('state_changed', null, reject, async () => {
+            try {
+              const dlUrl = await task.snapshot.ref.getDownloadURL();
+              succeededRefs.push(storageRef);
+              resolve(dlUrl);
+            } catch (e) { reject(e); }
+          });
         });
-      });
-
-      // If user removed the image while upload was in flight, abort the DB write
-      if (!selectedImageFile) {
-        imageUploadTask = null;
-        try { await storageRef.delete(); } catch (_) {}
-        return;
-      }
-      imageUploadTask = null;
+        return url;
+      }));
 
       const countryData = await fetchCountryData();
       const newMessageKey = db.ref('messages').push().key;
@@ -7078,7 +7180,7 @@ postForm.addEventListener('submit', async (e) => {
       updates[`/messages/${newMessageKey}`] = {
         type: 'image',
         text: altText,
-        imageUrl: downloadUrl,
+        images: downloadUrls.map(url => ({ url })),
         imageAlt: altText,
         author: displayName,
         authorId: currentUser.uid,
@@ -7093,9 +7195,12 @@ postForm.addEventListener('submit', async (e) => {
       disableImageMode();
     } catch (error) {
       console.error('Image post error:', error);
-      imageUploadTask = null;
+      // Clean up any uploads that succeeded before the failure
+      for (const ref of succeededRefs) {
+        try { await ref.delete(); } catch (_) {}
+      }
       if (error.code === 'storage/canceled') {
-        // User cancelled deliberately — no error UI needed
+        // deliberate cancel — no error UI
       } else if (error.code === 'PERMISSION_DENIED') {
         rateLimitMsg.style.display = 'block';
         setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
