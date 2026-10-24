@@ -43,7 +43,8 @@
       ".read": true,
       ".indexOn": [
         "timestamp",
-        "authorId"
+        "authorId",
+        "revealAt"
       ],
       "$message_id": {
         ".write": "auth != null && (!data.exists() || data.child('authorId').val() === auth.uid)",
@@ -115,6 +116,9 @@
         },
         "pinned": {
           ".validate": "newData.isBoolean()"
+        },
+        "revealAt": {
+          ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000"
         },
         "views": {
           ".write": "root.child('messages').child($message_id).exists()",
