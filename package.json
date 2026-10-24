@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.187",
     "@firebase/rules-unit-testing": "^5.0.1",
     "firebase": "^12.17.0",
     "firebase-admin": "^14.0.0",
