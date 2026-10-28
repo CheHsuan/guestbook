@@ -156,6 +156,10 @@ const moodChipClear = document.getElementById('mood-chip-clear');
 const moodPickerBackdrop = document.getElementById('mood-picker-backdrop');
 const moodPickerEl = document.getElementById('mood-picker');
 const moodPickerGrid = document.getElementById('mood-picker-grid');
+const drawToggleBtn = document.getElementById('draw-toggle-btn');
+const drawComposer = document.getElementById('draw-composer');
+const drawCanvas = document.getElementById('draw-canvas');
+const drawUploadError = document.getElementById('draw-upload-error');
 
 // ========================================
 // State
@@ -176,6 +180,12 @@ let voiceMode = false;
 let selectedMood = null; // { emoji, label } or null
 let voiceBlob = null;
 let voiceMediaRecorder = null;
+let drawMode = false;
+let drawHasStrokes = false;
+let drawStrokeHistory = []; // ImageData snapshots, max DRAW_HISTORY_LIMIT entries
+let drawCurrentColor = '#000000';
+let drawIsDrawing = false;
+let drawUploadTask = null;
 let voiceRecordingTimer = null;
 let voiceRecordingSeconds = 0;
 let userBio = null;
@@ -226,7 +236,7 @@ try {
 // ========================================
 const TYPE_FILTER_KEY = 'guestbook_type_filter';
 const TYPE_ALL = 'all';
-const VALID_TYPES = new Set([TYPE_ALL, 'text', 'poll', 'gif', 'image', 'audio']);
+const VALID_TYPES = new Set([TYPE_ALL, 'text', 'poll', 'gif', 'image', 'audio', 'draw']);
 
 let currentTypeFilter = TYPE_ALL;
 try {
@@ -1706,6 +1716,7 @@ const TYPE_CHIP_CONFIG = [
   { type: 'poll',   label: '📊 Poll' },
   { type: 'gif',    label: 'GIF' },
   { type: 'image',  label: '📷 Image' },
+  { type: 'draw',   label: '✏️ Draw' },
   { type: 'audio',  label: '🎙️ Voice' },
 ];
 
@@ -4157,6 +4168,7 @@ function getCompactPreviewText(msg) {
   }
   if (msg.type === 'gif') return 'GIF';
   if (msg.type === 'image') return msg.text || '📷 Image';
+  if (msg.type === 'draw') return '✏️ Drawing';
   if (msg.type === 'audio') return msg.text || '🎙️ Voice message';
   return msg.text || '';
 }
@@ -4221,7 +4233,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
   card.dataset.type = msg.type || 'text';
   card.dataset.pinned = msg.pinned ? '1' : '0';
 
-  if (isMuted(msg.authorId) || (msg.type !== 'audio' && isMutedByKeyword(msg.text))) {
+  if (isMuted(msg.authorId) || (msg.type !== 'audio' && msg.type !== 'draw' && isMutedByKeyword(msg.text))) {
     card.style.display = 'none';
   }
 
@@ -4331,9 +4343,16 @@ function createMessageCard(msg, user, isNew, isArchive) {
     header.appendChild(audioBadge);
   }
 
+  if (msg.type === 'draw') {
+    const drawBadge = document.createElement('span');
+    drawBadge.className = 'draw-card-badge';
+    drawBadge.textContent = '✏️ Draw';
+    header.appendChild(drawBadge);
+  }
+
   const textEl = document.createElement('p');
   textEl.className = 'message-text';
-  if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio') {
+  if (msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && msg.type !== 'draw') {
     renderMessageText(textEl, msg.text);
   }
 
@@ -4384,6 +4403,17 @@ function createMessageCard(msg, user, isNew, isArchive) {
     card.appendChild(audioEl);
   }
 
+  // Render drawing for draw messages
+  if (msg.type === 'draw' && msg.drawUrl) {
+    const drawImg = document.createElement('img');
+    drawImg.className = 'draw-message-img';
+    drawImg.src = msg.drawUrl;
+    drawImg.alt = msg.drawAlt || 'Drawing';
+    drawImg.setAttribute('loading', 'lazy');
+    drawImg.addEventListener('click', () => openLightbox(msg.drawUrl, msg.drawAlt || 'Drawing'));
+    card.appendChild(drawImg);
+  }
+
   // Render poll body for poll messages
   if (msg.type === 'poll' && msg.poll && msg.poll.options) {
     const options = Object.values(msg.poll.options);
@@ -4400,7 +4430,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
 
     const elapsedMs = Date.now() - msg.timestamp;
     // Polls, GIFs, images, and audio cannot be edited
-    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && elapsedMs < EDIT_WINDOW_MS;
+    const withinEditWindow = msg.type !== 'poll' && msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && msg.type !== 'draw' && elapsedMs < EDIT_WINDOW_MS;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'btn-edit';
@@ -4438,6 +4468,13 @@ function createMessageCard(msg, user, isNew, isArchive) {
             await storage.refFromURL(msg.audioUrl).delete();
           } catch (storageErr) {
             console.error('Failed to delete voice message from Storage:', storageErr);
+          }
+        }
+        if (msg.type === 'draw' && msg.drawUrl) {
+          try {
+            await storage.refFromURL(msg.drawUrl).delete();
+          } catch (storageErr) {
+            console.error('Failed to delete drawing from Storage:', storageErr);
           }
         }
         await db.ref(`messages/${msg.id}`).remove();
@@ -4893,7 +4930,7 @@ function createMessageCard(msg, user, isNew, isArchive) {
   }
 
   // Speaker button — visible to all visitors when speechSynthesis is available and message has text
-  const msgHasText = msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio';
+  const msgHasText = msg.type !== 'gif' && msg.type !== 'image' && msg.type !== 'audio' && msg.type !== 'draw';
   if (msgHasText && typeof window !== 'undefined' && window.speechSynthesis) {
     const speakBtn = document.createElement('button');
     speakBtn.className = 'btn-speak';
@@ -5703,7 +5740,15 @@ function resetPollComposer() {
   if (pollQuestionCounter) pollQuestionCounter.textContent = `0 / ${POLL_QUESTION_MAX_LEN}`;
 }
 
+function maybeDisableDrawMode() {
+  if (!drawMode) return true;
+  if (drawHasStrokes && !confirm('Discard your drawing?')) return false;
+  disableDrawMode(true);
+  return true;
+}
+
 function enablePollMode() {
+  if (!maybeDisableDrawMode()) return;
   pollMode = true;
   hidePromptCard();
   if (textComposer) textComposer.style.display = 'none';
@@ -5812,6 +5857,7 @@ function isGifUrlAllowed(url) {
 }
 
 function enableGifMode() {
+  if (!maybeDisableDrawMode()) return;
   gifMode = true;
   selectedGif = null;
   hidePromptCard();
@@ -6066,6 +6112,7 @@ function generateImageAlt(displayName) {
 }
 
 function enableImageMode() {
+  if (!maybeDisableDrawMode()) return;
   imageMode = true;
   selectedImageFile = null;
   hidePromptCard();
@@ -6322,6 +6369,7 @@ function voiceFormatDuration(seconds) {
 }
 
 function enableVoiceMode() {
+  if (!maybeDisableDrawMode()) return;
   voiceMode = true;
   voiceBlob = null;
   hidePromptCard();
@@ -6477,6 +6525,210 @@ if (voiceToggleBtn) {
 
 // Wire up typing indicator listeners
 setupTypingInputListeners();
+
+// ========================================
+// Draw Feature
+// ========================================
+
+const DRAW_CANVAS_WIDTH = 400;
+const DRAW_CANVAS_HEIGHT = 200;
+const DRAW_PEN_WIDTH = 3;
+const DRAW_HISTORY_LIMIT = 10;
+
+function getCanvasBgColor() {
+  const theme = document.documentElement.getAttribute('data-theme');
+  const prefersDark = typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-color-scheme: dark)').matches
+    : false;
+  return (theme === 'dark' || (!theme && prefersDark)) ? '#1e2023' : '#ffffff';
+}
+
+function updateDrawColorPicker() {
+  if (!drawComposer) return;
+  drawComposer.querySelectorAll('.draw-color-swatch').forEach(btn => {
+    btn.classList.toggle('draw-color-swatch--active', btn.dataset.color === drawCurrentColor);
+  });
+}
+
+function initDrawCanvas() {
+  if (!drawCanvas) return;
+  const ctx = drawCanvas.getContext('2d');
+  if (!ctx) return;
+  const bgColor = getCanvasBgColor();
+  const isDark = bgColor !== '#ffffff';
+  drawCurrentColor = isDark ? '#e7e9ea' : '#000000';
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, DRAW_CANVAS_WIDTH, DRAW_CANVAS_HEIGHT);
+  ctx.fillStyle = isDark ? '#3e4144' : '#cfd9de';
+  ctx.font = '14px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Draw here…', DRAW_CANVAS_WIDTH / 2, DRAW_CANVAS_HEIGHT / 2);
+  updateDrawColorPicker();
+}
+
+function resetDrawCanvas() {
+  drawHasStrokes = false;
+  drawStrokeHistory = [];
+  drawIsDrawing = false;
+  initDrawCanvas();
+}
+
+function enableDrawMode() {
+  drawMode = true;
+  drawHasStrokes = false;
+  drawStrokeHistory = [];
+  drawIsDrawing = false;
+  hidePromptCard();
+  if (textComposer) textComposer.style.display = 'none';
+  if (pollComposer) pollComposer.style.display = 'none';
+  if (gifComposer) gifComposer.style.display = 'none';
+  if (imageComposer) imageComposer.style.display = 'none';
+  if (typeof voiceComposer !== 'undefined' && voiceComposer) voiceComposer.style.display = 'none';
+  if (drawComposer) drawComposer.style.display = '';
+  if (drawToggleBtn) drawToggleBtn.setAttribute('aria-pressed', 'true');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Drawing';
+  initDrawCanvas();
+}
+
+function disableDrawMode(skipConfirm) {
+  if (!skipConfirm && drawHasStrokes) {
+    if (!confirm('Discard your drawing?')) return false;
+  }
+  drawMode = false;
+  drawHasStrokes = false;
+  drawStrokeHistory = [];
+  drawIsDrawing = false;
+  if (drawUploadTask) {
+    drawUploadTask.cancel();
+    drawUploadTask = null;
+  }
+  if (textComposer) textComposer.style.display = '';
+  if (drawComposer) drawComposer.style.display = 'none';
+  if (drawToggleBtn) drawToggleBtn.setAttribute('aria-pressed', 'false');
+  const btnText = submitBtn ? submitBtn.querySelector('.btn-text') : null;
+  if (btnText) btnText.textContent = 'Post Message';
+  if (drawUploadError) drawUploadError.style.display = 'none';
+  maybeShowPromptCard();
+  return true;
+}
+
+// Wire canvas pointer events once
+(function wireDrawCanvas() {
+  if (!drawCanvas) return;
+  let lastX = 0;
+  let lastY = 0;
+
+  function getCanvasPos(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    const scaleX = DRAW_CANVAS_WIDTH / rect.width;
+    const scaleY = DRAW_CANVAS_HEIGHT / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }
+
+  drawCanvas.addEventListener('pointerdown', (e) => {
+    if (!drawMode) return;
+    drawCanvas.setPointerCapture(e.pointerId);
+    const pos = getCanvasPos(e);
+    lastX = pos.x;
+    lastY = pos.y;
+    const ctx = drawCanvas.getContext('2d');
+    if (!ctx) return;
+    if (!drawHasStrokes) {
+      // Clear the placeholder text before first stroke
+      ctx.fillStyle = getCanvasBgColor();
+      ctx.fillRect(0, 0, DRAW_CANVAS_WIDTH, DRAW_CANVAS_HEIGHT);
+    }
+    // Save snapshot for undo before starting this stroke
+    drawStrokeHistory.push(ctx.getImageData(0, 0, DRAW_CANVAS_WIDTH, DRAW_CANVAS_HEIGHT));
+    if (drawStrokeHistory.length > DRAW_HISTORY_LIMIT) drawStrokeHistory.shift();
+    drawHasStrokes = true;
+    drawIsDrawing = true;
+    // Draw a dot at the start point
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, DRAW_PEN_WIDTH / 2, 0, Math.PI * 2);
+    ctx.fillStyle = drawCurrentColor;
+    ctx.fill();
+    e.preventDefault();
+  });
+
+  drawCanvas.addEventListener('pointermove', (e) => {
+    if (!drawMode || !drawIsDrawing) return;
+    const pos = getCanvasPos(e);
+    const ctx = drawCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = drawCurrentColor;
+    ctx.lineWidth = DRAW_PEN_WIDTH;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    lastX = pos.x;
+    lastY = pos.y;
+    e.preventDefault();
+  });
+
+  function endStroke() {
+    drawIsDrawing = false;
+  }
+
+  drawCanvas.addEventListener('pointerup', endStroke);
+  drawCanvas.addEventListener('pointerleave', endStroke);
+  drawCanvas.addEventListener('pointercancel', endStroke);
+}());
+
+// Undo shortcut for draw mode (Ctrl/Cmd+Z)
+document.addEventListener('keydown', (e) => {
+  if (!drawMode) return;
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    if (drawStrokeHistory.length > 0) {
+      const snapshot = drawStrokeHistory.pop();
+      const ctx = drawCanvas && drawCanvas.getContext('2d');
+      if (ctx) ctx.putImageData(snapshot, 0, 0);
+      if (drawStrokeHistory.length === 0) drawHasStrokes = false;
+    }
+  }
+});
+
+// Draw toggle button
+if (drawToggleBtn) {
+  drawToggleBtn.addEventListener('click', () => {
+    if (drawMode) {
+      disableDrawMode(false);
+    } else {
+      if (pollMode) disablePollMode();
+      if (gifMode) disableGifMode();
+      if (imageMode) disableImageMode();
+      if (voiceMode) disableVoiceMode();
+      enableDrawMode();
+    }
+  });
+}
+
+// Draw clear button
+const drawClearBtn = document.getElementById('draw-clear-btn');
+if (drawClearBtn) {
+  drawClearBtn.addEventListener('click', () => {
+    resetDrawCanvas();
+  });
+}
+
+// Draw color swatches
+if (drawComposer) {
+  drawComposer.querySelectorAll('.draw-color-swatch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      drawCurrentColor = btn.dataset.color;
+      updateDrawColorPicker();
+    });
+  });
+}
 
 // ========================================
 // Mood Emoji Feature
@@ -7115,6 +7367,95 @@ postForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  // ---- Draw submission path ----
+  if (drawMode) {
+    if (!drawHasStrokes) {
+      if (emptyErrorMsg) { emptyErrorMsg.textContent = 'Please draw something before posting.'; emptyErrorMsg.style.display = 'block'; }
+      return;
+    }
+    if (!drawCanvas) return;
+
+    submitBtn.disabled = true;
+    submitBtn.querySelector('.btn-text').style.display = 'none';
+    const drawLoadingSpan = submitBtn.querySelector('.btn-loading');
+    drawLoadingSpan.textContent = 'Uploading drawing…';
+    drawLoadingSpan.style.display = 'inline';
+    rateLimitMsg.style.display = 'none';
+    if (emptyErrorMsg) emptyErrorMsg.style.display = 'none';
+    if (drawUploadError) drawUploadError.style.display = 'none';
+
+    try {
+      const blob = await new Promise((resolve, reject) => {
+        drawCanvas.toBlob((b) => {
+          if (b) resolve(b); else reject(new Error('Canvas toBlob returned null'));
+        }, 'image/png');
+      });
+
+      const randomId = Math.random().toString(36).slice(2, 9);
+      const storagePath = `message-drawings/${currentUser.uid}/${Date.now()}-${randomId}.png`;
+      const storageRef = storage.ref(storagePath);
+
+      drawUploadTask = storageRef.put(blob, { contentType: 'image/png' });
+
+      const downloadUrl = await new Promise((resolve, reject) => {
+        drawUploadTask.on('state_changed', null, reject, async () => {
+          try {
+            const url = await drawUploadTask.snapshot.ref.getDownloadURL();
+            resolve(url);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+
+      drawUploadTask = null;
+
+      const countryData = await fetchCountryData();
+      const newMessageKey = db.ref('messages').push().key;
+      const displayName = userAlias || currentUser.displayName || 'Anonymous';
+      const altText = `Drawing by ${displayName}`;
+      const updates = {};
+      updates[`/messages/${newMessageKey}`] = {
+        type: 'draw',
+        text: altText,
+        drawUrl: downloadUrl,
+        drawAlt: altText,
+        author: displayName,
+        authorId: currentUser.uid,
+        timestamp: firebase.database.ServerValue.TIMESTAMP,
+        photoURL: userAvatarUrl || currentUser.photoURL || '',
+        ...(currentUser.isAnonymous && { isGuest: true }),
+        ...(countryData && { countryCode: countryData.countryCode, countryName: countryData.countryName }),
+      };
+      updates[`/users/${currentUser.uid}/lastPostTimestamp`] = firebase.database.ServerValue.TIMESTAMP;
+
+      await db.ref().update(updates);
+
+      disableDrawMode(true);
+    } catch (error) {
+      console.error('Draw post error:', error);
+      drawUploadTask = null;
+      if (error.code === 'storage/canceled') {
+        // User cancelled — no error UI needed
+      } else if (error.code === 'PERMISSION_DENIED') {
+        rateLimitMsg.style.display = 'block';
+        setTimeout(() => { rateLimitMsg.style.display = 'none'; }, 5000);
+      } else {
+        if (drawUploadError) {
+          drawUploadError.textContent = 'Drawing upload failed. Please try again.';
+          drawUploadError.style.display = '';
+        }
+      }
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.querySelector('.btn-text').style.display = 'inline';
+      const ls = submitBtn.querySelector('.btn-loading');
+      ls.textContent = 'Posting...';
+      ls.style.display = 'none';
+    }
+    return;
+  }
+
   // ---- Voice submission path ----
   if (voiceMode) {
     if (!voiceBlob) {
@@ -7434,5 +7775,5 @@ async function handleAvatarRemove() {
 
 // Export for testing (Node.js / Jest)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY };
+  module.exports = { createMessageCard, createReplyCard, REPLIES_COLLAPSE_THRESHOLD, updateEditCounter, filterMessages, updateTypeFilterRow, renderTrendingHashtags, createAvatarElement, applyTheme, toggleTheme, handleDeepLink, showToast, renderTypingLabel, updateNewMessagesBanner, hideNewMessagesBanner, trackAuthor, getAuthorSuggestions, getMentionPrefix, rebuildHashtagPool, getHashtagSuggestions, getHashtagPrefix, loadBookmarks, saveBookmarksToStorage, isBookmarked, addBookmark, removeBookmark, setBookmarkNote, getBookmarkNote, showInlineNoteEditor, NOTE_MAX_LEN, updateSavedBadge, refreshSavedPanel, maybeFireReplyNotification, maybeFireMentionNotification, maybeFireSubscriptionNotification, escapeRegex, formatExpiryLabel, createExpiryLabel, tickExpiryLabels, truncateQuote, saveDraft, loadDraft, clearDraft, restoreDraft, openAuthorPanel, closeAuthorPanel, copyTextToClipboard, loadUserAlias, openDisplayNameEditor, openBioEditor, openWebsiteEditor, updateNewSinceSummary, maybeSaveLastVisit, saveLastVisitTimestamp, getSortComparator, applySortOrder, loadMuted, saveMuted, isMuted, addMuted, removeMuted, updateMutedChip, refreshMutedPanel, loadMutedWords, saveMutedWords, isMutedByKeyword, addMutedWord, removeMutedWord, updateMutedWordsBadge, refreshMutedWordsPanel, updateMyPostsBtnVisibility, loadSubscriptions, saveSubscriptions, isSubscribed, addSubscription, removeSubscription, pruneExpiredSubscriptions, createPollBody, validatePoll, enablePollMode, disablePollMode, addPollOption, getPollOptionInputs, isGifUrlAllowed, enableGifMode, disableGifMode, openGifPicker, closeGifPicker, selectGif, renderGifGrid, getPromptDayIndex, getPromptForDay, isPromptDismissed, dismissPrompt, createPromptCard, hidePromptCard, maybeShowPromptCard, initPromptCard, PROMPTS, validateImageFile, generateImageAlt, enableImageMode, disableImageMode, handlePastedImageFile, openLightbox, handleAvatarUpload, handleAvatarRemove, refreshAllUserAvatars, enableVoiceMode, disableVoiceMode, resetVoiceComposer, voiceFormatDuration, startVoiceRecording, stopVoiceRecording, hasViewedInSession, markViewedInSession, SORT_VIEWS, MOOD_OPTIONS, MOOD_VALID_EMOJIS, selectMood, clearMood, updateMoodUI, openMoodPicker, closeMoodPicker, syncStateToUrl, updateCopyLinkBtn, getTodayUtcMidnight, getUtcDayBounds, formatArchiveDateDisplay, formatArchiveDateForHash, updateArchiveHash, updateArchiveUI, loadArchiveDay, returnToToday, navigatePrevDay, navigateNextDay, checkHasPastArchives, surpriseMe, ARCHIVE_MESSAGE_LIMIT, computeSparklineBuckets, renderSparkline, getCompactPreviewText, createCompactRow, setViewMode, toggleViewMode, expandCardCompact, collapseCardCompact, VIEW_MODE_KEY, VIEW_NORMAL, VIEW_COMPACT, COMPACT_PREVIEW_LENGTH, loadNotifPrefs, saveNotifPrefs, loadQuietHours, saveQuietHours, isQuietHours, updateNotifSettingsBadge, refreshNotifPanel, NOTIF_PREFS_KEY, NOTIF_QUIET_HOURS_KEY, enableDrawMode, disableDrawMode, resetDrawCanvas, maybeDisableDrawMode, getCanvasBgColor, initDrawCanvas, updateDrawColorPicker, DRAW_CANVAS_WIDTH, DRAW_CANVAS_HEIGHT, DRAW_HISTORY_LIMIT };
 }
