@@ -157,11 +157,24 @@ const APP_HTML = `
     <p id="gif-search-error" style="display:none;"></p>
   </div>
   <button type="button" id="image-toggle-btn" aria-pressed="false"></button>
+  <button type="button" id="draw-toggle-btn" aria-pressed="false"></button>
   <input type="file" id="image-file-input" style="display:none;" />
   <div id="image-composer" style="display:none;">
     <div id="image-preview-wrap"></div>
   </div>
   <p id="image-upload-error" style="display:none;"></p>
+  <div id="draw-composer" style="display:none;">
+    <canvas id="draw-canvas" width="400" height="200"></canvas>
+    <div class="draw-color-picker">
+      <button type="button" class="draw-color-swatch" data-color="#000000"></button>
+      <button type="button" class="draw-color-swatch" data-color="#ef4444"></button>
+      <button type="button" class="draw-color-swatch" data-color="#3b82f6"></button>
+      <button type="button" class="draw-color-swatch" data-color="#22c55e"></button>
+      <button type="button" class="draw-color-swatch" data-color="#a855f7"></button>
+    </div>
+    <button type="button" id="draw-clear-btn"></button>
+  </div>
+  <p id="draw-upload-error" style="display:none;"></p>
   <button type="button" id="voice-toggle-btn" aria-pressed="false" style="display:none;"></button>
   <div id="voice-composer" style="display:none;">
     <div id="voice-record-area">
@@ -9414,6 +9427,217 @@ describe('image — createMessageCard renders image card', () => {
   test('does not render .gif-message-img for image messages', () => {
     const card = createMessageCard(imageMsg, null);
     expect(card.querySelector('.gif-message-img')).toBeNull();
+  });
+});
+
+// ========================================
+// Draw — createMessageCard renders draw card
+// ========================================
+describe('draw — createMessageCard renders draw card', () => {
+  let createMessageCard;
+
+  const drawMsg = {
+    id: 'draw1',
+    type: 'draw',
+    author: 'Dave',
+    text: 'Drawing by Dave',
+    drawUrl: 'https://firebasestorage.googleapis.com/v0/b/proj/o/drawing.png?alt=media',
+    drawAlt: 'Drawing by Dave',
+    timestamp: Date.now(),
+    authorId: 'uid-dave',
+  };
+
+  beforeAll(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    // Canvas mock: getContext returns a minimal 2D context stub
+    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
+      fillRect: jest.fn(),
+      fillText: jest.fn(),
+      beginPath: jest.fn(),
+      arc: jest.fn(),
+      fill: jest.fn(),
+      stroke: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      getImageData: jest.fn().mockReturnValue({}),
+      putImageData: jest.fn(),
+      clearRect: jest.fn(),
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ createMessageCard } = require('../public/app.js'));
+  });
+
+  test('card has data-type="draw"', () => {
+    const card = createMessageCard(drawMsg, null);
+    expect(card.dataset.type).toBe('draw');
+  });
+
+  test('renders .draw-message-img element', () => {
+    const card = createMessageCard(drawMsg, null);
+    expect(card.querySelector('.draw-message-img')).not.toBeNull();
+  });
+
+  test('sets src from drawUrl', () => {
+    const card = createMessageCard(drawMsg, null);
+    const img = card.querySelector('.draw-message-img');
+    expect(img.src).toContain('firebasestorage.googleapis.com');
+  });
+
+  test('sets alt from drawAlt', () => {
+    const card = createMessageCard(drawMsg, null);
+    const img = card.querySelector('.draw-message-img');
+    expect(img.alt).toBe('Drawing by Dave');
+  });
+
+  test('falls back to "Drawing" when drawAlt is empty', () => {
+    const msg = { ...drawMsg, id: 'draw-noalt', drawAlt: '' };
+    const card = createMessageCard(msg, null);
+    const img = card.querySelector('.draw-message-img');
+    expect(img.alt).toBe('Drawing');
+  });
+
+  test('message-text element is empty for draw messages', () => {
+    const card = createMessageCard(drawMsg, null);
+    const textEl = card.querySelector('.message-text');
+    expect(textEl).not.toBeNull();
+    expect(textEl.textContent.trim()).toBe('');
+  });
+
+  test('does not render edit button for draw messages', () => {
+    const ownUser = { uid: 'uid-dave' };
+    const card = createMessageCard(drawMsg, ownUser);
+    expect(card.querySelector('.btn-edit')).toBeNull();
+  });
+
+  test('renders delete button for own draw message', () => {
+    const ownUser = { uid: 'uid-dave' };
+    const card = createMessageCard(drawMsg, ownUser);
+    expect(card.querySelector('.btn-delete')).not.toBeNull();
+  });
+
+  test('renders draw badge in header', () => {
+    const card = createMessageCard(drawMsg, null);
+    expect(card.querySelector('.draw-card-badge')).not.toBeNull();
+  });
+
+  test('does not render .gif-message-img for draw messages', () => {
+    const card = createMessageCard(drawMsg, null);
+    expect(card.querySelector('.gif-message-img')).toBeNull();
+  });
+
+  test('does not render draw img when drawUrl is missing', () => {
+    const msg = { ...drawMsg, id: 'draw-nourl', drawUrl: undefined };
+    const card = createMessageCard(msg, null);
+    expect(card.querySelector('.draw-message-img')).toBeNull();
+  });
+});
+
+// ========================================
+// Draw — enableDrawMode / disableDrawMode
+// ========================================
+describe('draw — enableDrawMode and disableDrawMode', () => {
+  let enableDrawMode, disableDrawMode, resetDrawCanvas;
+
+  beforeEach(() => {
+    jest.resetModules();
+    document.body.innerHTML = APP_HTML;
+
+    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
+      fillRect: jest.fn(),
+      fillText: jest.fn(),
+      beginPath: jest.fn(),
+      arc: jest.fn(),
+      fill: jest.fn(),
+      stroke: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      getImageData: jest.fn().mockReturnValue({}),
+      putImageData: jest.fn(),
+      clearRect: jest.fn(),
+    });
+
+    const utils = require('../public/utils');
+    global.getEmulatorConfig = utils.getEmulatorConfig;
+    global.validateMessage = utils.validateMessage;
+    global.validateDisplayName = utils.validateDisplayName;
+    global.formatTimestamp = utils.formatTimestamp;
+    global.isNearBottom = utils.isNearBottom;
+    global.getInitialTheme = utils.getInitialTheme;
+    global.parseTextSegments = utils.parseTextSegments;
+    global.renderTextWithLinks = utils.renderTextWithLinks;
+    global.renderMessageText = utils.renderMessageText;
+    global.linkifyText = utils.linkifyText;
+    global.isNewSinceLastVisit = utils.isNewSinceLastVisit;
+    global.stripInlineMarkdown = utils.stripInlineMarkdown;
+
+    const { firebase, authInstance } = makeFirebaseMock();
+    global.firebase = firebase;
+    authInstance.onAuthStateChanged.mockImplementation(() => {});
+
+    ({ enableDrawMode, disableDrawMode, resetDrawCanvas } = require('../public/app.js'));
+  });
+
+  test('enableDrawMode shows draw-composer and hides text-composer', () => {
+    enableDrawMode();
+    expect(document.getElementById('draw-composer').style.display).toBe('');
+    expect(document.getElementById('text-composer').style.display).toBe('none');
+  });
+
+  test('enableDrawMode sets draw-toggle-btn aria-pressed to true', () => {
+    enableDrawMode();
+    expect(document.getElementById('draw-toggle-btn').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('enableDrawMode sets submit button text to Post Drawing', () => {
+    enableDrawMode();
+    const btnText = document.querySelector('#submit-btn .btn-text');
+    expect(btnText.textContent).toBe('Post Drawing');
+  });
+
+  test('disableDrawMode(true) hides draw-composer and restores text-composer', () => {
+    enableDrawMode();
+    disableDrawMode(true);
+    expect(document.getElementById('draw-composer').style.display).toBe('none');
+    expect(document.getElementById('text-composer').style.display).toBe('');
+  });
+
+  test('disableDrawMode(true) resets aria-pressed on draw-toggle-btn', () => {
+    enableDrawMode();
+    disableDrawMode(true);
+    expect(document.getElementById('draw-toggle-btn').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('disableDrawMode(true) restores submit button text to Post Message', () => {
+    enableDrawMode();
+    disableDrawMode(true);
+    const btnText = document.querySelector('#submit-btn .btn-text');
+    expect(btnText.textContent).toBe('Post Message');
+  });
+
+  test('disableDrawMode(true) returns true', () => {
+    enableDrawMode();
+    const result = disableDrawMode(true);
+    expect(result).toBe(true);
   });
 });
 

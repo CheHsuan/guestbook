@@ -3980,6 +3980,109 @@ body {
 }
 
 /* ========================================
+   Draw Composer & Message Card
+   ======================================== */
+.draw-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.draw-canvas-wrap {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.draw-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.draw-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.draw-color-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.draw-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: transform var(--transition), border-color var(--transition);
+}
+
+.draw-color-swatch:hover {
+  transform: scale(1.18);
+}
+
+.draw-color-swatch--active {
+  border-color: var(--text-primary);
+  transform: scale(1.18);
+}
+
+.draw-clear-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  margin-left: auto;
+}
+
+.draw-clear-btn:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.draw-card-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.draw-message-img {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  display: block;
+  margin-top: 6px;
+  cursor: zoom-in;
+}
+
+/* ========================================
    Lightbox
    ======================================== */
 .lightbox-backdrop {
@@ -4714,6 +4817,7 @@ body {
 .compact-mode .message-card.compact-expanded > .pinned-badge,
 .compact-mode .message-card.compact-expanded > .gif-message-img,
 .compact-mode .message-card.compact-expanded > .image-message-img,
+.compact-mode .message-card.compact-expanded > .draw-message-img,
 .compact-mode .message-card.compact-expanded > .voice-message-player {
   display: block;
 }
