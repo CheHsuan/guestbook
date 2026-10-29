@@ -1229,13 +1229,13 @@ function getAuthorSuggestions(prefix) {
   if (!prefix) return [];
   const lower = prefix.toLowerCase();
   const matches = [];
-  for (const [name, data] of authorPool.entries()) {
+  for (const [name] of authorPool.entries()) {
     if (name.toLowerCase().startsWith(lower)) {
-      matches.push({ name, ts: data.timestamp });
+      matches.push(name);
     }
   }
-  matches.sort((a, b) => b.ts - a.ts);
-  return matches.slice(0, 5).map(m => m.name);
+  matches.sort((a, b) => a.localeCompare(b));
+  return matches.slice(0, 6);
 }
 
 // ========================================
@@ -5200,6 +5200,8 @@ function getMentionPrefix(textarea) {
   let i = pos - 1;
   while (i >= 0 && /\w/.test(val[i])) i--;
   if (i >= 0 && val[i] === '@') {
+    // Ignore mid-word @ (e.g. email addresses): char before @ must be non-word or start of string
+    if (i > 0 && /\w/.test(val[i - 1])) return null;
     const prefix = val.slice(i + 1, pos);
     // Require at least one character after @
     return prefix.length > 0 ? { prefix, atIndex: i } : null;
@@ -5258,10 +5260,20 @@ function attachMentionAutocomplete(textarea, relativeParent) {
     dropdown.innerHTML = '';
     activeIndex = -1;
 
-    suggestions.forEach((name, idx) => {
+    suggestions.forEach((name) => {
       const item = document.createElement('div');
       item.className = 'mention-dropdown-item';
-      item.textContent = '@' + name; // textContent — XSS safe
+      item.dataset.name = name;
+
+      const authorData = authorPool.get(name);
+      const avatarEl = createAvatarElement(authorData ? authorData.photoURL : null, name);
+      avatarEl.classList.add('mention-dropdown-avatar');
+      item.appendChild(avatarEl);
+
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = '@' + name; // textContent — XSS safe
+      item.appendChild(nameSpan);
+
       item.addEventListener('mousedown', (e) => {
         e.preventDefault(); // prevent textarea blur
         selectItem(name);
@@ -5308,10 +5320,9 @@ function attachMentionAutocomplete(textarea, relativeParent) {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex(Math.max(activeIndex - 1, 0));
-    } else if (e.key === 'Enter' && activeIndex >= 0) {
+    } else if ((e.key === 'Enter' || e.key === 'Tab') && activeIndex >= 0) {
       e.preventDefault();
-      const name = items[activeIndex].textContent.slice(1); // strip leading @
-      selectItem(name);
+      selectItem(items[activeIndex].dataset.name);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       removeDropdown();

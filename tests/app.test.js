@@ -3993,19 +3993,19 @@ describe('@mention author pool', () => {
     expect(getAuthorSuggestions('ali')).toContain('Alice');
   });
 
-  test('getAuthorSuggestions returns at most 5 results', () => {
+  test('getAuthorSuggestions returns at most 6 results', () => {
     for (let i = 0; i < 10; i++) trackAuthor('Author' + i, i * 1000);
-    expect(getAuthorSuggestions('Author').length).toBeLessThanOrEqual(5);
+    expect(getAuthorSuggestions('Author').length).toBeLessThanOrEqual(6);
   });
 
-  test('getAuthorSuggestions sorts by most recent timestamp first', () => {
+  test('getAuthorSuggestions sorts results alphabetically', () => {
     trackAuthor('Alice', 1000);
     trackAuthor('Abe', 5000);
     trackAuthor('Amy', 3000);
     const results = getAuthorSuggestions('A');
     expect(results[0]).toBe('Abe');
-    expect(results[1]).toBe('Amy');
-    expect(results[2]).toBe('Alice');
+    expect(results[1]).toBe('Alice');
+    expect(results[2]).toBe('Amy');
   });
 
   test('getAuthorSuggestions returns empty array for empty prefix', () => {
@@ -4215,6 +4215,18 @@ describe('getMentionPrefix', () => {
   test('returns null after completed @mention followed by space', () => {
     const ta = makeTextarea('@Bob ', 5);
     expect(getMentionPrefix(ta)).toBeNull();
+  });
+
+  test('returns null when @ is mid-word (e.g. email address)', () => {
+    const ta = makeTextarea('user@alice', 10);
+    expect(getMentionPrefix(ta)).toBeNull();
+  });
+
+  test('triggers normally when @ follows a space', () => {
+    const ta = makeTextarea('Hello @Al', 9);
+    const result = getMentionPrefix(ta);
+    expect(result).not.toBeNull();
+    expect(result.prefix).toBe('Al');
   });
 });
 
